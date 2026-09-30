@@ -615,6 +615,10 @@ Before connection, `detachedCollabDocs.ts` retains row JSON and creates each
 local Y doc on first access. Seeds precede undo tracking; unused row seeds
 remain available for roster undo after deletion. Connecting replaces these
 local docs with server-seeded provider documents.
+Initial sync projections collect socket tasks over a 16 ms frame and commit
+rows plus their roster to the store together. Write gates open after that
+projection, so tools never edit a stale HTTP snapshot. Live remote updates
+retain microtask projection; undo/redo project synchronously.
 Because every committed edit is a frame, burst-prone inputs coalesce before
 they commit: the `ColorInput` primitive throttles picker-drag change events
 (leading fire for instant clicks, one trailing fire with the final value),
