@@ -1,4 +1,5 @@
 import { afterEach, expect, it } from 'bun:test'
+import { waitFor } from '@testing-library/react'
 import * as Y from 'yjs'
 import { Awareness } from 'y-protocols/awareness'
 import '@modules/base'
@@ -51,8 +52,6 @@ function pageId(id: string) {
   return encodeCollabDocId({ kind: 'page', branchId: MAIN_BRANCH_ID, rowId: id })
 }
 
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
-
 afterEach(() => {
   disconnectCollabProvider()
   useEditorStore.getState().clearSite()
@@ -64,28 +63,28 @@ it('syncs existing pages without replacing the already projected shell', async (
   const { provider, release } = makeProvider(site)
   connectCollabProvider(provider)
   release(MAIN_SITE_DOC_ID)
-  await settle()
+  await waitFor(() => expect(useEditorStore.getState().site!.settings).not.toBe(site.settings))
   const shell = useEditorStore.getState().site!.settings
   const initial = useEditorStore.getState().site!.pages[0]
   release(pageId('page-1'))
-  await settle()
-  expect(useEditorStore.getState().site!.pages[0]).not.toBe(initial)
+  await waitFor(() => expect(useEditorStore.getState().site!.pages[0]).not.toBe(initial))
   expect(useEditorStore.getState().site!.settings).toBe(shell)
+  const second = useEditorStore.getState().site!.pages[1]
   release(pageId('page-2'))
-  await settle()
+  await waitFor(() => expect(useEditorStore.getState().site!.pages[1]).not.toBe(second))
   expect(useEditorStore.getState().site!.settings).toBe(shell)
 })
 
 it('assembles a newly discovered peer page in roster order after its doc syncs', async () => {
   const first = makePage()
   const peer = makePage({ id: 'peer-page', slug: 'peer' })
-  useEditorStore.setState({ site: makeSite({ pages: [first] }) })
+  const initialSite = makeSite({ pages: [first] })
+  useEditorStore.setState({ site: initialSite })
   const { provider, release } = makeProvider(makeSite({ pages: [peer, first] }))
   connectCollabProvider(provider)
   release(MAIN_SITE_DOC_ID)
-  await settle()
+  await waitFor(() => expect(useEditorStore.getState().site!.settings).not.toBe(initialSite.settings))
   expect(useEditorStore.getState().site!.pages.map((p) => p.id)).toEqual([first.id])
   release(pageId(peer.id))
-  await settle()
-  expect(useEditorStore.getState().site!.pages.map((p) => p.id)).toEqual([peer.id, first.id])
+  await waitFor(() => expect(useEditorStore.getState().site!.pages.map((p) => p.id)).toEqual([peer.id, first.id]))
 })
