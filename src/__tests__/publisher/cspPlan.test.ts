@@ -208,6 +208,17 @@ function extractPublishedCsp(html: string): string {
 }
 
 describe('publishPage — CSP frame-src from module cspSources', () => {
+  it('does not lift frame restrictions for a connection-only script or invalid script URL', () => {
+    const page = makePage({ root: { moduleId: 'base.text', props: {} } })
+    const registry = makeRegistry({ 'base.text': makeModule('base.text') })
+    const asset = { fileId: 'forms', src: '/forms.js', placement: 'body-end' as const, timing: 'dom-ready' as const, priority: 1,
+      resourceOrigins: { scripts: [], frames: [], connections: ['https://forms.example'] } }
+    const csp = extractPublishedCsp(publishPage(page, makeSite(), registry, { runtimeAssets: { scripts: [asset] } }).html)
+    expect(csp).toContain("frame-src 'none';")
+    expect(csp).toContain("connect-src 'self' https://forms.example;")
+    const rejected = extractPublishedCsp(publishPage(page, makeSite(), registry, { runtimeAssets: { scripts: [{ ...asset, src: 'https://remote.example/script.js' }] } }).html)
+    expect(rejected).not.toContain('forms.example')
+  })
   it('page with a youtube video has youtube.com in frame-src (not none)', () => {
     const page = makePage({
       root: {
