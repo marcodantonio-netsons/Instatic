@@ -19,6 +19,7 @@
  */
 
 import type { Page, SiteDocument } from '@core/page-tree'
+import { resolvePageTranslations, type PageTranslation } from './pageTranslations'
 import { primaryTemplateTableSlug } from './templateMatching'
 import { resolveSiteLanguage } from '@core/localization'
 import type { TranslationMessages } from '@core/localization-schema'
@@ -32,6 +33,7 @@ export interface PageFrame {
   slug: string
   title: string
   language?: string
+  translations?: Record<string, PageTranslation>
   permalink: string
   isTemplate: boolean
   templateTableSlug: string | null
@@ -72,7 +74,7 @@ export interface RouteFrame {
  * The `permalink` mirrors the public URL convention used elsewhere
  * (`'/' + slug`, special-casing `index`).
  */
-export function buildPageFrame(page: Page): PageFrame {
+export function buildPageFrame(page: Page, site: SiteDocument): PageFrame {
   const slug = page.slug
   const normalizedSlug = slug.startsWith('/') ? slug : `/${slug}`
   const permalink = normalizedSlug === '/index' ? '/' : normalizedSlug
@@ -83,6 +85,7 @@ export function buildPageFrame(page: Page): PageFrame {
   })()
   return {
     id: page.id,
+    translations: resolvePageTranslations(page, site),
     slug,
     title: page.title,
     ...(page.language ? { language: page.language } : {}),

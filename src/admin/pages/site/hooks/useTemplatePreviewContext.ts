@@ -88,9 +88,10 @@ export function useTemplatePreviewContext(page: Page | null): TemplatePreviewCon
       ?? previewState.synthetic
     entryStack = chosen ? [chosen] : []
   }
-  const pageFrame = buildPageFrame(page)
+  let pageFrame
   let siteFrame
   try {
+    pageFrame = buildPageFrame(page, site)
     siteFrame = buildSiteFrame(site, page.language)
   } catch (error) {
     // Keep file authoring available while a catalogue is temporarily invalid.

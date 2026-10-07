@@ -1537,4 +1537,16 @@ export const sqliteMigrations: Migration[] = [
          );
     `).join('\n'),
   },
+  {
+    id: '033_page_translation_group',
+    sql: `
+      update data_tables
+         set fields_json = json_insert(fields_json, '$[#]', json('{"type":"text","id":"translationGroup","label":"Translation group","builtIn":true}'))
+       where id = 'pages'
+         and not exists (
+           select 1 from json_each(data_tables.fields_json)
+            where json_extract(value, '$.id') = 'translationGroup'
+         );
+    `,
+  },
 ]

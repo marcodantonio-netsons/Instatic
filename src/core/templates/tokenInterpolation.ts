@@ -30,6 +30,7 @@
 import type { DynamicPropBinding } from '@core/page-tree'
 import type { TemplateRenderDataContext } from './renderDataContext'
 import { resolveTranslation } from '@core/localization'
+import { readPageTranslationField } from './pageTranslations'
 
 // ---------------------------------------------------------------------------
 // Source identifiers — must match DynamicBindingSourceSchema
@@ -235,6 +236,9 @@ export function readFrameField(
   field: string,
   context: TemplateRenderDataContext,
 ): unknown {
+  if (source === 'page' && field.startsWith('translations.')) {
+    return readPageTranslationField(context.page?.translations, field.slice('translations.'.length))
+  }
   if (source === 'site' && field.startsWith('translations.')) {
     return resolveTranslation(context.site?.translations, field.slice('translations.'.length), context.site?.language ?? 'en')
   }

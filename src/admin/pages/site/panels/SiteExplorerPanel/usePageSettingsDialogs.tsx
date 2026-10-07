@@ -7,6 +7,7 @@ import { PageSettingsDialog, type PageSettingsPayload } from '@admin/shared/dial
 interface UsePageSettingsDialogsOptions {
   pages: Page[]
   renamePage: (pageId: string, title: string, slug?: string) => void
+  setPageTranslationGroup: (pageId: string, group?: string) => void
   setPageLanguage: (pageId: string, language?: string) => void
   setPageSeo: (pageId: string, seo: PageSeo | undefined) => void
   convertPageToTemplate: (pageId: string, config: PageTemplateConfig) => void
@@ -23,6 +24,7 @@ export function usePageSettingsDialogs({
   pages,
   renamePage,
   setPageSeo,
+  setPageTranslationGroup,
   setPageLanguage,
   convertPageToTemplate,
   openPageInCanvas,
@@ -47,6 +49,7 @@ export function usePageSettingsDialogs({
     if (canEditStructure) {
       renamePage(pageSettingsTarget.id, payload.title, payload.slug)
       setPageLanguage(pageSettingsTarget.id, payload.language)
+      setPageTranslationGroup(pageSettingsTarget.id, payload.translationGroup)
     }
     if (canEditContent) setPageSeo(pageSettingsTarget.id, payload.seo)
     setPageSettingsTarget(null)

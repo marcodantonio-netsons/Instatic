@@ -22,6 +22,7 @@ import { NodeTreeSchema } from './treeSchema'
 import { PageNodeSchema, type PageNode, parsePageNode } from './pageNode'
 import { PageTemplateConfigSchema, parsePageTemplate } from './pageTemplate'
 import { reindexNodeParents } from './parentIndex'
+import { PageTranslationGroupSchema, parsePageTranslationGroup } from './pageTranslation'
 import { PageSeoSchema, parsePageSeo } from './pageSeo'
 
 // ---------------------------------------------------------------------------
@@ -39,6 +40,8 @@ export const PageSchema = Type.Object({
   title: Type.String(),
   /** Explicit document language; absent inherits the site's default. */
   language: Type.Optional(Type.String({ minLength: 1 })),
+  /** Shared identity of the translated versions of an ordinary page. */
+  translationGroup: Type.Optional(PageTranslationGroupSchema),
   /** Authored document metadata; independent of the editor's display title. */
   seo: Type.Optional(PageSeoSchema),
   /** Owning user for admin/editor workflows; server-owned when persisted in CMS. */
@@ -96,11 +99,13 @@ export function parsePage(raw: unknown, pageIndex: number): Page {
   // parentId value. Backfills data persisted before this field existed.
   reindexNodeParents(nodes)
 
+  const translationGroup = parsePageTranslationGroup(r.translationGroup, `${pagePathPrefix}.translationGroup`)
   const template = parsePageTemplate(r.template)
   const seo = parsePageSeo(r.seo, `${pagePathPrefix}.seo`)
 
   return {
     id: r.id,
+    ...(translationGroup ? { translationGroup } : {}),
     slug: r.slug,
     title: r.title,
     ...(typeof r.language === 'string' && r.language.length > 0 ? { language: r.language } : {}),

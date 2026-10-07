@@ -34,6 +34,67 @@ function setup() {
 }
 
 describe('native language-file authoring', () => {
+  it('offers real translated page URLs in the native picker and refreshes them after a slug change', async () => {
+    const { pageId } = setup()
+    const italian = useEditorStore.getState().addPage('Italian page', 'it/about')
+    useEditorStore.getState().setPageLanguage(italian.id, 'it')
+    useEditorStore.getState().setPageTranslationGroup(italian.id, 'about')
+    useEditorStore.getState().setPageTranslationGroup(pageId, 'about')
+    useEditorStore.getState().openPageInCanvas(pageId)
+    const insert = mock(() => {})
+    render(<DynamicBindingControl propKey="href" label="URL" control={{ type: 'url', label: 'URL' }}
+      insertMode onInsertToken={insert} onSet={() => {}} onClear={() => {}}>
+      <Input aria-label="URL" />
+    </DynamicBindingControl>)
+    fireEvent.click(screen.getByRole('button', { name: 'Insert binding for URL' }))
+    await waitFor(() => expect(screen.getByText('it — URL')).toBeDefined())
+    expect(screen.getByText('/it/about')).toBeDefined()
+    act(() => useEditorStore.getState().renamePage(italian.id, italian.title, 'it/renamed'))
+    await waitFor(() => expect(screen.getByText('/it/renamed')).toBeDefined())
+    fireEvent.click(screen.getByText('it — URL'))
+    expect(insert).toHaveBeenCalledWith('{page.translations.it.permalink}')
+  })
+
+  it('reports an ambiguous draft group in the canvas while keeping its authoring controls usable', async () => {
+    const { pageId } = setup()
+    const other = useEditorStore.getState().addPage('Other', 'other')
+    useEditorStore.getState().setPageLanguage(other.id, 'en')
+    useEditorStore.getState().setPageTranslationGroup(pageId, 'about')
+    const hook = renderHook(() => {
+      const page = useEditorStore((state) => state.site?.pages.find((candidate) => candidate.id === pageId) ?? null)
+      return useTemplatePreviewContext(page)
+    })
+    expect(hook.result.current.context?.page?.translations?.en?.id).toBe(pageId)
+    act(() => useEditorStore.getState().setPageTranslationGroup(other.id, 'about'))
+    expect(hook.result.current.error?.message).toContain('more than one page')
+    expect(hook.result.current.context).toBeUndefined()
+    render(<DynamicBindingControl propKey="href" label="URL" control={{ type: 'url', label: 'URL' }}
+      onSet={() => {}} onClear={() => {}}><Input aria-label="Editable URL" /></DynamicBindingControl>)
+    expect(screen.getByLabelText('Editable URL').hasAttribute('disabled')).toBeFalse()
+    act(() => useEditorStore.getState().setPageTranslationGroup(other.id, undefined))
+    await waitFor(() => expect(hook.result.current.context?.page?.translations?.en?.id).toBe(pageId))
+    expect(hook.result.current.error).toBeUndefined()
+  })
+
+  it('authors explicit relationships, rejects duplicate languages and respects structural permissions', () => {
+    const { pageId } = setup()
+    const other = useEditorStore.getState().addPage('Italian', 'it/about')
+    useEditorStore.getState().setPageLanguage(other.id, 'it')
+    useEditorStore.getState().setPageTranslationGroup(other.id, 'about')
+    const site = useEditorStore.getState().site!
+    const page = site.pages.find((candidate) => candidate.id === pageId)!
+    const save = mock(() => {})
+    const view = render(<PageSettingsDialog page={page} pages={site.pages} onCancel={() => {}} onSave={save} />)
+    fireEvent.change(screen.getByLabelText('Translation group'), { target: { value: 'about' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(save).toHaveBeenLastCalledWith(expect.objectContaining({ language: 'en', translationGroup: 'about' }))
+    fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'IT' } })
+    expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBeTrue()
+    expect(screen.getByRole('alert').textContent).toContain('already contains')
+    view.rerender(<PageSettingsDialog page={page} pages={site.pages} canEditStructure={false} onCancel={() => {}} onSave={save} />)
+    expect(screen.getByLabelText('Translation group').hasAttribute('disabled')).toBeTrue()
+  })
+
   it('renders current page language and recovers preview after invalid JSON is corrected', async () => {
     const { catalogues } = setup()
     const hook = renderHook(() => {

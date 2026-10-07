@@ -12,6 +12,7 @@ import {
   duplicatePage,
   reconcileSiteExplorerInPlace,
   parsePageSeo,
+  parsePageTranslationGroup,
 } from '@core/page-tree'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 import { clearCanvasSelectionDraft } from '../selectionSlice'
@@ -24,6 +25,7 @@ type PageActions = Pick<
   | 'renamePage'
   | 'setPageSeo'
   | 'setPageLanguage'
+  | 'setPageTranslationGroup'
   | 'duplicatePage'
   | 'reorderPages'
   | 'convertPageToTemplate'
@@ -68,6 +70,17 @@ export function createPageActions({
         const page = p.pages.find((candidate) => candidate.id === pageId)
         if (!page) return false
         renamePage(p, pageId, title, slug)
+        return true
+      })
+    },
+
+    setPageTranslationGroup: (pageId, group) => {
+      group = parsePageTranslationGroup(group, `pages.${pageId}.translationGroup`)
+      mutateSite((site) => {
+        const page = site.pages.find((candidate) => candidate.id === pageId)
+        if (!page || page.translationGroup === group) return false
+        if (group) page.translationGroup = group
+        else delete page.translationGroup
         return true
       })
     },

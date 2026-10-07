@@ -1381,4 +1381,16 @@ export const pgMigrations: Migration[] = [
          );
     `).join('\n'),
   },
+  {
+    id: '033_page_translation_group',
+    sql: `
+      update data_tables
+         set fields_json = fields_json || '[{"type":"text","id":"translationGroup","label":"Translation group","builtIn":true}]'::jsonb
+       where id = 'pages'
+         and not exists (
+           select 1 from jsonb_array_elements(data_tables.fields_json) field
+            where field ->> 'id' = 'translationGroup'
+         );
+    `,
+  },
 ]

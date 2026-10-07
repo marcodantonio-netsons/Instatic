@@ -95,6 +95,9 @@ function diffPage(capabilities: readonly CoreCapability[], previous: Page, next:
   if (previous.title !== next.title) {
     requireChange(capabilities, 'structure', `${pagePath}.title`, 'page title changed')
   }
+  if (previous.translationGroup !== next.translationGroup) {
+    requireChange(capabilities, 'structure', `${pagePath}.translationGroup`, 'page translation relationship changed')
+  }
   if (previous.language !== next.language) {
     requireChange(capabilities, 'structure', `${pagePath}.language`, 'document language changed')
   }

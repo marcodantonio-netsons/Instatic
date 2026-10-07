@@ -66,7 +66,7 @@ describe('language-file static rendering', () => {
     component.tree.nodes.label.props.text = ''
     component.tree.nodes.label.propBindings = { text: { paramId: 'label-param' } }
     expect(publishPage(page, site, registry).html).toContain('Contact &amp; support</h2>')
-    expect(buildPageFrame(page).language).toBe('en')
+    expect(buildPageFrame(page, site).language).toBe('en')
   })
 
   it('keeps terminal page language inside an outer template and preserves language on duplication', () => {

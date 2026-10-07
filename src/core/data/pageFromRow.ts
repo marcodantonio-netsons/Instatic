@@ -20,7 +20,7 @@
  */
 
 import type { Page, PageNode, PageTemplateConfig } from '@core/page-tree'
-import { parsePageNode, parsePageTemplate } from '@core/page-tree'
+import { parsePageTranslationGroup, parsePageNode, parsePageTemplate } from '@core/page-tree'
 import type { DataRow, DataRowCells } from '@core/data/schemas'
 import { readPageSeoCells, writePageSeoCells } from './pageSeoCells'
 
@@ -61,6 +61,7 @@ export function pageFromRow(row: DataRow): Page {
     }
   }
 
+  const translationGroup = parsePageTranslationGroup(cells.translationGroup, `pages.${row.id}.translationGroup`)
   const title = typeof cells.title === 'string' ? cells.title : ''
 
   // Template reconstruction
@@ -69,6 +70,7 @@ export function pageFromRow(row: DataRow): Page {
 
   return {
     id: row.id,
+    ...(translationGroup ? { translationGroup } : {}),
     slug: row.slug,
     title,
     ...(typeof cells.language === 'string' && cells.language.length > 0 ? { language: cells.language } : {}),
@@ -125,6 +127,7 @@ export function pageToCells(page: Page): DataRowCells {
   }
 
   if (page.language) cells.language = page.language
+  if (page.translationGroup) cells.translationGroup = page.translationGroup
 
   if (page.template) {
     cells.templateEnabled = true
