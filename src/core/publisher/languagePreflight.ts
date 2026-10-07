@@ -31,10 +31,27 @@ export function assertSiteTranslations(site: SiteDocument): void {
       }
     }
   }
+  const collectJsonStrings = (value: unknown): void => {
+    if (typeof value === 'string') collectText(value)
+    else if (Array.isArray(value)) for (const item of value) collectJsonStrings(item)
+    else if (value && typeof value === 'object') for (const item of Object.values(value)) collectJsonStrings(item)
+  }
 
   collectText(site.settings.metaTitle)
   collectText(site.settings.metaDescription)
   for (const page of site.pages) {
+    collectText(page.seo?.title)
+    collectText(page.seo?.description)
+    collectText(page.seo?.canonical)
+    for (const alternate of page.seo?.alternates ?? []) collectText(alternate.href)
+    for (const meta of page.seo?.meta ?? []) {
+      collectText(meta.content)
+      collectText(meta.media)
+    }
+    for (const link of page.seo?.links ?? []) {
+      for (const field of ['href', 'type', 'sizes', 'media'] as const) collectText(link[field])
+    }
+    collectJsonStrings(page.seo?.structuredData)
     for (const node of Object.values(page.nodes)) {
       collectProps(node.props)
       for (const binding of Object.values(node.dynamicBindings ?? {})) {

@@ -8,7 +8,8 @@
 export { publishPage } from './render'
 export { assertSiteTranslations } from './languagePreflight'
 export { findDynamicNodeIds } from './dynamicDetection'
-export type { DocumentMetaOverride, PublishedRuntimePackageImportmap } from './render'
+export type { PublishedRuntimePackageImportmap } from './render'
+export type { DocumentMetaOverride } from './documentMeta'
 
 export { renderNode, resolveSpecialRenderer, getSpecialRendererModuleIds } from './renderNode'
 
