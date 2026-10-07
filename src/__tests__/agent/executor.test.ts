@@ -11,10 +11,12 @@
  */
 
 import { describe, it, expect } from 'bun:test'
+import { GlobalWindow } from 'happy-dom'
 import { useEditorStore } from '@site/store/store'
 import { executeAgentTool } from '@site/agent'
 import type { AiToolOutput } from '@core/ai'
 import { classNamesForClassIds } from '@core/page-tree'
+import { collectClassCSS } from '@core/publisher'
 import '@modules/base'
 
 // ---------------------------------------------------------------------------
@@ -238,26 +240,44 @@ describe('executeAgentTool — insertHtml', () => {
     }
   })
 
-  it('a <style> @media block folds into the class contextStyles for the matching breakpoint', async () => {
+  it('a <style> @media fragment keeps its source order when inserted and published', async () => {
     const { rootId } = freshStore()
     // The default site's `mobile` breakpoint is `(max-width: 375px)`, so a
-    // matching @media query folds into contextStyles.mobile.
+    // matching @media fragment keeps contextStyles.mobile at its own position.
     const result = await executeAgentTool('site_insert_html', {
       parentId: rootId,
       html:
         '<style>' +
         '.hero-title { font-size: 56px; }' +
+        '.secondary { font-size: 40px; }' +
         '@media (max-width: 375px) { .hero-title { font-size: 32px; } }' +
         '</style>' +
-        '<h1 class="hero-title">Hello</h1>',
+        '<h1 class="hero-title secondary">Hello</h1>',
     })
     expectNodeIds(result)
-    const cls = Object.values(useEditorStore.getState().site!.styleRules).find(
+    const site = useEditorStore.getState().site!
+    const cls = Object.values(site.styleRules).find(
       (c) => c.name === 'hero-title',
     )
     expect(cls).toBeDefined()
     expect(cls!.styles.fontSize).toBe('56px')
-    expect(cls!.contextStyles.mobile.fontSize).toBe('32px')
+    const conditional = Object.values(site.styleRules).find((rule) =>
+      rule.selector === '.hero-title' && rule.contextStyles.mobile?.fontSize === '32px',
+    )!
+    expect(conditional.kind).toBe('ambient')
+    expect(conditional.order).toBeGreaterThan(cls!.order)
+
+    const css = collectClassCSS(site)
+    for (const [width, expected] of [[375, '32px'], [1280, '40px']] as const) {
+      const window = new GlobalWindow({ width })
+      const style = window.document.createElement('style')
+      style.textContent = css
+      window.document.head.append(style)
+      const heading = window.document.createElement('h1')
+      heading.className = 'hero-title secondary'
+      window.document.body.append(heading)
+      expect(window.getComputedStyle(heading).fontSize).toBe(expected)
+    }
   })
 
   it('returns failure for missing html (schema validation)', async () => {

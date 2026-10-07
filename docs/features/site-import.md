@@ -226,11 +226,12 @@ interface ImportScript {
 | `.foo { … }` | `StyleRule{ kind:'class', name:'foo', selector:'.foo' }` |
 | `.hero .title`, `.group:hover .group-hover\:block` | One bindable class rule per selector-list alternative. The rightmost decoded class is `name`; the full selector is preserved. Selector dependency classes (`hero`, `group`) receive bare picker entries when they have no rule of their own. |
 | `h1`, `body`, `a:hover` | `StyleRule{ kind:'ambient', selector: verbatim }` |
-| `@media ... { … }` | Merged into a matching viewport context's `contextStyles` when it matches a configured media query (or an older/default max-width threshold); otherwise preserved as a reusable media condition |
+| `@media ... { … }` | Each selector occurrence becomes an ordered fragment with `contextStyles` under a matching viewport context (configured query or older/default max-width threshold); otherwise it uses a reusable media condition |
 | Unconditional local `@import "file.css"` | Followed recursively from the linked stylesheet; the imported file keeps its own source path so relative `url(...)` assets resolve correctly |
 | Trusted Google CSS2 `@import` | Parsed into `ImportGoogleFont` install requests and committed as self-hosted installed font entries |
 | `@keyframes` | Stored as a supported ambient raw CSS rule and emitted globally by the publisher after its raw-keyframes safety gate |
 | Conditional local `@import`, arbitrary external `@import`, `@layer` | Dropped; source text added to `droppedAtRules`; a `dropped-at-rule` warning emitted when surfaced by the CSS engine |
+| Nested at-rules inside `@media`, `@supports`, or `@container` | Not representable by one context id; the unsupported subtree is reported with a `dropped-at-rule` warning |
 | `@font-face` | Captured as `ParsedFontFace`; resolved into `ImportFontFamily` by `buildAssetPlan` |
 
 ---
@@ -254,11 +255,21 @@ A multi-page site typically links one stylesheet per page, and those stylesheets
 
 Resolutions apply in `applyCrossSheetClassResolutions` (via `applyConflictResolutions`, before site-vs-import rule conflicts):
 
-- **rename** — the divergent definition is materialised as ONE class rule under the new name carrying the cascade-merged declarations; the affected cascades' exclusive class fragments for the old name are dropped, class tokens in their exclusive ambient selectors follow the rename, and the affected pages' node class tokens move to the new name. Fragments in stylesheets *shared* with a kept cascade stay put (they also feed the kept definition; their declarations are still present in the materialised rule).
+- **rename** — every affected selector fragment retains its source position under the new name, and the affected pages' node class tokens follow. Exclusive fragments are renamed in place. Fragments in stylesheets *shared* with a kept cascade keep their original selector and gain a renamed companion at the same position, so both classes receive the shared declarations without collapsing the cascade.
 - **skip** — keep the first definition: the divergent cascades' exclusive fragments are dropped and their pages bind to the kept definition by name.
 - **overwrite** — this definition wins the bare name: every OTHER cascade's exclusive fragments for it are dropped.
 
 After all renames, `normalizeBindableClassRules` enforces the registry's unique-class-name invariant: per final name, the FIRST class-kind rule (in cascade source order) stays bindable; every later same-name class fragment becomes an ambient rule with the same selector — its declarations keep their cascade position, so within-cascade overrides (`base.css .btn` + `page.css .btn`) still compose like real CSS.
+
+`cssToStyleRules.ts` also preserves each occurrence within a stylesheet as a
+separate ordered fragment. Repeated base selectors and conditional overrides
+must not merge into an earlier fragment: `.a { color: red } .b { color: blue }
+.a { color: green }` makes an element with both classes green, and moving the
+last declarations into the first `.a` would incorrectly make it blue. Each
+conditional fragment keeps its own source position, with declarations stored
+under its condition's `contextStyles` id. The assignable registry rule remains
+unique, while ambient fragments retain the authored cascade and share the
+publisher's dependency-aware tree-shaker.
 
 All imported class-bearing selectors remain picker-addressable, whether or not
 the imported HTML currently uses them. This is what makes a large utility
