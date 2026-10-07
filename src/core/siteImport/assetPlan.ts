@@ -292,6 +292,7 @@ function buildFontFamilies(
         variant: face.variant,
         format: best.format,
         src: best.src,
+        ...(face.fontDisplay ? { fontDisplay: face.fontDisplay } : {}),
         ...(face.unicodeRange ? { unicodeRange: face.unicodeRange } : {}),
       })
     }
