@@ -36,9 +36,10 @@ export function buildDocumentMetaTags(
   }
   const description = override.description || seo?.description || site.settings.metaDescription
   const metaDesc = description ? `\n  <meta name="description" content="${attribute(description)}">` : ''
-  const favicon = !seo?.links?.some((link) => link.rel === 'icon')
-    && site.settings.faviconUrl && isSafeUrl(site.settings.faviconUrl)
-    ? `\n  <link rel="icon" href="${escapeHtml(site.settings.faviconUrl)}">` : ''
+  const faviconUrl = !seo?.links?.some((link) => link.rel === 'icon') && site.settings.faviconUrl
+    ? resolve(site.settings.faviconUrl) : undefined
+  const favicon = faviconUrl && isSafeUrl(faviconUrl)
+    ? `\n  <link rel="icon" href="${escapeHtml(faviconUrl)}">` : ''
   let pageMeta = ''
   const cspSources = new Map<string, Set<string>>()
   if (seo?.canonical) pageMeta += `\n  <link rel="canonical" href="${href(seo.canonical, 'seo.canonical')}">`

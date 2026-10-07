@@ -80,6 +80,7 @@ function makeSnapshot(targetTableId = 'newsletter_submissions'): PublishedPageSn
         },
       }],
       visualComponents: [],
+      files: [],
       classes: [],
       breakpoints: [],
       settingsVersion: 1,
