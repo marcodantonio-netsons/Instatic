@@ -27,6 +27,7 @@ import {
   buildSiteFrame,
   buildRouteFrame,
 } from '@core/templates/contextFrames'
+import { makeSite } from "../fixtures"
 import type { Page, SiteDocument } from '@core/page-tree'
 
 // ---------------------------------------------------------------------------
@@ -44,7 +45,7 @@ function ctx(overrides: Partial<TemplateRenderDataContext> = {}): TemplateRender
 
   return {
     entryStack: [],
-    page: buildPageFrame(fakePage),
+    page: buildPageFrame(fakePage, fakeSite),
     site: buildSiteFrame(fakeSite),
     route: buildRouteFrame('/about'),
     ...overrides,
@@ -366,9 +367,9 @@ describe('resolveDynamicProps — token interpolation', () => {
 
 describe('frame builders', () => {
   it('buildPageFrame derives permalink with index normalisation', () => {
-    const home = buildPageFrame({ id: 'p_index', slug: '/index', title: 'Home' } as unknown as Page)
+    const home = buildPageFrame({ id: 'p_index', slug: '/index', title: 'Home' } as unknown as Page, makeSite())
     expect(home.permalink).toBe('/')
-    const inner = buildPageFrame({ id: 'p_about', slug: 'about', title: 'About' } as unknown as Page)
+    const inner = buildPageFrame({ id: 'p_about', slug: 'about', title: 'About' } as unknown as Page, makeSite())
     expect(inner.permalink).toBe('/about')
   })
 

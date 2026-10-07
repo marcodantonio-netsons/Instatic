@@ -8,6 +8,8 @@
 // this pattern.
 // ---------------------------------------------------------------------------
 
+export { PageTranslationGroupSchema, PageTranslationError, parsePageTranslationGroup } from './pageTranslation'
+
 // Schemas — exported as both runtime constants (for parse/compiled validation)
 // and types (via Static<typeof X>).
 export { BaseNodeSchema,  parseBaseNodeFields } from './baseNode'

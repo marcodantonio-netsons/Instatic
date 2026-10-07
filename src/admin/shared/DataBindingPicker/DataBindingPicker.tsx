@@ -50,6 +50,7 @@ import {
 import styles from './DataBindingPicker.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { translationKeys } from '@core/localization'
+import { PageTranslationsSchema } from '@core/templates'
 import { TranslationMessagesSchema } from '@core/localization-schema'
 import { compiledCheck } from '@core/utils/typeboxCompiler'
 import { walkFieldPath } from '@core/templates/tokenInterpolation'
@@ -334,6 +335,23 @@ export function DataBindingPicker({
       result.push({ label: source.label, entries })
     }
 
+    const pagePreview = systemPreviewValues?.page
+    const pageTranslations = pagePreview && 'translations' in pagePreview ? pagePreview.translations : undefined
+    if (compiledCheck(PageTranslationsSchema, pageTranslations)) {
+      result.push({
+        label: 'Page translations',
+        entries: Object.keys(pageTranslations).flatMap((language) => [
+          { kind: 'system' as const, source: 'page' as const,
+            field: { id: `translations.${language}.permalink`, label: `${language} — URL`, format: 'url' as const } },
+          { kind: 'system' as const, source: 'page' as const,
+            field: { id: `translations.${language}.language`, label: `${language} — Language` } },
+          { kind: 'system' as const, source: 'page' as const,
+            field: { id: `translations.${language}.title`, label: `${language} — Title` } },
+          { kind: 'system' as const, source: 'page' as const,
+            field: { id: `translations.${language}.ariaCurrent`, label: `${language} — Current page attribute` } },
+        ]),
+      })
+    }
     const sitePreview = systemPreviewValues?.site
     const messages = sitePreview && 'translations' in sitePreview ? sitePreview.translations : undefined
     if (compiledCheck(TranslationMessagesSchema, messages)) {

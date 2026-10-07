@@ -44,6 +44,16 @@ Language bindings are known at publication time and do not introduce dynamic hol
 
 Full-site publication validates all configured catalogues, page languages and authored translation references before creating published snapshots or page versions. This includes shared component defaults and instance values, native attributes, whole-prop bindings and site SEO text. Escaped literal tokens retain the normal token parser behavior. Invalid translations leave the previous publication active; the publish endpoint returns a 422 error envelope naming the file or key to fix, surfaced by the existing operation toast.
 
+## Translated page routes
+
+Ordinary pages can share an authored `translationGroup` identifier. Each group contains at most one page for each canonical BCP-47 language, and every member declares its language explicitly. Page settings and the native Pages collection expose this relationship. Migration `033_page_translation_group` appends the built-in text field in every branch without replacing existing fields or content. A duplicated page keeps its language but starts outside the source translation group.
+
+The current page frame exposes `page.translations.<language>` with `id`, `language`, `title`, `permalink`, `current`, and `ariaCurrent` (`page` or `false`). Bind a normal Link URL to `{page.translations.en.permalink}` and its native `hreflang`/`aria-current` attributes to the matching fields. The binding picker lists the available translations. The publisher and canvas derive these paths from the actual page roster; renaming a slug updates the links on the next render/publication. Root pages use `/`.
+
+Only existing translations are offered. A missing authored destination is a typed error, including bindings with fallback text; it never sends the visitor to a different page or language. Duplicate language membership, template membership and missing explicit languages prevent publication before snapshot/version writes. Shared components and wrapping templates use the terminal page's relationship. URL alternatives in SEO remain separately authored canonical metadata; they do not determine local navigation. Page translation links are static HTML and require no route-map script.
+
+Route preflight follows the shared core render-tree walker, also used by media and loop prefetch. Hidden subtrees and orphaned nodes do not impose destinations on the page. Effective component parameters and slot fills, native attributes and interpolated SEO fields, including structured data, are checked before publication.
+
 ## Content boundaries
 
 Use language files for shared labels, accessibility text, validation messages and reusable interface copy. Editorial pages, articles, and authored rich content remain in the CMS, with their explicit language. Product identifiers, quantities, prices and route alternatives are structured domain/route data, not translation strings.

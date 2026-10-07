@@ -127,12 +127,13 @@ export function DynamicBindingControl({
   const activePageTableSlug = activePage
     ? primaryTemplateTableSlug(activePage)
     : null
-  const pageFrame = activePage ? buildPageFrame(activePage) : null
+  let pageFrame: ReturnType<typeof buildPageFrame> | null = null
   let siteFrame = null
   try {
+    pageFrame = activePage && activeSite ? buildPageFrame(activePage, activeSite) : null
     siteFrame = activeSite ? buildSiteFrame(activeSite, activePage?.language) : null
   } catch (_error) {
-    // Canvas reports catalogue errors; keep property and file controls editable.
+    // Canvas reports language/relationship errors; keep their authoring controls editable.
   }
   const routeFrame = pageFrame ? buildRouteFrame(pageFrame.permalink) : null
 

@@ -5,6 +5,7 @@ import {
   normalizePageSlug,
   pageSlugDuplicateError,
   pageSlugError,
+  parsePageTranslationGroup,
 } from '@core/page-tree'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
@@ -20,6 +21,7 @@ export interface PageSettingsPayload {
   slug: string
   seo?: PageSeo
   language?: string
+  translationGroup?: string
 }
 
 interface PageSettingsDialogProps {
@@ -50,12 +52,14 @@ export function PageSettingsDialog({
   const [title, setTitle] = useState(page.title)
   const [slug, setSlug] = useState(page.slug)
   const [language, setLanguage] = useState(page.language ?? '')
+  const [translationGroup, setTranslationGroup] = useState(page.translationGroup ?? '')
   const seoEditor = usePageSeoEditor(page.seo)
   const isHome = isHomePage(page)
   const inputRef = useRef<HTMLInputElement>(null)
   const titleInputId = useId()
   const slugInputId = useId()
   const languageInputId = useId()
+  const translationGroupInputId = useId()
 
   const trimmedTitle = title.trim()
   const normalizedSlug = normalizePageSlug(slug)
@@ -69,7 +73,20 @@ export function PageSettingsDialog({
   } catch (error) {
     languageValidation = getErrorMessage(error, 'Invalid language tag')
   }
-  const saveDisabled = !trimmedTitle || Boolean(slugValidation) || Boolean(seoEditor.error) || Boolean(languageValidation)
+  let translationValidation: string | null = null
+  try {
+    const group = parsePageTranslationGroup(translationGroup.trim(), 'translationGroup')
+    if (group && !language.trim()) translationValidation = 'Choose an explicit language for a translated page.'
+    if (group && language.trim()) {
+      const tag = canonicalLanguage(language)
+      if (pages.some((candidate) => candidate.id !== page.id && candidate.translationGroup === group && candidate.language && canonicalLanguage(candidate.language) === tag)) {
+        translationValidation = 'This translation group already contains a page in that language.'
+      }
+    }
+  } catch (error) {
+    translationValidation = getErrorMessage(error, 'Invalid page translation group')
+  }
+  const saveDisabled = Boolean(translationValidation) || !trimmedTitle || Boolean(slugValidation) || Boolean(seoEditor.error) || Boolean(languageValidation)
 
   useEffect(() => {
     requestAnimationFrame(() => inputRef.current?.select())
@@ -79,6 +96,7 @@ export function PageSettingsDialog({
     event.preventDefault()
     if (saveDisabled) return
     onSave({ title: trimmedTitle, slug: isHome ? page.slug : normalizedSlug, seo: seoEditor.value,
+      ...(translationGroup.trim() ? { translationGroup: translationGroup.trim() } : {}),
       ...(language.trim() ? { language: canonicalLanguage(language) } : {}),
     })
   }
@@ -146,6 +164,14 @@ export function PageSettingsDialog({
             placeholder="Inherit site language" onChange={(event) => setLanguage(event.target.value)}
             invalid={Boolean(languageValidation)} spellCheck={false} autoComplete="off" />
           {languageValidation && <p role="alert" className={dialogStyles.errorText}>{languageValidation}</p>}
+        </div>
+        <div className={dialogStyles.field}>
+          <label htmlFor={translationGroupInputId} className={dialogStyles.label}>Translation group</label>
+          <Input id={translationGroupInputId} fieldSize="sm" value={translationGroup}
+            disabled={!canEditStructure} onChange={(event) => setTranslationGroup(event.target.value)}
+            invalid={Boolean(translationValidation)} autoComplete="off" spellCheck={false} />
+          <p className={dialogStyles.label}>Use the same group for versions of this page in other languages.</p>
+          {translationValidation && <p role="alert" className={dialogStyles.errorText}>{translationValidation}</p>}
         </div>
         <PageSeoFields editor={seoEditor} editable={canEditSeo} />
       </form>

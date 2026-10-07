@@ -30,8 +30,8 @@ export interface TemplateRenderDataContext {
  * Seed the page/site/route frames a caller may have omitted from its
  * TemplateRenderDataContext. Every published page needs all four frames
  * populated so dynamic bindings against those sources resolve — even on
- * plain (non-template, non-loop) pages. Caller-provided values always
- * win; missing slots fall back to defaults derived from the page/site.
+ * plain (non-template, non-loop) pages. Derived language catalogues and page
+ * relationships remain authoritative when a caller provides other frames.
  */
 export function buildTemplateRenderContext(
   page: Page,
@@ -39,7 +39,8 @@ export function buildTemplateRenderContext(
   incoming: TemplateRenderDataContext | undefined,
 ): TemplateRenderDataContext {
   const provided = incoming ?? { entryStack: [] }
-  const pageFrame = provided.page ?? buildPageFrame(page)
+  const nativePageFrame = buildPageFrame(page, site)
+  const pageFrame = { ...nativePageFrame, ...provided.page, translations: nativePageFrame.translations }
   const siteFrame = buildSiteFrame(site, pageFrame.language)
   return {
     entryStack: provided.entryStack,

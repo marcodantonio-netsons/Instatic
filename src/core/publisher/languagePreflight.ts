@@ -1,6 +1,7 @@
 import type { SiteDocument } from '@core/page-tree'
 import { resolveSiteLanguage, resolveTranslation } from '@core/localization'
 import { parseTokenString } from '@core/templates'
+import { assertPageTranslationBindings } from './pageTranslationPreflight'
 
 /**
  * Validate authored language bindings before any publication state is written.
@@ -9,6 +10,7 @@ import { parseTokenString } from '@core/templates'
  * The ordinary token parser owns escaping and binding syntax here as well.
  */
 export function assertSiteTranslations(site: SiteDocument): void {
+  assertPageTranslationBindings(site)
   const frame = resolveSiteLanguage(site)
   for (const page of site.pages) resolveSiteLanguage(site, page.language)
 

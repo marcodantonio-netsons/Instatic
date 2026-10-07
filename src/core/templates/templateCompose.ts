@@ -166,6 +166,8 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
     // wrapping template's title is chrome, never `<title>` content. Entry
     // terminals have no Page here; their caller overrides `title` from the
     // published row after composing.
+    ...(terminal.kind === 'page' && terminal.page.translationGroup
+      ? { translationGroup: terminal.page.translationGroup } : {}),
     title: terminal.kind === 'page' ? terminal.page.title : innermost.title,
     ...((terminal.kind === 'page' ? terminal.page.language : innermost.language)
       ? { language: terminal.kind === 'page' ? terminal.page.language : innermost.language }
