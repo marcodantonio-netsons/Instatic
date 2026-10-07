@@ -24,7 +24,6 @@ import type { Page, SiteDocument } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { buildPageFrame, buildSiteFrame, buildRouteFrame } from '@core/templates/contextFrames'
-import { interpolateTokens } from '@core/templates/tokenInterpolation'
 import { effectiveNodeBindings, resolveDynamicProps } from '@core/templates/dynamicBindings'
 import { classNamesForClassIds } from '@core/page-tree'
 import {
@@ -37,7 +36,8 @@ import { collectUserStylesheetCss } from './userStylesheets'
 import { PUBLISHER_RESET_CSS } from './reset'
 import { buildSiteFrameworkCss } from './frameworkCss'
 import type { SiteCssBundle } from './siteCssBundle'
-import { escapeHtml, isSafeUrl } from './utils'
+import { escapeHtml } from './utils'
+import { buildDocumentMetaTags, type DocumentMetaOverride } from './documentMeta'
 import { addCspSources, createBaseCspPlan, cspMetaTag } from './cspPlan'
 import type { PublishedPageRuntimeAssets } from '@core/site-runtime/schemas'
 import { hasPublishedRuntimeScripts, scriptTagsForRuntimeAssets } from '@core/site-runtime'
@@ -167,15 +167,6 @@ interface PublishPageOptions {
    * them here instead.
    */
   documentMeta?: DocumentMetaOverride
-}
-
-/**
- * `<head>` values supplied by the caller for this render only. An omitted
- * (or blank) key falls through to the site settings.
- */
-export interface DocumentMetaOverride {
-  title?: string
-  description?: string
 }
 
 /**
@@ -329,62 +320,6 @@ function bodyHtmlAttributes(value: unknown): string {
 }
 
 /**
- * `<head>` metadata tags derived from the caller's overrides + site
- * settings + page.
- *
- * - `title` falls back through the caller's `documentMeta.title` (a
- *   post-type entry's authored SEO title) → metaTitle → page.title →
- *   site.name.
- * - `description` falls back through `documentMeta.description` → the
- *   site-level metaDescription.
- * - Whichever value wins is then token-interpolated against the render
- *   context before escaping, so `{currentEntry.*}` / `{page.*}` /
- *   `{site.*}` resolve per-entry on entry routes. That serves both ways
- *   of authoring a title: fill each row's SEO field by hand, or write one
- *   pattern like `{currentEntry.name} | Acme` on the template page. The
- *   fallback chain picks the raw value first; a token that resolves empty
- *   does NOT re-trigger the fallback — authors opt into fallbacks with the
- *   token's own `{...|fallback}` syntax.
- * - URL-typed settings (faviconUrl) are validated by
- *   isSafeUrl() (blocks `javascript:` / `vbscript:` schemes) and then
- *   escapeHtml()'d for safe attribute interpolation.
- * - `lang` honours WCAG 2.1 AA SC 3.1.1 and escapes the BCP-47 tag
- *   because settings.language is user-controlled.
- */
-interface DocumentMetaTags {
-  pageTitle: string
-  metaDesc: string
-  favicon: string
-  langAttr: string
-}
-
-function buildDocumentMetaTags(
-  site: SiteDocument,
-  page: Page,
-  context: TemplateRenderDataContext,
-  override: DocumentMetaOverride = {},
-): DocumentMetaTags {
-  const { settings } = site
-  const description = override.description || settings.metaDescription
-  const metaDesc = description
-    ? `
-  <meta name="description" content="${escapeHtml(interpolateTokens(description, context))}">`
-    : ''
-  const favicon =
-    settings.faviconUrl && isSafeUrl(settings.faviconUrl)
-      ? `\n  <link rel="icon" href="${escapeHtml(settings.faviconUrl)}">`
-      : ''
-  return {
-    pageTitle: escapeHtml(
-      interpolateTokens(override.title || (settings.metaTitle ?? page.title ?? site.name), context),
-    ),
-    metaDesc,
-    favicon,
-    langAttr: escapeHtml(context.site?.language ?? page.language ?? settings.language ?? 'en'),
-  }
-}
-
-/**
  * Runtime / importmap / loop-runtime `<script>` tags + the flags the CSP
  * builder needs. Centralising every "do we need a script tag?" branch in
  * one place keeps publishPage straight-line and makes adding a new
@@ -494,6 +429,7 @@ interface AssembledDocumentParts {
   pageTitle: string
   metaDesc: string
   favicon: string
+  pageMeta: string
   styleHeadHtml: string
   importmapTag: string
   headRuntimeScripts: string
@@ -512,7 +448,7 @@ function assembleHtmlDocument(parts: AssembledDocumentParts): string {
     `<head>\n` +
     `  <meta charset="UTF-8">\n` +
     `  <meta name="viewport" content="width=device-width, initial-scale=1.0">${parts.csp}\n` +
-    `  <title>${parts.pageTitle}</title>${parts.metaDesc}${parts.favicon}\n` +
+    `  <title>${parts.pageTitle}</title>${parts.metaDesc}${parts.favicon}${parts.pageMeta}\n` +
     parts.styleHeadHtml +
     lineOrEmpty(parts.importmapTag) +
     lineOrEmpty(parts.headRuntimeScripts) +
@@ -617,6 +553,11 @@ export function publishPage(
   )
 
   const meta = buildDocumentMetaTags(site, page, templateContext, options.documentMeta)
+  for (const [directive, sources] of meta.cspSources) {
+    const allSources = acc.cspSources.get(directive) ?? new Set<string>()
+    for (const source of sources) allSources.add(source)
+    acc.cspSources.set(directive, allSources)
+  }
   const runtime = buildRuntimeAssetsBlock(options, acc)
   const csp = buildContentSecurityPolicy(runtime.anyScriptTag, runtime.importmap, acc.cspSources)
 
@@ -626,6 +567,7 @@ export function publishPage(
     pageTitle: meta.pageTitle,
     metaDesc: meta.metaDesc,
     favicon: meta.favicon,
+    pageMeta: meta.pageMeta,
     styleHeadHtml,
     importmapTag: runtime.importmapTag,
     headRuntimeScripts: runtime.headRuntimeScripts,

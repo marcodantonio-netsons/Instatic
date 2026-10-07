@@ -101,6 +101,7 @@ export function SiteExplorerPanel({
   const openPageInCanvas = useEditorStore((s) => s.openPageInCanvas)
   const setActiveDocument = useEditorStore((s) => s.setActiveDocument)
   const addPage = useEditorStore((s) => s.addPage)
+  const setPageSeo = useEditorStore((s) => s.setPageSeo)
   const renamePage = useEditorStore((s) => s.renamePage)
   const setPageLanguage = useEditorStore((s) => s.setPageLanguage)
   const deletePage = useEditorStore((s) => s.deletePage)
@@ -163,6 +164,7 @@ export function SiteExplorerPanel({
     pages,
     renamePage,
     setPageLanguage,
+    setPageSeo,
     convertPageToTemplate,
     openPageInCanvas,
   })

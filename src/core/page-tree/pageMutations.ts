@@ -130,6 +130,7 @@ export function duplicatePage(
     rootNodeId: newRootId,
     nodes: newNodes,
     ...(source.language ? { language: source.language } : {}),
+    ...(source.seo ? { seo: structuredClone(source.seo) } : {}),
   }
   site.pages.push(newPage)
   return newPage

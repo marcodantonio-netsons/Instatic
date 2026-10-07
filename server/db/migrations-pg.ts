@@ -1,3 +1,4 @@
+import { PAGE_SEO_FIELDS_032 } from './migrationData/pageSeo032'
 import type { Migration } from './runMigrations'
 
 /**
@@ -1367,5 +1368,17 @@ export const pgMigrations: Migration[] = [
        where id = 'pages'
          and not exists (select 1 from jsonb_array_elements(data_tables.fields_json) field where field ->> 'id' = 'language');
     `,
+  },
+  {
+    id: '032_page_seo',
+    sql: PAGE_SEO_FIELDS_032.map((field) => `
+      update data_tables
+         set fields_json = fields_json || '${`[${field.json}]`.replace(/'/g, "''")}'::jsonb
+       where logical_id = 'pages'
+         and not exists (
+           select 1 from jsonb_array_elements(fields_json) existing
+            where existing->>'id' = '${field.id}'
+         );
+    `).join('\n'),
   },
 ]
