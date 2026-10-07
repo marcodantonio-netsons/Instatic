@@ -39,6 +39,7 @@ export {
   packageNameFromImportSpecifier,
 } from './importAnalysis'
 export {
+  collectPublishedRuntimeScripts,
   hasPublishedRuntimeScripts,
   scriptTagsForRuntimeAssets,
   publishedRuntimeResourceOrigins,

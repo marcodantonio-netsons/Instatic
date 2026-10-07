@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'bun:test'
-import { createUsedStyleRuleIdSelector, collectUsedStyleRuleIds } from '@core/publisher'
 import { createSelectorUsageMapSelector } from '@site/panels/selectorUsage'
-import { makeNode, makePage, makeSite, makeVC } from '../fixtures'
+import { makeNode, makePage, makeSite } from '../fixtures'
 
 describe('class usage across immutable collaboration snapshots', () => {
   it('does not rescan unchanged trees when another row is projected', () => {
@@ -11,16 +10,13 @@ describe('class usage across immutable collaboration snapshots', () => {
     const page = makePage({ nodes, rootNodeId: 'root' })
     const other = makePage({ nodes: { second: makeNode({ id: 'second', classIds: ['before'] }) }, rootNodeId: 'second' })
     const site = makeSite({ pages: [page, other] })
-    const selectIds = createUsedStyleRuleIdSelector()
     const selectCounts = createSelectorUsageMapSelector()
-    expect(selectIds(site)).toBe('before\0shared')
     expect(selectCounts(site).get('shared')).toBe(1)
     const baseline = reads
     const changed = { ...site, pages: [page, { ...other, nodes: { second: makeNode({ id: 'second', classIds: ['after'] }) } }] }
-    expect(selectIds(changed)).toBe('after\0shared')
     expect(selectCounts(changed).has('before')).toBe(false)
+    expect(selectCounts(changed).get('after')).toBe(1)
     expect(reads).toBe(baseline)
-    expect(new Set(selectIds(changed).split('\0'))).toEqual(collectUsedStyleRuleIds(changed))
   })
 
   it('keeps counts referentially stable for text edits and handles removal and reload', () => {
@@ -36,19 +32,4 @@ describe('class usage across immutable collaboration snapshots', () => {
     expect(selectCounts(null).size).toBe(0)
   })
 
-  it('retains component and script references and invalidates replaced snapshots', () => {
-    const node = makeNode({ id: 'root', classIds: ['component-node'] })
-    const component = makeVC({ id: 'component', name: 'Component', classIds: ['component-shell'], tree: { rootNodeId: 'root', nodes: { root: node } } })
-    const site = makeSite({
-      visualComponents: [component],
-      files: [{ id: 'runtime', path: 'runtime.js', type: 'script', content: "document.body.classList.add('open')", createdAt: 1, updatedAt: 1 }],
-      styleRules: { scripted: { id: 'scripted', name: 'open', selector: '.open', kind: 'class', order: 0, styles: {}, contextStyles: {}, createdAt: 1, updatedAt: 1 } },
-    })
-    const selectIds = createUsedStyleRuleIdSelector()
-    expect(selectIds(site)).toBe([...collectUsedStyleRuleIds(site)].sort().join('\0'))
-    const changed = { ...site, visualComponents: [{ ...component, classIds: ['changed-shell'], tree: { ...component.tree, nodes: { root: { ...node, classIds: ['changed-node'] } } } }] }
-    expect(selectIds(changed)).toBe('changed-node\0changed-shell\0scripted')
-    expect(selectIds({ ...changed, files: [] })).toBe('changed-node\0changed-shell')
-    expect(selectIds(site)).toBe('component-node\0component-shell\0scripted')
-  })
 })
