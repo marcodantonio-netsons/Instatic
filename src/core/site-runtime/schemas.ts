@@ -103,6 +103,8 @@ const SiteScriptResourceOriginsSchema = Type.Object({
   scripts: Type.Array(Type.String()),
   frames: Type.Array(Type.String()),
   connections: Type.Array(Type.String()),
+  styles: Type.Optional(Type.Array(Type.String())),
+  fonts: Type.Optional(Type.Array(Type.String())),
 })
 
 export type SiteScriptResourceOrigins = Static<typeof SiteScriptResourceOriginsSchema>

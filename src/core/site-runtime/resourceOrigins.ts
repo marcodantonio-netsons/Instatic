@@ -25,6 +25,12 @@ export function normalizeResourceOrigins(raw: unknown): SiteScriptResourceOrigin
       return origin ? [origin] : []
     }))].sort()
   }
-  const result = { scripts: origins(raw.scripts), frames: origins(raw.frames), connections: origins(raw.connections) }
-  return result.scripts.length || result.frames.length || result.connections.length ? result : undefined
+  const styles = origins(raw.styles)
+  const fonts = origins(raw.fonts)
+  const result = {
+    scripts: origins(raw.scripts), frames: origins(raw.frames), connections: origins(raw.connections),
+    ...(styles.length ? { styles } : {}),
+    ...(fonts.length ? { fonts } : {}),
+  }
+  return result.scripts.length || result.frames.length || result.connections.length || styles.length || fonts.length ? result : undefined
 }

@@ -141,12 +141,13 @@ export function ScriptSettingsPane({ file }: ScriptSettingsPaneProps) {
 
       <div className={styles.field} aria-label="External resources">
         <span className={styles.label}>External resources</span>
-        {(['scripts', 'frames', 'connections'] as const).map((kind) => (
+        {(['scripts', 'styles', 'frames', 'fonts', 'connections'] as const).map((kind) => (
           <ResourceOriginsControl
             key={`${file.id}:${kind}`}
             label={kind.charAt(0).toUpperCase() + kind.slice(1)}
             origins={config.resourceOrigins?.[kind] ?? []}
             onChange={(origins) => patch({ resourceOrigins: {
+              ...config.resourceOrigins,
               scripts: config.resourceOrigins?.scripts ?? [],
               frames: config.resourceOrigins?.frames ?? [],
               connections: config.resourceOrigins?.connections ?? [],
