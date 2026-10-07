@@ -22,10 +22,8 @@
 
 import type { Page, SiteDocument } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
-import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
-import { buildPageFrame, buildSiteFrame, buildRouteFrame } from '@core/templates/contextFrames'
-import { interpolateTokens } from '@core/templates/tokenInterpolation'
-import { effectiveNodeBindings, resolveDynamicProps } from '@core/templates/dynamicBindings'
+import { buildTemplateRenderContext, interpolateTokens, effectiveNodeBindings, resolveDynamicProps } from '@core/templates'
+import type { TemplateRenderDataContext } from '@core/templates'
 import { classNamesForClassIds } from '@core/page-tree'
 import {
   normalizeHtmlAttributeName,
@@ -257,29 +255,6 @@ function slugToFilename(slug: string, title: string): string {
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
   return base === '' || base === 'index' ? 'index.html' : `${base}.html`
-}
-
-/**
- * Seed the page/site/route frames a caller may have omitted from its
- * TemplateRenderDataContext. Every published page needs all four frames
- * populated so dynamic bindings against those sources resolve — even on
- * plain (non-template, non-loop) pages. Caller-provided values always
- * win; missing slots fall back to defaults derived from the page/site.
- */
-function composeTemplateContext(
-  page: Page,
-  site: SiteDocument,
-  incoming: TemplateRenderDataContext | undefined,
-): TemplateRenderDataContext {
-  const provided = incoming ?? { entryStack: [] }
-  const pageFrame = provided.page ?? buildPageFrame(page)
-  const siteFrame = buildSiteFrame(site, pageFrame.language)
-  return {
-    entryStack: provided.entryStack,
-    page: pageFrame,
-    site: { ...siteFrame, ...provided.site, language: siteFrame.language, translations: siteFrame.translations },
-    route: provided.route ?? buildRouteFrame(pageFrame.permalink),
-  }
 }
 
 /**
@@ -558,7 +533,7 @@ export function publishPage(
   // Composed once per page render: the walker reads it through the config,
   // and the <head> builder interpolates {source.field} tokens in the
   // title/description against the same frames.
-  const templateContext = composeTemplateContext(page, site, options.templateContext)
+  const templateContext = buildTemplateRenderContext(page, site, options.templateContext)
 
   // Read-only inputs of this render pass. A renderer that needs a different
   // page (VC ref) or template frame (loop iteration) derives a child config —

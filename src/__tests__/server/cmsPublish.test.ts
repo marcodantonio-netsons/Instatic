@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { SiteDocument, SiteShell } from '@core/page-tree'
 import { LocalizationError } from '@core/localization'
+import { FormConfigurationError } from '@core/forms'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import type { DbResult } from '../../../server/db'
 import { saveDraftSite } from '../../../server/repositories/site'
@@ -286,6 +287,33 @@ async function seedSiteAndPage(
 }
 
 describe('CMS publishing', () => {
+  it('preserves the previous snapshot, version and active artefact for invalid form behavior', async () => {
+    const { state, db } = createPublishFakeDb()
+    await seedSiteAndPage(db, 'Previous published content')
+    await publishDraftSite(db, 'admin_1')
+    const snapshots = structuredClone(state.siteSnapshots)
+    const versions = structuredClone(state.dataRowVersions)
+    const activeVersion = state.dataRows[0].active_version_id
+    const uploadsDir = await mkdtemp(join(tmpdir(), 'form-publish-'))
+    try {
+      const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+      await writeArtefact(slotDir, '/', '<html>Previous published content</html>')
+      await swapSlot(uploadsDir, slot)
+      const version = getPublishVersion()
+      const page = makeHomePage('Invalid behavior')
+      page.nodes.text_1.moduleId = 'base.form'
+      page.nodes.text_1.props = { mode: 'request', formId: 'contact', action: 'javascript:invalid' }
+      await saveDataRowDraft(db, MAIN_SCOPE, page.id, { cells: pageToCells(page), slug: page.slug }, 'admin_1')
+      await expect(publishDraftSite(db, 'admin_1', uploadsDir)).rejects.toBeInstanceOf(FormConfigurationError)
+      expect(state.siteSnapshots).toEqual(snapshots)
+      expect(state.dataRowVersions).toEqual(versions)
+      expect(state.dataRows[0].active_version_id).toBe(activeVersion)
+      expect(getPublishVersion()).toBe(version)
+      expect(await getActiveSlot(uploadsDir)).toBe(slot)
+      expect(await readArtefact(uploadsDir, '/')).toBe('<html>Previous published content</html>')
+    } finally { await rm(uploadsDir, { recursive: true, force: true }) }
+  })
+
   for (const invalid of ['catalogue', 'key', 'pageLanguage'] as const) {
     it(`leaves snapshots, publish version and the active artefact intact for an invalid language ${invalid}`, async () => {
       const { state, db } = createPublishFakeDb()
