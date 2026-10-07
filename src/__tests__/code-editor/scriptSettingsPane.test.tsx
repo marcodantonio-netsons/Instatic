@@ -47,6 +47,18 @@ function resetStore() {
 beforeEach(resetStore)
 
 describe('Script runtime settings pane', () => {
+  it('edits styles and fonts independently without clearing another resource category', () => {
+    render(<CodeEditorPanel />)
+    for (const [kind, value] of [['styles', 'https://styles.example'], ['fonts', 'https://fonts.example'], ['scripts', 'https://scripts.example']]) {
+      const input = screen.getByLabelText(`Allowed ${kind} origins`)
+      fireEvent.change(input, { target: { value } })
+      fireEvent.blur(input)
+    }
+    const origins = useEditorStore.getState().siteRuntime.scripts['script-1'].resourceOrigins
+    expect(origins?.styles).toEqual(['https://styles.example'])
+    expect(origins?.fonts).toEqual(['https://fonts.example'])
+    expect(origins?.scripts).toEqual(['https://scripts.example'])
+  })
   it('validates origins locally and preserves grants while invalid text is corrected', () => {
     render(<CodeEditorPanel />)
     const input = screen.getByLabelText('Allowed scripts origins')

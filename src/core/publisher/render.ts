@@ -467,6 +467,8 @@ function buildContentSecurityPolicy(
   const plan = createBaseCspPlan({ anyScriptTag, importmapSha: importmap?.sha256 })
   for (const origins of publishedRuntimeResourceOrigins(runtimeAssets)) {
     if (origins.scripts.length) addCspSources(plan, 'script-src', origins.scripts)
+    if (origins.styles?.length) addCspSources(plan, 'style-src', ["'self'", ...origins.styles])
+    if (origins.fonts?.length) addCspSources(plan, 'font-src', ["'self'", ...origins.fonts])
     if (origins.frames.length) addCspSources(plan, 'frame-src', origins.frames)
     if (origins.connections.length) {
       addCspSources(plan, 'connect-src', ["'self'", ...origins.connections])

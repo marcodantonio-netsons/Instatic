@@ -208,6 +208,19 @@ function extractPublishedCsp(html: string): string {
 }
 
 describe('publishPage — CSP frame-src from module cspSources', () => {
+  it('grants external styles and fonts only for emitted local scripts, retaining same-origin sources', () => {
+    const page = makePage({ root: { moduleId: 'base.text', props: {} } })
+    const registry = makeRegistry({ 'base.text': makeModule('base.text') })
+    const asset = { fileId: 'widget', src: '/widget.js', placement: 'head' as const, timing: 'immediate' as const, priority: 1,
+      resourceOrigins: { scripts: [], frames: [], connections: [], styles: ['https://styles.example'], fonts: ['https://fonts.example'] } }
+    const csp = extractPublishedCsp(publishPage(page, makeSite(), registry, { runtimeAssets: { scripts: [asset] } }).html)
+    expect(csp).toContain("style-src 'self' 'unsafe-inline' https://styles.example;")
+    expect(csp).toContain("font-src 'self' https://fonts.example;")
+    expect(csp).toContain("frame-src 'none';")
+    const rejected = extractPublishedCsp(publishPage(page, makeSite(), registry, { runtimeAssets: { scripts: [{ ...asset, src: '//remote.example/widget.js' }] } }).html)
+    expect(rejected).not.toContain('styles.example')
+    expect(rejected).not.toContain('fonts.example')
+  })
   it('does not lift frame restrictions for a connection-only script or invalid script URL', () => {
     const page = makePage({ root: { moduleId: 'base.text', props: {} } })
     const registry = makeRegistry({ 'base.text': makeModule('base.text') })
