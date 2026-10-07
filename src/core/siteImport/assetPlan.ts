@@ -454,6 +454,7 @@ function normalizeRules(
 
     const newStyles = { ...rule.styles } as Record<string, unknown>
     let newRawCss = rule.rawCss
+    let newAtRule = rule.atRule
     // Clone every per-context override bag so url() rewrites don't mutate the
     // source plan. Both viewport contexts and custom conditions live here.
     const newContextStyles: Record<string, Record<string, unknown>> = {}
@@ -468,6 +469,13 @@ function normalizeRules(
       if (ref.rawCss === true) {
         if (typeof newRawCss === 'string') {
           newRawCss = replaceRawUrlInValue(newRawCss, ref.rawUrl, fileMapKey)
+        }
+      } else if (newAtRule?.kind === 'property' && ref.property === 'initialValue') {
+        if (newAtRule.initialValue !== undefined) {
+          newAtRule = {
+            ...newAtRule,
+            initialValue: replaceRawUrlInValue(newAtRule.initialValue, ref.rawUrl, fileMapKey),
+          }
         }
       } else if (ref.contextId === undefined) {
         const val = newStyles[ref.property]
@@ -490,6 +498,7 @@ function normalizeRules(
       styles: newStyles,
       contextStyles: newContextStyles,
       ...(newRawCss !== undefined ? { rawCss: newRawCss } : {}),
+      ...(newAtRule !== undefined ? { atRule: newAtRule } : {}),
     }
   })
 

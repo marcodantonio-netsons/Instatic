@@ -1106,7 +1106,7 @@ describe('executeAgentTool — applyCss', () => {
     expect(matches[0].styles.textDecoration).toBe('underline')
   })
 
-  it('folds a matching @media block into the rule contextStyles', async () => {
+  it('preserves a matching @media fragment at its source position', async () => {
     freshStore()
     await executeAgentTool('site_apply_css', {
       operation: 'merge',
@@ -1116,7 +1116,10 @@ describe('executeAgentTool — applyCss', () => {
     })
     const cls = findRule((c) => c.name === 'hero-title')!
     expect(cls.styles.fontSize).toBe('56px')
-    expect(cls.contextStyles.mobile.fontSize).toBe('32px')
+    const fragment = findRule((c) => c.selector === '.hero-title' && c.kind === 'ambient')!
+    expect(fragment.contextStyles.mobile.fontSize).toBe('32px')
+    expect(fragment.grouping).toEqual([expect.objectContaining({ kind: 'context', contextId: 'mobile' })])
+    expect(fragment.order).toBeGreaterThan(cls.order)
   })
 
   it('replace makes one selector payload authoritative without changing its identity or assignment', async () => {
@@ -1260,11 +1263,14 @@ describe('executeAgentTool — applyCss', () => {
     })
 
     const data = expectToolData<{ cssRulesUpdated: number; cssPropertiesRemoved: number }>(result)
-    expect(data.cssRulesUpdated).toBe(1)
+    expect(data.cssRulesUpdated).toBe(2)
     expect(data.cssPropertiesRemoved).toBeGreaterThan(4)
     const rule = findRule((candidate) => candidate.selector === '.mask')!
     expect(rule.styles.color).toBe('transparent')
-    for (const bag of [rule.styles, ...Object.values(rule.contextStyles)]) {
+    const bags = Object.values(useEditorStore.getState().site!.styleRules)
+      .filter((candidate) => candidate.selector === '.mask')
+      .flatMap((candidate) => [candidate.styles, ...Object.values(candidate.contextStyles)])
+    for (const bag of bags) {
       expect('background' in bag).toBe(false)
       expect('WebkitTextFillColor' in bag).toBe(false)
       expect('--mask-token' in bag).toBe(false)

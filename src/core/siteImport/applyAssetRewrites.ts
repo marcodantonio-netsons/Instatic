@@ -179,6 +179,9 @@ function rewriteRule(rule: NewStyleRule, rewriteMap: Record<string, string>): Ne
   const newRawCss = typeof rule.rawCss === 'string'
     ? rewriteUrlsInCssValue(rule.rawCss, rewriteMap)
     : rule.rawCss
+  const newAtRule = rule.atRule?.kind === 'property' && rule.atRule.initialValue !== undefined
+    ? { ...rule.atRule, initialValue: rewriteUrlsInCssValue(rule.atRule.initialValue, rewriteMap) }
+    : rule.atRule
 
   // Every per-context override (viewport contexts AND custom conditions) lives
   // in one map now and can carry url() backgrounds — rewrite each bag to the
@@ -196,6 +199,7 @@ function rewriteRule(rule: NewStyleRule, rewriteMap: Record<string, string>): Ne
     styles: newStyles,
     contextStyles: newContextStyles,
     ...(newRawCss !== undefined ? { rawCss: newRawCss } : {}),
+    ...(newAtRule !== undefined ? { atRule: newAtRule } : {}),
   }
 }
 
