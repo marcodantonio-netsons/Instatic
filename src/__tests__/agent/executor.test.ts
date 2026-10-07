@@ -16,7 +16,8 @@ import { useEditorStore } from '@site/store/store'
 import { executeAgentTool } from '@site/agent'
 import type { AiToolOutput } from '@core/ai'
 import { classNamesForClassIds } from '@core/page-tree'
-import { collectClassCSS } from '@core/publisher'
+import { publishPage } from '@core/publisher'
+import { registry } from '@core/module-engine'
 import '@modules/base'
 
 // ---------------------------------------------------------------------------
@@ -267,15 +268,14 @@ describe('executeAgentTool — insertHtml', () => {
     expect(conditional.kind).toBe('ambient')
     expect(conditional.order).toBeGreaterThan(cls!.order)
 
-    const css = collectClassCSS(site)
+    const { html } = publishPage(site.pages[0], site, registry)
     for (const [width, expected] of [[375, '32px'], [1280, '40px']] as const) {
       const window = new GlobalWindow({ width })
-      const style = window.document.createElement('style')
-      style.textContent = css
-      window.document.head.append(style)
-      const heading = window.document.createElement('h1')
-      heading.className = 'hero-title secondary'
-      window.document.body.append(heading)
+      window.document.write(html)
+      const heading = window.document.querySelector('h1')!
+      expect(heading.textContent).toBe('Hello')
+      expect(heading.classList.contains('hero-title')).toBe(true)
+      expect(heading.classList.contains('secondary')).toBe(true)
       expect(window.getComputedStyle(heading).fontSize).toBe(expected)
     }
   })
