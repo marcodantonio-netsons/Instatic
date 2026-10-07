@@ -32,6 +32,7 @@ import { BracesIcon } from 'pixel-art-icons/icons/braces'
 import { DataBindingPicker } from '@admin/shared/DataBindingPicker'
 import { _cachedMeta, loadDataMeta } from '@admin/shared/DataBindingPicker/cache'
 import { bindingToToken } from '@core/templates/tokenInterpolation'
+import { buildPublicFileReferences } from '@core/files/references'
 import { resolveBindingLabel } from '@admin/shared/DataBindingPicker/helpers'
 import { cn } from '@ui/cn'
 import styles from './DynamicBindingControl.module.css'
@@ -135,13 +136,14 @@ export function DynamicBindingControl({
     // Canvas reports catalogue errors; keep property and file controls editable.
   }
   const routeFrame = pageFrame ? buildRouteFrame(pageFrame.permalink) : null
+  const publicFiles = activeSite ? buildPublicFileReferences(activeSite.files) : undefined
 
   // ── Bound state (structured whole-prop binding) ─────────────────────────
   // In insert mode the binding lives inline in the prop value as a token,
   // so we never enter this branch — the children render normally and
   // tokens appear in the text input as ordinary characters.
   if (binding && !insertMode) {
-    const bindingLabel = resolveBindingLabel(binding, availableFields, sourceLabel, resolvedMeta)
+    const bindingLabel = resolveBindingLabel(binding, availableFields, sourceLabel, resolvedMeta, publicFiles)
     return (
       <div
         className={cn(
@@ -219,6 +221,7 @@ export function DynamicBindingControl({
             site: siteFrame,
             route: routeFrame,
           }}
+          publicFiles={publicFiles}
           insertMode={insertMode}
           anchorRef={wrapperRef}
           triggerRef={triggerRef}

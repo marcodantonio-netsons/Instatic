@@ -27,6 +27,7 @@ import { createAuditEvent } from '../../repositories/audit'
 import { getDraftPublishStatus } from '../../repositories/publish'
 import { publishDraftSite } from '../../publish/publishSite'
 import { RuntimeScriptBuildError } from '../../publish/runtime/buildError'
+import { PublicAssetValidationError } from '@core/files/publicAssets'
 import { jsonResponse, methodNotAllowed } from '../../http'
 import type { CmsHandlerOptions } from './shared'
 import { requestAuditContext } from './shared'
@@ -60,7 +61,7 @@ export async function handlePublishRoutes(
     try {
       result = await publishDraftSite(db, user.id, options.uploadsDir)
     } catch (err) {
-      if (err instanceof FormConfigurationError || err instanceof RuntimeScriptBuildError || err instanceof LocalizationError) {
+      if (err instanceof FormConfigurationError || err instanceof RuntimeScriptBuildError || err instanceof LocalizationError || err instanceof PublicAssetValidationError) {
         return jsonResponse({ error: err.message }, { status: 422 })
       }
       throw err

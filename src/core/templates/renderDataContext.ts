@@ -6,6 +6,7 @@
 import type { LoopItem } from '@core/loops-schema'
 import type { Page, SiteDocument } from '@core/page-tree'
 import { buildPageFrame, buildSiteFrame, buildRouteFrame } from './contextFrames'
+import { buildPublicFileReferences, type PublicFileReferences } from '@core/files/references'
 import type {
   PageFrame,
   RouteFrame,
@@ -24,6 +25,7 @@ export interface TemplateRenderDataContext {
   readonly page?: PageFrame
   readonly site?: SiteFrame
   readonly route?: RouteFrame
+  readonly files?: PublicFileReferences
 }
 
 /**
@@ -46,5 +48,6 @@ export function buildTemplateRenderContext(
     page: pageFrame,
     site: { ...siteFrame, ...provided.site, language: siteFrame.language, translations: siteFrame.translations },
     route: provided.route ?? buildRouteFrame(pageFrame.permalink),
+    files: provided.files ?? buildPublicFileReferences(site.files),
   }
 }

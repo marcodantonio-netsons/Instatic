@@ -6,6 +6,7 @@
 // relative paths and never through this barrel.
 
 export { publishPage } from './render'
+export { assertPagePublicFileBindings, assertSitePublicFileBindings } from './publicFilePreflight'
 export { assertSiteTranslations } from './languagePreflight'
 export { findDynamicNodeIds } from './dynamicDetection'
 export type { PublishedRuntimePackageImportmap } from './render'

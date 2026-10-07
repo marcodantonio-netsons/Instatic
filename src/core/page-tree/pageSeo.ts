@@ -65,7 +65,7 @@ export class PageSeoValidationError extends Error {
 
 /** Authored URLs can contain native tokens; resolved URLs are checked again at publish. */
 export function assertSeoUrl(value: string, path: string, allowBindings = true): void {
-  const literal = allowBindings ? value.replace(/\{(?:page|site|route|currentEntry)\.[^{}]+\}/g, 'binding') : value
+  const literal = allowBindings ? value.replace(/\{(?:page|site|route|currentEntry|file)\.[^{}]+\}/g, 'binding') : value
   const scheme = urlScheme(literal)
   if (!value.trim() || (scheme !== null && !['http:', 'https:'].includes(scheme))) {
     throw new PageSeoValidationError(path, 'Expected a safe HTTP(S) or relative URL')

@@ -16,7 +16,7 @@
 
 import type { LoopSourceField } from '@core/loops/types'
 
-export type SystemSourceId = 'page' | 'site' | 'route'
+export type SystemSourceId = 'page' | 'site' | 'route' | 'file'
 
 interface SystemSource {
   id: SystemSourceId
@@ -78,4 +78,5 @@ export const SYSTEM_SOURCES: readonly SystemSource[] = [
   PAGE_SOURCE,
   SITE_SOURCE,
   ROUTE_SOURCE,
+  { id: 'file', label: 'Public files', description: 'Passive files published at their authored public URL.', fields: [] },
 ]

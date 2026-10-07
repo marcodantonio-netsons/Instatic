@@ -302,6 +302,11 @@ into the publish slot:
   through to the live renderer.
 - **CSS bundles** — `/_instatic/css/<bundle>-<hash>.css`, for every page.
 - **Runtime JS** — `/_instatic/assets/<versionId>/…`, for every page.
+- **Public binary SiteFiles** — `public/<path>` becomes `/<path>`, including names without an extension. MIME type comes from the validated blob, not a guessed extension. The same inactive slot contains their bytes and a private `/_instatic/public-assets.json` MIME/size/SHA-256 index; only indexed files can be served through the public-file route. Dependent reads resolve one fixed slot and verify byte identity, retrying the current pointer if a later publish recycled that slot. Stable authored URLs use `no-cache` and ETag revalidation, not immutable caching. Removed files disappear with the next complete slot swap. SVG is sanitized before its SHA and emitted bytes are computed; responses carry nosniff and an inert CSP. Full and incremental publication reject collisions with routable page/content paths before writing versions.
+
+Public file preflight and inactive-slot staging run before the full publish transaction. Incomplete blobs, invalid MIME/base64, unsafe or reserved paths, conflicting files and shared asset/index write failures fail publication explicitly, preserving the previous snapshot, publish version and active slot. An aborted bake discards next-version snapshot/CSS memos so a retry or incremental publication cannot consume its unactivated content. Public assets require the configured uploads directory; the native slot is their published serving source. Config/doc/component files and draft bytes are never read from arbitrary storage paths by the visitor asset route. `file` bindings seed a typed reference frame from the site's binary files; the authenticated preview supplies its scoped frame before rendering, through the same binding resolver and publisher.
+
+The slot activation callback is the last operation inside the publication transaction. A pointer failure rolls back the snapshot writes; a commit failure after activation restores the previous pointer. Public requests wait only during activation plus commit/rollback and version advancement, so they cannot begin reading a pointer whose DB generation is still uncommitted. This barrier is absent throughout runtime builds and static baking. Fault tests cover file/index writes, pointer activation, transaction commit, cache invalidation and a read interleaved with the activation window. Missing native file bindings in visible composed page/entry/404 trees or SEO fail explicitly before publication; file-binding errors found in row data during baking propagate as well.
 
 The visitor router serves all of these straight off disk (`readArtefact` /
 `readStaticAsset`) — no DB round-trip, no per-request rebuild. The slot is a
@@ -465,12 +470,6 @@ publishDraftSite (server/publish/publishSite.ts)
     │     cache (`bun install`), importmap, per-page esbuild runtime builds.
     │     The SQLite adapter serializes all transactions through one chain, so
     │     this work inside the transaction would stall every concurrent write.
-    ├─→ short transaction: write the SiteDocument ONCE into site_snapshots
-    │     (content hash stamped for the publish-status check); each page's
-    │     data_row_versions row references it via site_snapshot_id + carries
-    │     its runtime_assets_json
-    ├─→ flip data_rows.status = 'published', set active_version_id
-    │
     ├─→ Layer A bake — the 404 page (when a notFound template exists):
     │     renderPublishedNotFound (notFound template wrapped in the everywhere
     │     chain) → same pipeline → writeArtefact(<inactiveSlot>, '/404')
@@ -485,20 +484,28 @@ publishDraftSite (server/publish/publishSite.ts)
     │     └── writeArtefact(<inactiveSlot>, urlPath, html)
     │
     ├─→ Layer A bake — every published data-row route (bakeDataRows.ts):
-    │     entry-template render through the same pipeline → writeArtefact
+    │     prepared entry-template snapshot + published row → writeArtefact
     │     (without this, the slot swap would strand every row artefact)
     │
-    ├─→ Layer A bake — CSS bundles + runtime JS → writeStaticAsset(<slot>)
+    ├─→ Layer A bake — CSS + runtime JS + public files/index → writeStaticAsset(<slot>)
     │     (page-invariant CSS trio computed once per publish via the
     │      version-keyed memo in siteCssBundle.ts; userStyles per page)
     │         (atomic per-file: tmp + rename; per-page try/catch)
     │
-    ├─→ swapSlot(uploadsDir, newActiveSlot)
+    ├─→ short transaction: write the SiteDocument ONCE into site_snapshots
+    │     (content hash stamped for the publish-status check); each page's
+    │     data_row_versions row references it via site_snapshot_id + carries
+    │     its runtime_assets_json
+    ├─→ flip data_rows.status = 'published', set active_version_id
+    │
+    ├─→ transaction activation callback: swapSlot(uploadsDir, newActiveSlot)
     │     uploads/published/current → flips atomically (rename of a pointer file
     │     is a single-inode swap; in-flight readers keep fds into the OLD
-    │     slot until they close)
+    │     slot until they close); pointer failure rolls back SQL
+    ├─→ commit transaction (restore old pointer on commit failure)
     │
-    └─→ bumpPublishVersion() → Layer B LRU evicts lazily on next read
+    └─→ bumpPublishVersion() + release public-read barrier
+          → Layer B LRU evicts lazily on next read
 
 — and on the visitor request side —
 

@@ -30,6 +30,7 @@
 import type { DynamicPropBinding } from '@core/page-tree'
 import type { TemplateRenderDataContext } from './renderDataContext'
 import { resolveTranslation } from '@core/localization'
+import { readPublicFileField } from '@core/files/references'
 
 // ---------------------------------------------------------------------------
 // Source identifiers — must match DynamicBindingSourceSchema
@@ -41,6 +42,7 @@ const VALID_SOURCES: ReadonlySet<DynamicPropBinding['source']> = new Set([
   'page',
   'site',
   'route',
+  'file',
 ])
 
 function isValidSource(s: string): s is DynamicPropBinding['source'] {
@@ -208,6 +210,8 @@ export function readFrame(
       return (context.site as unknown as Record<string, unknown>) ?? null
     case 'route':
       return (context.route as unknown as Record<string, unknown>) ?? null
+    case 'file':
+      return context.files ?? null
     default:
       return null
   }
@@ -235,6 +239,7 @@ export function readFrameField(
   field: string,
   context: TemplateRenderDataContext,
 ): unknown {
+  if (source === 'file') return readPublicFileField(context.files, field)
   if (source === 'site' && field.startsWith('translations.')) {
     return resolveTranslation(context.site?.translations, field.slice('translations.'.length), context.site?.language ?? 'en')
   }
