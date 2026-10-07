@@ -123,6 +123,13 @@ export function instantiateVCAtRef(
     const node = vc.tree.nodes[nodeId]
     if (!node) return []
 
+    // Keep hidden nodes opaque, including outlets: expanding a hidden outlet
+    // would discard its visibility flag and expose its slot content.
+    if (node.hidden) {
+      nodes[node.id] = { ...node, _owningRefId: refId, _fromSlotContent: false }
+      return [node.id]
+    }
+
     // ── Slot outlet expansion ──────────────────────────────────────────────
     if (node.moduleId === 'base.slot-outlet') {
       const slotName =

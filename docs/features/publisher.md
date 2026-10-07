@@ -54,7 +54,6 @@ server/publish/
 ├── siteCssBundle.ts                — server-side hashing + file emission
 ├── frontendInjections.ts           — splice plugin <script>/<link>/<meta> into HTML
 ├── mediaPresentation.ts            — media URL materialization for originals + responsive variants
-├── renderTreeWalk.ts               — walkRenderTree: visits every node that contributes to a rendered page (page nodes + VC definition trees, cycle-guarded); single source of truth for loop-prefetch and media-prefetch
 ├── mediaPrefetch.ts, loopPrefetch.ts — pre-warm caches needed by the renderer
 ├── republish.ts                    — bulk re-publish on site-level changes
 ├── publishScheduler.ts             — scheduled publish jobs
@@ -435,7 +434,7 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | `src/core/publisher/responsiveBackground.ts`    | Convert media-library `background-image: url(...)` values into optimized variant fallback + `image-set(...)` declarations. |
 | `server/publish/mediaPrefetch.ts`               | Collect every image/media-typed prop and every media-library background-image URL from the full render tree — including VC definition trees — via `walkRenderTree`, then batch-fetch matching `media_assets` rows into a `Map<publicPath, MediaAsset>` before render. Uses `MEDIA_ASSET_COLUMNS` and `mapMediaAssetRow` from `server/repositories/mediaAssetMapping.ts` (shared with the admin repository) so the published page and the admin panel always see one identical asset shape. |
 | `server/publish/loopPrefetch.ts`                | Collect every `base.loop` node from the full render tree — including VC definition trees — via `walkRenderTree`, fetch each source's items, and return a `Map<nodeId, ResolvedLoopData>` before render so the walker is purely synchronous. Also exports `canonicalRenderQuery(searchParams)` — strips all non-loop-pagination params from a URL's query, returning only `loop_<nodeId>_page` keys in sorted order (or `''` when none remain). Used by `publicRouter.ts` to normalise the Layer B cache key and Layer A fast-path eligibility. |
-| `server/publish/renderTreeWalk.ts`              | `walkRenderTree(nodes, rootNodeId, site, onNode)` — visits every node that contributes to a rendered page: all page-tree nodes reachable from `rootNodeId`, plus all nodes inside each referenced VC's definition tree (recursively, cycle-guarded by a `Set<vcId>`). Used by both `mediaPrefetch.ts` and `loopPrefetch.ts` so their traversal logic can't drift apart. |
+| `src/core/visualComponents/renderTreeWalk.ts`   | `walkRenderTree(nodes, rootNodeId, components, onNode)` — visits reachable visible nodes after materializing each VC's effective params and filled/default slots through `instantiateVCAtRef`. Follows nested refs with component and node cycle guards, excludes orphan/unused content, and preserves native slot-fill fields. Shared by loop/media prefetch and render preflight. The lean component-list input keeps the core visitor independent of `SiteDocument`. |
 | `server/publish/runtime/packageServer.ts`       | Serve per-site `bun install` workspace under `/_instatic/runtime/cache/`. |
 | `server/publish/loopRuntime.ts`                 | The loop runtime asset (small JS shim used by certain loop variants).|
 | `server/handlers/cms/hole.ts`                   | `GET /_instatic/hole-runtime.js` (serves `HOLE_RUNTIME_JS`) and `GET /_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>` (renders a node subtree at request time for Layer C islands). |
@@ -628,7 +627,7 @@ This is rare and requires architectural review — most "new behavior" fits with
   - `src/core/css-sanitize/sanitiseCssValue.ts` — canonical CSS value sanitizer (shared with `@core/framework`)
   - `server/publish/publishedHtmlPipeline.ts` — plugin filter point
   - `server/publish/publicRenderer.ts` — server wrappers
-  - `server/publish/renderTreeWalk.ts` — `walkRenderTree` (shared render-tree visitor)
+  - `src/core/visualComponents/renderTreeWalk.ts` — `walkRenderTree` (shared materialized render-tree visitor)
 - Gate tests:
   - `src/__tests__/architecture/dispatcher-html-pipeline.test.ts`
   - `src/__tests__/architecture/publish-html-filter-context.test.ts`
