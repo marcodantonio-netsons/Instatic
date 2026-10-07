@@ -8,7 +8,7 @@
  * ## @media policy
  *
  * Matched @media (configured viewport query, or within ±mediaTolerance of a known max-width):
- *   inner declarations are folded into `contextStyles[matchedViewportId]`.
+ *   inner declarations become ordered fragments with `contextStyles[matchedViewportId]`.
  *
  * Unmatched @media / every @container / every @supports:
  *   inner declarations are stored as a faithful per-context override keyed by a
@@ -31,10 +31,10 @@
  *
  * ## duplicate class names
  *
- * When the same `.class-name` selector appears more than once in the file,
- * the later rule wins (later-in-source = higher cascade priority). One
- * `duplicate-class` warning is emitted per duplicated class. The rule's
- * order is kept as the FIRST occurrence.
+ * Every source occurrence keeps its own order, including repeated selectors
+ * and conditional fragments. One occurrence per class stays assignable; later
+ * fragments remain ambient CSS with the same selector. A duplicate-class
+ * warning reports repeated base selectors without merging declarations.
  */
 
 import type { StyleRuleKind, Condition, ConditionDef } from '@core/page-tree'
@@ -48,11 +48,7 @@ import {
 import { processKeyframesRule } from './keyframesToStyleRule'
 import { encodeSubstitutionDeclarations } from '@core/css-substitution'
 import { matchMediaQueryToViewport } from './mediaQueryMatch'
-import {
-  mergeRuleBaseDeclarations,
-  mergeRuleContextDeclarations,
-  sparsePriorities,
-} from './declarationCascade'
+import { sparsePriorities } from './declarationCascade'
 import { parseStyleDeclarations } from './cssDeclarationReader'
 import { extractUrlPayloads, parseFontFaceRule } from './fontFaceParser'
 import type {
@@ -254,12 +250,8 @@ export function cssToStyleRules(
 
   // ── Rule-processing state ───────────────────────────────────────────────
   //
-  // selectorToLastIndex: tracks the most-recently-created rule index for each
-  //   selector. Used when @media inner rules need to look up or create a rule.
-  //
   // seenClassSelectors: tracks class selectors seen in base rules so we can
   //   emit a duplicate-class warning on the second occurrence.
-  const selectorToLastIndex = new Map<string, number>()
   const seenClassSelectors = new Set<string>()
 
   // ── Process each top-level rule ─────────────────────────────────────────
@@ -275,7 +267,6 @@ export function cssToStyleRules(
         conditionsById,
         breakpoints,
         mediaTolerance,
-        selectorToLastIndex,
         seenClassSelectors,
       )
     } catch (_err) {
@@ -362,7 +353,6 @@ function processTopLevelRule(
   conditionsById: Map<string, ConditionDef>,
   breakpoints: BreakpointHint[],
   mediaTolerance: number,
-  selectorToLastIndex: Map<string, number>,
   seenClassSelectors: Set<string>,
 ): void {
   switch (rule.type) {
@@ -372,7 +362,6 @@ function processTopLevelRule(
         rules,
         warnings,
         assetRefs,
-        selectorToLastIndex,
         seenClassSelectors,
       )
       return
@@ -386,8 +375,6 @@ function processTopLevelRule(
         conditionsById,
         breakpoints,
         mediaTolerance,
-        selectorToLastIndex,
-        seenClassSelectors,
       )
       return
 
@@ -401,8 +388,6 @@ function processTopLevelRule(
         warnings,
         assetRefs,
         conditionsById,
-        selectorToLastIndex,
-        seenClassSelectors,
         { kind: 'supports', query },
       )
       return
@@ -451,8 +436,6 @@ function processTopLevelRule(
             warnings,
             assetRefs,
             conditionsById,
-            selectorToLastIndex,
-            seenClassSelectors,
             { kind: 'container', query, ...(name ? { name } : {}) },
           )
           return
@@ -512,7 +495,6 @@ function processBaseStyleRule(
   rules: NewStyleRule[],
   warnings: ImportWarning[],
   assetRefs: AssetRef[],
-  selectorToLastIndex: Map<string, number>,
   seenClassSelectors: Set<string>,
 ): void {
   const selectorList = rule.selectorText.trim()
@@ -524,7 +506,6 @@ function processBaseStyleRule(
       rules,
       warnings,
       assetRefs,
-      selectorToLastIndex,
       seenClassSelectors,
     )
   }
@@ -536,23 +517,18 @@ function processBaseSelector(
   rules: NewStyleRule[],
   warnings: ImportWarning[],
   assetRefs: AssetRef[],
-  selectorToLastIndex: Map<string, number>,
   seenClassSelectors: Set<string>,
 ): void {
   const classified = classifySelector(selector)
   if (classified.kind === 'class') {
     if (seenClassSelectors.has(selector)) {
-      // Duplicate class: later-in-source wins. Update existing rule's styles.
+      // Keep the occurrence at its source position. Merging into the first
+      // rule would move later declarations ahead of intervening selectors.
       warnings.push({
         kind: 'duplicate-class',
-        message: `Class "${classified.name}" (${selector}) appears more than once; later declaration wins`,
+        message: `Class "${classified.name}" (${selector}) appears more than once; each occurrence keeps its cascade position`,
         selector,
       })
-      const existingIdx = selectorToLastIndex.get(selector)!
-      mergeRuleBaseDeclarations(rules[existingIdx], declarations)
-      // Collect any new asset refs from the updated declarations
-      collectAssetRefsFromDecls(declarations.styles, existingIdx, undefined, assetRefs)
-      return
     }
     seenClassSelectors.add(selector)
   }
@@ -563,17 +539,13 @@ function processBaseSelector(
     kind: classified.kind,
     selector,
     order: idx,
-    // A selector list is split into independently editable rules. Do not let
-    // those rules share the parser's declaration objects: a later duplicate
-    // of one selector merges in place, and shared bags would leak that update
-    // into every sibling from the original list.
+    // Split selectors keep independent bags for later editor mutations.
     styles: { ...declarations.styles },
     ...(sparsePriorities(declarations.priorities)
       ? { stylePriorities: { ...declarations.priorities } }
       : {}),
     contextStyles: {},
   })
-  selectorToLastIndex.set(selector, idx)
   collectAssetRefsFromDecls(declarations.styles, idx, undefined, assetRefs)
 }
 
@@ -589,8 +561,6 @@ function processMediaRule(
   conditionsById: Map<string, ConditionDef>,
   breakpoints: BreakpointHint[],
   mediaTolerance: number,
-  selectorToLastIndex: Map<string, number>,
-  seenClassSelectors: Set<string>,
 ): void {
   // conditionText is on CSSConditionRule (parent of CSSMediaRule) per CSSOM spec.
   // Fallback to mediaText for environments that don't expose conditionText.
@@ -601,15 +571,13 @@ function processMediaRule(
   const matched = matchMediaQueryToViewport(conditionText, breakpoints, mediaTolerance)
 
   if (matched !== null) {
-    // Matched breakpoint: merge inner rules into contextStyles[matched.id].
+    // Keep matched fragments at the @media block's source position.
     processConditionInner(
       mediaRule,
       rules,
       warnings,
       assetRefs,
       conditionsById,
-      selectorToLastIndex,
-      seenClassSelectors,
       { kind: 'breakpoint', breakpointId: matched.id },
     )
   } else {
@@ -623,8 +591,6 @@ function processMediaRule(
       warnings,
       assetRefs,
       conditionsById,
-      selectorToLastIndex,
-      seenClassSelectors,
       { kind: 'media', query: conditionText },
     )
   }
@@ -633,7 +599,7 @@ function processMediaRule(
 /**
  * Process the inner CSSStyleRules of a conditional @-block (@media /
  * @container / @supports), writing each inner rule's declarations to one
- * editing context on the matching StyleRule. Both kinds land in the unified
+ * editing context on a new ordered StyleRule fragment. Both kinds land in the unified
  * `contextStyles` map:
  *   - `{ kind: 'breakpoint', breakpointId }` → `contextStyles[breakpointId]`.
  *   - any custom condition → `contextStyles[conditionId(condition)]`, and the
@@ -654,8 +620,6 @@ function processConditionInner(
   warnings: ImportWarning[],
   assetRefs: AssetRef[],
   conditionsById: Map<string, ConditionDef>,
-  selectorToLastIndex: Map<string, number>,
-  seenClassSelectors: Set<string>,
   target: ConditionTarget,
 ): void {
   const contextId = targetContextId(target)
@@ -666,34 +630,36 @@ function processConditionInner(
 
   for (let i = 0; i < block.cssRules.length; i++) {
     const inner = block.cssRules[i]
-    // Only process style rules inside the @-block (skip nested @-rules)
-    if (inner.type !== STYLE_RULE_TYPE) continue
+    if (inner.type !== STYLE_RULE_TYPE) {
+      // A nested condition cannot fit the single-condition context model.
+      // Report the unsupported subtree rather than silently losing it.
+      warnings.push({
+        kind: 'dropped-at-rule',
+        message: 'Nested at-rules are not supported inside a conditional CSS block',
+        source: truncate(inner.cssText),
+      })
+      continue
+    }
 
     const innerStyle = inner as CSSStyleRule
     const selectorList = innerStyle.selectorText.trim()
     const declarations = parseStyleDeclarations(innerStyle.style, selectorList, warnings)
 
     for (const selector of selectorsForStorage(selectorList)) {
-      // Find or create the rule for this selector
-      let idx: number
-      if (selectorToLastIndex.has(selector)) {
-        idx = selectorToLastIndex.get(selector)!
-      } else {
-        const classified = classifySelector(selector)
-        idx = rules.length
-        rules.push({
-          name: classified.name,
-          kind: classified.kind,
-          selector,
-          order: idx,
-          styles: {},
-          contextStyles: {},
-        })
-        selectorToLastIndex.set(selector, idx)
-        if (classified.kind === 'class') seenClassSelectors.add(selector)
-      }
-
-      mergeRuleContextDeclarations(rules[idx], contextId, declarations)
+      const classified = classifySelector(selector)
+      const idx = rules.length
+      const priorities = sparsePriorities(declarations.priorities)
+      rules.push({
+        name: classified.name,
+        kind: classified.kind,
+        selector,
+        order: idx,
+        styles: {},
+        contextStyles: { [contextId]: { ...declarations.styles } },
+        ...(priorities
+          ? { contextStylePriorities: { [contextId]: { ...priorities } } }
+          : {}),
+      })
       collectAssetRefsFromDecls(declarations.styles, idx, contextId, assetRefs)
     }
   }
