@@ -312,8 +312,9 @@ into the publish slot:
 - **HTML** — fully-static pages bake to a complete document; pages with dynamic
   nodes bake their static **shell** with `<instatic-hole>` placeholders (the hole
   runtime hydrates each fragment from `/_instatic/hole/`). Either way the HTML is on
-  disk. A page that fails to render (e.g. a VC ref cycle) is skipped and falls
-  through to the live renderer.
+  disk. Every routable page, the configured 404 template and every published
+  entry route must render and pass the HTML pipeline before publication can
+  activate. A rendering or artefact write failure aborts the generation.
 - **CSS bundles** — `/_instatic/css/<bundle>-<hash>.css`, for every page.
 - **Runtime JS** — `/_instatic/assets/<versionId>/…`, for every page.
 - **Public binary SiteFiles** — `public/<path>` becomes `/<path>`, including names without an extension. MIME type comes from the validated blob, not a guessed extension. The same inactive slot contains their bytes and a private `/_instatic/public-assets.json` MIME/size/SHA-256 index; only indexed files can be served through the public-file route. Dependent reads resolve one fixed slot and verify byte identity, retrying the current pointer if a later publish recycled that slot. Stable authored URLs use `no-cache` and ETag revalidation, not immutable caching. Removed files disappear with the next complete slot swap. SVG is sanitized before its SHA and emitted bytes are computed; responses carry nosniff and an inert CSP. Full and incremental publication reject collisions with routable page/content paths before writing versions.
@@ -321,6 +322,15 @@ into the publish slot:
 Public file preflight and inactive-slot staging run before the full publish transaction. Incomplete blobs, invalid MIME/base64, unsafe or reserved paths, conflicting files and shared asset/index write failures fail publication explicitly, preserving the previous snapshot, publish version and active slot. An aborted bake discards next-version snapshot/CSS memos so a retry or incremental publication cannot consume its unactivated content. Public assets require the configured uploads directory; the native slot is their published serving source. Config/doc/component files and draft bytes are never read from arbitrary storage paths by the visitor asset route. `file` bindings seed a typed reference frame from the site's binary files; the authenticated preview supplies its scoped frame before rendering, through the same binding resolver and publisher.
 
 The slot activation callback is the last operation inside the publication transaction. A pointer failure rolls back the snapshot writes; a commit failure after activation restores the previous pointer. Public requests wait only during activation plus commit/rollback and version advancement, so they cannot begin reading a pointer whose DB generation is still uncommitted. This barrier is absent throughout runtime builds and static baking. Fault tests cover file/index writes, pointer activation, transaction commit, cache invalidation and a read interleaved with the activation window. Missing native file bindings in visible composed page/entry/404 trees or SEO fail explicitly before publication; file-binding errors found in row data during baking propagate as well.
+
+The same generation render and HTML pipeline run for callers without an uploads
+directory; only disk writes are omitted. Rendering errors are never converted
+into a partial successful publication. Typed validation errors keep their
+existing error classes and HTTP 422 envelopes. Unexpected render or I/O errors
+propagate through the normal server error boundary. The previous snapshots,
+active pointer and publish version remain unchanged; a corrected retry builds
+the whole generation again. Request-dependent holes validate their resolved
+values when their fragments render.
 
 The visitor router serves all of these straight off disk (`readArtefact` /
 `readStaticAsset`) — no DB round-trip, no per-request rebuild. The slot is a
