@@ -42,6 +42,7 @@ import type { PublishedPageRuntimeAssets } from '@core/site-runtime-schema'
 import { hasPublishedRuntimeScripts, scriptTagsForRuntimeAssets, publishedRuntimeResourceOrigins } from '@core/site-runtime'
 import { renderNode } from './renderNode'
 import { findDynamicNodeIds } from './dynamicDetection'
+import { assertPageInfiniteLoopScopes } from './loopRenderScopes'
 import { collectHoleSubtreeModuleIds } from './holeSubtreeModules'
 import type {
   RenderConfig,
@@ -471,6 +472,7 @@ export function publishPage(
   registry: IModuleRegistry,
   options: PublishPageOptions = {},
 ): PublishedPage {
+  assertPageInfiniteLoopScopes(page, site)
   // Layer C: classify every node as static or dynamic before walking the tree.
   // Dynamic node ids are threaded into the RenderConfig so renderNode can
   // emit <instatic-hole> placeholders instead of recursing.
