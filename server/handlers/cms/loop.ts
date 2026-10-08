@@ -1,6 +1,6 @@
 /** Public infinite-loop fragments use the originating published route's native context. */
 import type { DbClient } from '../../db/client'
-import { registry } from '@core/module-engine'
+import { ModulePropsValidationError, registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
 import { LocalizationError } from '@core/localization'
@@ -102,7 +102,7 @@ export async function handleLoopRequest(req: Request, url: URL, ctx: LoopHandler
     return jsonResponse({ html, hasMore, pageNumber })
   } catch (err) {
     if (err instanceof LoopFragmentContextError) return jsonResponse({ error: err.message }, { status: err.status })
-    if (err instanceof LocalizationError || err instanceof PageTranslationError || err instanceof PublicAssetValidationError || err instanceof LoopScopeConfigurationError) {
+    if (err instanceof LocalizationError || err instanceof PageTranslationError || err instanceof PublicAssetValidationError || err instanceof LoopScopeConfigurationError || err instanceof ModulePropsValidationError) {
       return jsonResponse({ error: err.message }, { status: 422 })
     }
     console.error('[loop] Failed to load published loop fragment:', err)

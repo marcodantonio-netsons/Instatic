@@ -2,7 +2,7 @@ import type { DbClient } from '../db/client'
 import type { Page, PageNode, SiteDocument } from '@core/page-tree'
 import { reindexNodeParents } from '@core/page-tree'
 import { resolveNotFoundTemplate } from '@core/templates'
-import { assertInfiniteLoopRenderScopes, collectLoopRenderScopes } from '@core/publisher'
+import { assertLoopRenderScopes, collectLoopRenderScopes } from '@core/publisher'
 import { resolvePublicRoute, resolvePublishedNotFoundRoute } from './publicRouteResolution'
 import { buildPublishedEntryRenderContext, buildPublishedPageRenderContext } from './publishedRenderContext'
 import { NOT_FOUND_ARTEFACT_URL_PATH } from './staticArtefact'
@@ -45,7 +45,7 @@ function findLoopTarget(page: Page, site: SiteDocument, loopId: string) {
   const scopes = collectLoopRenderScopes(page, site)
   const targets = scopes.filter((scope) => scope.node.id === loopId)
   if (targets.length === 0) throw new LoopFragmentContextError('Loop not found on the published page', 404)
-  assertInfiniteLoopRenderScopes(page, scopes)
+  assertLoopRenderScopes(page, scopes)
   if (targets.length > 1) throw new LoopFragmentContextError('Loop has multiple instances on the published page', 409)
   const target = targets[0]
   const nodes: Record<string, PageNode> = {}
