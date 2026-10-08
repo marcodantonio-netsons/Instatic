@@ -221,6 +221,10 @@ function createPublishFakeDb() {
         .filter(Boolean)
       return { rows, rowCount: rows.length }
     }
+    if (sql.includes('from installed_plugins') || sql.includes('from active_media_storage_adapter') ||
+        sql.startsWith('select data_rows.id as row_id, data_row_versions.slug as row_slug')) {
+      return { rows: [], rowCount: 0 }
+    }
     throw new Error(`Unhandled SQL: ${rawSql}`)
   })
 
