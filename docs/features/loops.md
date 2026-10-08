@@ -493,6 +493,9 @@ The endpoint requires a local originating URL and the rendered publish version. 
 
 Infinite loading requires a unique loop ID on each effective public page and no outer loop iteration. A single native scope walker owns both fragment lookup and the publication check (`src/core/publisher/loopRenderScopes.ts`). Publication rejects nested infinite loops and repeated infinite-loop component instances with a `LoopScopeConfigurationError` carrying the offending property path, before writing any publication state. Checks use the actual page, entry and 404 template compositions, including effective VC params and slots; hidden, orphan and unused trees are omitted. An entry route's published row remains a supported initial `parentEntry` frame. Finite nested loops continue to render through the ordinary entry stack.
 
+Source, filters, pagination mode and page size are authored configuration, materialized through ordinary VC parameters before prefetch. Rendering the native text bindings for loading labels does not change that configuration after fetching the data.
+Structured dynamic bindings and inline tokens on `sourceId`, `filters`, `orderBy`, `direction`, `limit`, `offset`, `pagination` or `pageSize` are unsupported configuration and fail with a typed property path, rather than changing or silently ignoring the source configuration at render time. Inline tokens use the ordinary native token parser for this check.
+
 For static multi-page navigation (no JS required):
 - Set `pagination: 'infinite'` and link the pages with the query parameter below — the server renders each page. See "Deep-link to a loop page".
 - Use separate `base.loop` nodes with an `offset` filter — one per "page" — and static links between pages.

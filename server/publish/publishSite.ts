@@ -21,7 +21,7 @@ import type { SiteDocument } from '@core/page-tree'
 import { assertSiteForms } from '@core/forms'
 import type { PublishedPageRuntimeAssets } from '@core/site-runtime'
 import type { PublishedRuntimePackageImportmap, SiteCssBundle } from '@core/publisher'
-import { assertSiteInfiniteLoopScopes, assertSitePublicFileBindings, assertSiteTranslations } from '@core/publisher'
+import { assertSiteLoopScopes, assertSitePublicFileBindings, assertSiteTranslations } from '@core/publisher'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { registry } from '@core/module-engine'
 import { isTemplatePage, resolveNotFoundTemplate, resolveTemplateChain } from '@core/templates'
@@ -126,7 +126,7 @@ async function publishDraftSiteLocked(
   if (!site) throw new Error('draft site not found')
   assertSiteForms(site)
   assertSiteTranslations(site)
-  assertSiteInfiniteLoopScopes(site)
+  assertSiteLoopScopes(site)
 
   const contentRoutes = site.files.some((file) => file.type === 'asset')
     ? await listPublishedRowRoutes(db)

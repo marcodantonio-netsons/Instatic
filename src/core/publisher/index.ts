@@ -8,7 +8,7 @@
 export { publishPage } from './render'
 export { assertPagePublicFileBindings, assertSitePublicFileBindings } from './publicFilePreflight'
 export { assertSiteTranslations } from './languagePreflight'
-export { collectLoopRenderScopes, assertInfiniteLoopRenderScopes, assertPageInfiniteLoopScopes, assertSiteInfiniteLoopScopes, LoopScopeConfigurationError } from './loopRenderScopes'
+export { collectLoopRenderScopes, assertLoopRenderScopes, assertPageLoopScopes, assertSiteLoopScopes, LoopScopeConfigurationError } from './loopRenderScopes'
 export type { LoopRenderScope } from './loopRenderScopes'
 export { findDynamicNodeIds } from './dynamicDetection'
 export type { PublishedRuntimePackageImportmap } from './render'

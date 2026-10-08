@@ -20,7 +20,7 @@ import {
   type EntryFieldMedia,
   type LoopItem,
 } from '@core/loops'
-import { effectiveNodeBindings, resolveDynamicProps, type TemplateRenderDataContext } from '@core/templates'
+import type { TemplateRenderDataContext } from '@core/templates'
 import { resolveHtmlTag } from '@core/htmlAttributes'
 import { htmlAttributesAttr } from './htmlAttributesEmit'
 import { injectNodeClassIds, injectNodeId, injectNodeInlineStyles } from './classInjection'
@@ -110,17 +110,21 @@ export function renderLoop(
   // Pagination signals — pagination='infinite' attaches a sentinel and
   // registers the loop's id so publishPage() can decide whether to emit
   // the runtime script.
-  const props = resolveDynamicProps(node.props, effectiveNodeBindings(node), config.templateContext)
-  const isInfinite = props.pagination === 'infinite'
+  const props = node.props
+  // Source configuration is authored before prefetch; resolving text labels
+  // must not activate a different mode or slice after data has been fetched.
+  const isInfinite = node.props.pagination === 'infinite'
   let attrs = ` data-instatic-loop="${escapeHtml(loopId)}"`
   attrs += ` data-instatic-loop-page="${data.pageNumber}"`
   if (isInfinite) {
     attrs += ` data-instatic-loop-mode="infinite"`
     attrs += ` data-instatic-loop-has-more="${data.hasMore ? 'true' : 'false'}"`
-    attrs += ` data-instatic-loop-page-size="${typeof props.pageSize === 'number' ? Math.floor(props.pageSize) : 10}"`
+    attrs += ` data-instatic-loop-page-size="${typeof node.props.pageSize === 'number' ? Math.floor(node.props.pageSize) : 10}"`
     attrs += ` data-instatic-loop-version="${config.publishVersion ?? 0}"`
-    for (const [key, defaultLabel] of Object.entries(LOOP_LOADING_LABEL_DEFAULTS)) {
-      const label = typeof props[key] === 'string' ? props[key] : defaultLabel
+    for (const key of Object.keys(LOOP_LOADING_LABEL_DEFAULTS)) {
+      // The common dispatcher already parsed this native string property;
+      // only the module schema supplies defaults for missing authored fields.
+      const label = props[key] as string
       const attribute = key === 'loadMoreLabel' ? 'load-more' : key === 'loadingLabel' ? 'loading' : 'retry'
       attrs += ` data-instatic-loop-${attribute}-label="${escapeHtml(label)}"`
     }
