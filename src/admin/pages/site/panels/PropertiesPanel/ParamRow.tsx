@@ -331,8 +331,8 @@ export function ParamRow({
           {/* Label slot */}
           <div className={styles.labelSlot}>
             {mode === 'override-edit' && (
-              <span className={styles.paramNameChip} title={paramName}>
-                {paramName}
+              <span className={styles.paramNameChip} title={required ? `${paramName} (required)` : paramName}>
+                {paramName}{required ? ' *' : ''}
               </span>
             )}
             {mode === 'plain' && (

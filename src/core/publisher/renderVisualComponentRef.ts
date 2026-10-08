@@ -16,6 +16,7 @@ import type { Page, PageNode } from '@core/page-tree'
 import { reindexNodeParents, selectVisualComponentById } from '@core/page-tree'
 import {
   instantiateVCAtRef,
+  assertVCRequiredParameters,
   resolveSlotName,
   safePropOverrides,
   type InstantiatedVCNode,
@@ -85,13 +86,15 @@ export function renderVisualComponentRef(
     }
   }
 
-  const { nodes: instantiatedNodes, rootNodeId } = instantiateVCAtRef(
+  const instance = instantiateVCAtRef(
     vc,
     propOverrides,
     slotInstancesByName,
     config.page.nodes,
     node.id,
   )
+  assertVCRequiredParameters(vc, instance, node.id, config.templateContext, node.dynamicBindings?.propOverrides)
+  const { nodes: instantiatedNodes, rootNodeId } = instance
 
   // Build a minimal synthetic Page from the instantiated flat node map.
   // Only nodes and rootNodeId are needed by the walker — other Page fields

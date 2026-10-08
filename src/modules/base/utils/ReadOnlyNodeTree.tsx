@@ -28,7 +28,7 @@
  * `style="…"` the published page does.
  */
 
-import type { ReactNode } from 'react'
+import { use, type ReactNode } from 'react'
 import { registry } from '@core/module-engine'
 import type { NodeWrapperProps as NodeWrapperPropsType } from '@core/module-engine'
 import type { BaseNode, PageNode } from '@core/page-tree'
@@ -38,9 +38,10 @@ import {
   effectiveNodeBindings,
   resolveDynamicProps,
   type TemplateRenderDataContext,
-} from '@core/templates/dynamicBindings'
+} from '@core/templates'
 import { useLoopPreviewItems } from '@site/canvas/useLoopPreviewItems'
 import { Button } from '@ui/components/Button'
+import { CanvasNodeTreeContext, CanvasTemplateContext } from '@site/canvas/CanvasContexts'
 
 /**
  * Identifies the editable source a read-only region was composed from, so the
@@ -120,21 +121,25 @@ export function ReadOnlyNodeTree({
   readonly,
   templateContext,
 }: ReadOnlyNodeTreeProps) {
+  const inheritedContext = use(CanvasTemplateContext)
+  const renderContext = templateContext ?? inheritedContext
   // Resolve the single outlet that hosts `outletSlot` up front so only the
   // first outlet is filled (matching the composer's "first outlet wins").
   const outletNodeId = outletSlot !== undefined ? firstOutletId(nodes) : undefined
   return (
-    <ReadOnlyNodeRenderer
-      nodeId={rootNodeId}
-      nodes={nodes}
-      classes={classes}
-      extraClassName={rootMcClassName}
-      extraNodeWrapperProps={rootNodeWrapperProps}
-      outletNodeId={outletNodeId}
-      outletSlot={outletSlot}
-      readonlyMarkers={readonlyMarkers(readonly)}
-      templateContext={templateContext}
-    />
+    <CanvasNodeTreeContext.Provider value={nodes}>
+      <ReadOnlyNodeRenderer
+        nodeId={rootNodeId}
+        nodes={nodes}
+        classes={classes}
+        extraClassName={rootMcClassName}
+        extraNodeWrapperProps={rootNodeWrapperProps}
+        outletNodeId={outletNodeId}
+        outletSlot={outletSlot}
+        readonlyMarkers={readonlyMarkers(readonly)}
+        templateContext={renderContext}
+      />
+    </CanvasNodeTreeContext.Provider>
   )
 }
 
@@ -261,15 +266,17 @@ function ReadOnlyNodeRenderer({
   const nodeWrapperProps = style ? { ...baseWrapperProps, style } : baseWrapperProps
 
   return (
-    <ComponentType
-      props={effectiveProps as never}
-      nodeId={node.id}
-      isSelected={false}
-      mcClassName={mcClassName}
-      nodeWrapperProps={nodeWrapperProps}
-    >
-      {children}
-    </ComponentType>
+    <CanvasTemplateContext.Provider value={templateContext}>
+      <ComponentType
+        props={effectiveProps as never}
+        nodeId={node.id}
+        isSelected={false}
+        mcClassName={mcClassName}
+        nodeWrapperProps={nodeWrapperProps}
+      >
+        {children}
+      </ComponentType>
+    </CanvasTemplateContext.Provider>
   )
 }
 
