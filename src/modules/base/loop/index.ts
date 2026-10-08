@@ -33,6 +33,7 @@
  */
 import type { ModuleDefinition } from '@core/module-engine'
 import { registry } from '@core/module-engine'
+import { LOOP_LOADING_LABEL_DEFAULTS } from '@core/loops'
 import { Type, Value, type Static } from '@core/utils/typeboxHelpers'
 import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
 import { resolveHtmlTag } from '@core/htmlAttributes'
@@ -51,6 +52,9 @@ const LoopPropsSchema = Type.Object({
   offset: Type.Number({ default: 0 }),
   pagination: Type.Union([Type.Literal('none'), Type.Literal('infinite')], { default: 'none' }),
   pageSize: Type.Number({ default: 10 }),
+  loadMoreLabel: Type.String({ default: LOOP_LOADING_LABEL_DEFAULTS.loadMoreLabel }),
+  loadingLabel: Type.String({ default: LOOP_LOADING_LABEL_DEFAULTS.loadingLabel }),
+  retryLabel: Type.String({ default: LOOP_LOADING_LABEL_DEFAULTS.retryLabel }),
   tag: Type.String({ default: 'div' }),
   customTag: Type.String({ default: '' }),
   htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
@@ -76,7 +80,11 @@ export const LoopModule: ModuleDefinition<LoopProps> = {
   // because filterSchema is dynamic per source. The Properties Panel
   // branches on moduleId === 'base.loop' and renders LoopPropertiesView,
   // which itself renders the shared htmlTag controls.
-  schema: {},
+  schema: {
+    loadMoreLabel: { type: 'text', label: 'Load more label' },
+    loadingLabel: { type: 'text', label: 'Loading label' },
+    retryLabel: { type: 'text', label: 'Retry label' },
+  },
 
   propsSchema: LoopPropsSchema,
   defaults: Value.Create(LoopPropsSchema),

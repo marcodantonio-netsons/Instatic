@@ -41,7 +41,12 @@ export function buildTemplateRenderContext(
   incoming: TemplateRenderDataContext | undefined,
 ): TemplateRenderDataContext {
   const provided = incoming ?? { entryStack: [] }
-  const nativePageFrame = buildPageFrame(page, site)
+  // A composed tree belongs to its terminal page even when its root/identity
+  // comes from a layout. Resolve relationships from that published page.
+  const framePage = provided.page
+    ? site.pages.find((candidate) => candidate.id === provided.page?.id) ?? page
+    : page
+  const nativePageFrame = buildPageFrame(framePage, site)
   const pageFrame = { ...nativePageFrame, ...provided.page, translations: nativePageFrame.translations }
   const siteFrame = buildSiteFrame(site, pageFrame.language)
   return {

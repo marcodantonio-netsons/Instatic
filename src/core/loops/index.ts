@@ -10,6 +10,7 @@
  */
 
 export { LoopItemSchema } from '@core/loops-schema'
+export { LOOP_LOADING_LABEL_DEFAULTS } from './loadingLabels'
 export type { LoopItem } from '@core/loops-schema'
 export { pageToLoopItem, filterPagesForLoop } from './sources/sitePages'
 export {

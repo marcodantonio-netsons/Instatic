@@ -9,3 +9,10 @@ export const LoopItemSchema = Type.Object({
 })
 
 export type LoopItem = Static<typeof LoopItemSchema>
+
+export const LoopPageResponseSchema = Type.Object({
+  html: Type.String(),
+  hasMore: Type.Boolean(),
+  pageNumber: Type.Integer({ minimum: 1 }),
+})
+export type LoopPageResponse = Static<typeof LoopPageResponseSchema>
