@@ -167,7 +167,7 @@ describe('published loop fragments', () => {
       const fixture = await createPublishedLoopFixture(site)
       try {
         const response = await request(fixture.db, '/en/listing')
-        expect(response.status).toBe(409)
+        expect(response.status).toBe(422)
         expect(await response.json()).toHaveProperty('error')
       } finally { await fixture.cleanup() }
     }
