@@ -258,11 +258,11 @@ describe('IT-8 — slot outlet uses param defaultValue when no instance content'
 })
 
 // ---------------------------------------------------------------------------
-// IT-9 — Empty slot content array falls back to param defaultValue
+// IT-9 — Explicit empty slot content clears param defaultValue
 // ---------------------------------------------------------------------------
 
-describe('IT-9 — empty slot content falls back to param defaultValue', () => {
-  it('uses param defaultValue when slotContent array is empty', () => {
+describe('IT-9 — explicit empty slot content clears param defaultValue', () => {
+  it('materializes no content when the consumer fill is explicitly empty', () => {
     const slotOutlet = node('slot-outlet', 'base.slot-outlet', { slotName: 'sidebar' })
     const root = node('root', 'base.container', {}, { children: ['slot-outlet'] })
     const defaultNode = node('default-sidebar', 'base.text', { content: 'default sidebar' })
@@ -276,11 +276,12 @@ describe('IT-9 — empty slot content falls back to param defaultValue', () => {
       },
     ])
 
-    // Passing empty array → should fall back to param defaultValue
-    const { nodes } = instantiateVCAtRef(component, {}, { sidebar: [] }, {}, TEST_REF_ID)
+    const { nodes, slotContentByName } = instantiateVCAtRef(component, {}, { sidebar: [] }, {}, TEST_REF_ID)
 
-    expect(nodes['default-sidebar']).toBeDefined()
-    expect(nodes['root'].children).toEqual(['default-sidebar'])
+    expect(nodes['default-sidebar']).toBeUndefined()
+    expect(nodes['slot-outlet']).toBeUndefined()
+    expect(nodes['root'].children).toEqual([])
+    expect(slotContentByName.sidebar).toEqual([])
   })
 })
 

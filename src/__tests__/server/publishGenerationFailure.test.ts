@@ -6,6 +6,8 @@ import { Type } from '@core/utils/typeboxHelpers'
 import { registry } from '@core/module-engine'
 import type { Page } from '@core/page-tree'
 import { pageToCells } from '@core/data/pageFromRow'
+import { visualComponentToCells } from '@core/data/componentFromRow'
+import { makeNode, makeVC, makeVCNode, makeVCTree } from '../fixtures'
 import { makeModule } from '../publisher/helpers'
 import { createCapabilityTestHarness, readJson, type CapabilityTestHarness } from '../helpers/capabilityHarness'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
@@ -15,6 +17,7 @@ import { saveDraftSite } from '../../../server/repositories/site'
 import { publishDraftSite } from '../../../server/publish/publishSite'
 import { getPublishVersion } from '../../../server/publish/publishState'
 import * as staticIO from '../../../server/publish/staticArtefact'
+import '@modules/base'
 
 const moduleId = 'test.publication-generation'
 const renderFailure = new Error('Injected generation render failure')
@@ -68,6 +71,44 @@ async function publishedState(db: CapabilityTestHarness['db']) {
 }
 
 describe('complete publication generation', () => {
+  it('returns a required-argument validation failure without changing the public generation and accepts a corrected draft', async () => {
+    const { harness, owner, userId, site } = await setup()
+    const vc = makeVC({ id: 'required-link', name: 'Required Link', params: [{
+      id: 'url', name: 'URL', type: 'url', required: true, defaultValue: '/healthy',
+    }], tree: makeVCTree('component-body', [
+      makeVCNode({ id: 'component-body', moduleId: 'base.body', children: ['link'] }),
+      makeVCNode({ id: 'link', moduleId: 'base.link', props: { text: 'Open' }, propBindings: { href: { paramId: 'url' } } }),
+    ]) })
+    await createDataRow(harness.db, MAIN_SCOPE, { id: vc.id, tableId: 'components', cells: visualComponentToCells(vc), slug: 'required-link' }, userId)
+    const page = site.pages[0]
+    page.nodes[page.rootNodeId].children = ['ref']
+    page.nodes.ref = makeNode({ id: 'ref', moduleId: 'base.visual-component-ref', props: { componentId: vc.id, propOverrides: {} } })
+    await saveDataRowDraft(harness.db, MAIN_SCOPE, page.id, { cells: pageToCells(page), slug: page.slug })
+    await saveDraftSite(harness.db, MAIN_SCOPE, site)
+    await publishDraftSite(harness.db, userId, uploadsDir)
+    const before = await publishedState(harness.db)
+    const slot = await staticIO.getActiveSlot(uploadsDir!)
+    const html = await staticIO.readArtefact(uploadsDir!, '/')
+    expect(html).toContain('href="/healthy"')
+
+    page.nodes.ref.props.propOverrides = { url: '' }
+    await saveDataRowDraft(harness.db, MAIN_SCOPE, page.id, { cells: pageToCells(page), slug: page.slug })
+    const rejected = await harness.cms('/admin/api/cms/publish', { method: 'POST', cookie: owner })
+    expect(rejected.status).toBe(422)
+    expect((await readJson<{ error: string }>(rejected)).error).toContain('nodes.ref.props.propOverrides.url')
+    expect(await publishedState(harness.db)).toEqual(before)
+    expect(await staticIO.getActiveSlot(uploadsDir!)).toBe(slot)
+    expect(await staticIO.readArtefact(uploadsDir!, '/')).toBe(html)
+    expect((await getDraftSiteDocument(harness.db, MAIN_SCOPE))!.pages.find((candidate) => candidate.id === page.id)!.nodes.ref.props.propOverrides).toEqual({ url: '' })
+
+    page.nodes.ref.props.propOverrides = { url: '/corrected' }
+    await saveDataRowDraft(harness.db, MAIN_SCOPE, page.id, { cells: pageToCells(page), slug: page.slug })
+    const accepted = await harness.cms('/admin/api/cms/publish', { method: 'POST', cookie: owner })
+    expect(accepted.status).toBe(200)
+    expect(getPublishVersion()).toBe(before.version + 1)
+    expect(await staticIO.readArtefact(uploadsDir!, '/')).toContain('href="/corrected"')
+  }, 15_000)
+
   for (const scope of ['page', 'notFound', 'entry'] as const) {
     it(`preserves the active generation when the ${scope} render fails and publishes a corrected retry`, async () => {
       const { harness, owner, userId, site } = await setup()
