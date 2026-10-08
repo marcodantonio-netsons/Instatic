@@ -16,7 +16,7 @@
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useEditorStore } from '@site/store/store'
 import { loopSourceRegistry } from '@core/loops/registry'
-import { ENTRY_FIELD_FILTER_KEY, ENTRY_FIELD_SOURCE_ID } from '@core/loops'
+import { ENTRY_FIELD_FILTER_KEY, ENTRY_FIELD_SOURCE_ID, LOOP_LOADING_LABEL_DEFAULTS } from '@core/loops'
 import {
   CELL_ORDER_PREFIX,
   isCellComparableField,
@@ -326,12 +326,27 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
                 onChange={handleScalarChange}
               />
               {props.pagination === 'infinite' ? (
-                <PropertyControlRenderer
-                  propKey="pageSize"
-                  control={{ type: 'number', label: 'Page size', min: 1, max: 100, step: 1 }}
-                  value={typeof props.pageSize === 'number' ? props.pageSize : 10}
-                  onChange={handleScalarChange}
-                />
+                <>
+                  <PropertyControlRenderer
+                    propKey="pageSize"
+                    control={{ type: 'number', label: 'Page size', min: 1, max: 100, step: 1 }}
+                    value={typeof props.pageSize === 'number' ? props.pageSize : 10}
+                    onChange={handleScalarChange}
+                  />
+                  {([
+                    ['loadMoreLabel', 'Load more label'],
+                    ['loadingLabel', 'Loading label'],
+                    ['retryLabel', 'Retry label'],
+                  ] as const).map(([key, label]) => (
+                    <PropertyControlRenderer
+                      key={key}
+                      propKey={key}
+                      control={{ type: 'text', label }}
+                      value={typeof props[key] === 'string' ? props[key] : LOOP_LOADING_LABEL_DEFAULTS[key]}
+                      onChange={handleScalarChange}
+                    />
+                  ))}
+                </>
               ) : null}
             </>
           ) : null}
