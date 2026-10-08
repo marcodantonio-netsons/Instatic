@@ -621,7 +621,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
           videoUrl,
           poster: attr(el, 'poster'),
           preload,
-          title: attr(el, 'title') || attr(el, 'aria-label') || 'Video',
+          title: attr(el, 'title'),
           autoplay: el.hasAttribute('autoplay'),
           loop: el.hasAttribute('loop'),
           muted: el.hasAttribute('muted'),
