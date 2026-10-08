@@ -165,21 +165,24 @@ describe('base.visual-component-ref and slot modules — contract specifics', ()
 // ---------------------------------------------------------------------------
 
 describe('base.loop — module contract specifics', () => {
-  it('uses dynamic loop properties outside the generic schema renderer', () => {
+  it('keeps source controls specialized and loading labels in the native text schema', () => {
     expect(LoopModule.id).toBe('base.loop')
     expect(LoopModule.canHaveChildren).toBe(true)
     expect(LoopModule.publishBehavior).toBe('special')
-    expect(Object.keys(LoopModule.schema)).toEqual([])
+    expect(Object.keys(LoopModule.schema).sort()).toEqual(['loadMoreLabel', 'loadingLabel', 'retryLabel'])
     expect(Object.keys(LoopModule.defaults).sort()).toEqual([
       'customTag',
       'direction',
       'filters',
       'htmlAttributes',
       'limit',
+      'loadMoreLabel',
+      'loadingLabel',
       'offset',
       'orderBy',
       'pageSize',
       'pagination',
+      'retryLabel',
       'sourceId',
       'tag',
     ])

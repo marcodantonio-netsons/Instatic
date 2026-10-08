@@ -22,6 +22,7 @@ import type { DbClient } from '../../db/client'
 import { FormConfigurationError } from '@core/forms'
 import { LocalizationError } from '@core/localization'
 import { PageTranslationError } from '@core/page-tree'
+import { LoopScopeConfigurationError } from '@core/publisher'
 import { isMainScope, type BranchScope } from '../../branches/scope'
 import { requireCapability, requireStepUp } from '../../auth/authz'
 import { createAuditEvent } from '../../repositories/audit'
@@ -62,7 +63,7 @@ export async function handlePublishRoutes(
     try {
       result = await publishDraftSite(db, user.id, options.uploadsDir)
     } catch (err) {
-      if (err instanceof FormConfigurationError || err instanceof RuntimeScriptBuildError || err instanceof LocalizationError || err instanceof PageTranslationError || err instanceof PublicAssetValidationError) {
+      if (err instanceof FormConfigurationError || err instanceof RuntimeScriptBuildError || err instanceof LocalizationError || err instanceof PageTranslationError || err instanceof PublicAssetValidationError || err instanceof LoopScopeConfigurationError) {
         return jsonResponse({ error: err.message }, { status: 422 })
       }
       throw err

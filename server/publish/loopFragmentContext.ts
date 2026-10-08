@@ -2,7 +2,7 @@ import type { DbClient } from '../db/client'
 import type { Page, PageNode, SiteDocument } from '@core/page-tree'
 import { reindexNodeParents } from '@core/page-tree'
 import { resolveNotFoundTemplate } from '@core/templates'
-import { walkRenderTree } from '@core/visualComponents'
+import { assertInfiniteLoopRenderScopes, collectLoopRenderScopes } from '@core/publisher'
 import { resolvePublicRoute, resolvePublishedNotFoundRoute } from './publicRouteResolution'
 import { buildPublishedEntryRenderContext, buildPublishedPageRenderContext } from './publishedRenderContext'
 import { NOT_FOUND_ARTEFACT_URL_PATH } from './staticArtefact'
@@ -42,25 +42,16 @@ export function readLoopPageUrl(pagePath: string, endpointUrl: URL): URL {
 }
 
 function findLoopTarget(page: Page, site: SiteDocument, loopId: string) {
-  const targets: Array<{ node: PageNode; page: Page; nested: boolean }> = []
-  walkRenderTree(page.nodes, page.rootNodeId, site.visualComponents, (node, frame) => {
-    if (node.moduleId !== 'base.loop' || node.id !== loopId) return
-    const nodes: Record<string, PageNode> = {}
-    for (const [id, current] of Object.entries(frame.nodes)) nodes[id] = { ...current }
-    reindexNodeParents(nodes)
-    targets.push({
-      node,
-      page: { ...page, nodes, rootNodeId: node.id },
-      nested: frame.ancestors.some((ancestor) => ancestor.moduleId === 'base.loop'),
-    })
-  })
+  const scopes = collectLoopRenderScopes(page, site)
+  const targets = scopes.filter((scope) => scope.node.id === loopId)
   if (targets.length === 0) throw new LoopFragmentContextError('Loop not found on the published page', 404)
+  assertInfiniteLoopRenderScopes(page, scopes)
   if (targets.length > 1) throw new LoopFragmentContextError('Loop has multiple instances on the published page', 409)
   const target = targets[0]
-  if (target.nested) {
-    throw new LoopFragmentContextError('Nested loops require their outer entry context and cannot load independently', 409)
-  }
-  return target
+  const nodes: Record<string, PageNode> = {}
+  for (const [id, current] of Object.entries(target.nodes)) nodes[id] = { ...current }
+  reindexNodeParents(nodes)
+  return { node: target.node, page: { ...page, nodes, rootNodeId: target.node.id } }
 }
 
 /** Resolve the same published page/entry/404 and template composition as the full public renderer. */
