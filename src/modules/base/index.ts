@@ -31,6 +31,7 @@ import './svg'
 import './button'
 import './link'
 import './disclosure'
+import './preference'
 
 // Form modules
 import './forms'

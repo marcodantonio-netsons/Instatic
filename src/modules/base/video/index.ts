@@ -32,7 +32,7 @@ import { safeUrl } from '@modules/base/utils/escape'
 import { buildMediaSrcset, pickMediaVariantUrl } from '@modules/base/utils/mediaAttrs'
 import { VideoEditor } from './VideoEditor'
 import { parseYoutubeId, youtubeEmbedUrl } from './youtube'
-import { VideoPropsSchema, type VideoStoredProps } from './props'
+import { VideoPropsSchema, VideoPublishSchema, type VideoStoredProps } from './props'
 
 // ---------------------------------------------------------------------------
 // Props schema — authored fields only. The publisher-injected field
@@ -64,8 +64,14 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
   canHaveChildren: false,
 
   propsSchema: VideoPropsSchema,
+  publishSchema: VideoPublishSchema,
 
   schema: {
+    playbackRole: {
+      type: 'select', label: 'Playback role',
+      options: [{ value: 'content', label: 'Visitor-controlled content' }, { value: 'decorative', label: 'Decorative media' }],
+      description: 'Decorative video requires site visitor preferences, a self-hosted URL, muted audio, inline playback and no controls. Reduced media or motion prevents loading.',
+    },
     videoUrl: {
       type: 'media',
       mediaKind: 'video',
@@ -149,13 +155,17 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
     const preload =
       props.preload === 'none' ? 'none' : props.preload === 'auto' ? 'auto' : 'metadata'
 
-    const attrs: string[] = [`src="${videoSrc}"`]
+    const decorative = props.playbackRole === 'decorative'
+    // Only the document preference owner attaches decorative source/loading/
+    // autoplay. Parser-time markup cannot start a download before its policy.
+    const attrs: string[] = decorative
+      ? [`data-instatic-decorative-src="${videoSrc}"`, `data-instatic-decorative-preload="${preload}"`, `data-instatic-decorative-autoplay="${Boolean(props.autoplay)}"`, 'aria-hidden="true"', 'preload="none"']
+      : [`src="${videoSrc}"`, `preload="${preload}"`]
     if (posterSrc) attrs.push(`poster="${posterSrc}"`)
     if (width !== null) attrs.push(`width="${width}"`)
     if (height !== null) attrs.push(`height="${height}"`)
-    attrs.push(`preload="${preload}"`)
     if (props.playsinline) attrs.push('playsinline')
-    if (props.autoplay) attrs.push('autoplay')
+    if (props.autoplay && !decorative) attrs.push('autoplay')
     if (props.loop) attrs.push('loop')
     if (props.muted) attrs.push('muted')
     if (props.controls) attrs.push('controls')

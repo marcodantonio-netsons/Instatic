@@ -25,6 +25,7 @@ import {
 import { blurHashToDataUrl, pickVariantUrl } from '@admin/pages/media/utils/variants'
 import s from '../SettingsModal.module.css'
 import { LanguageFilesField } from './LanguageFilesField'
+import { VisitorPreferencesFields } from './VisitorPreferencesFields'
 
 // Lazy-load the media picker modal so the Settings modal opens quickly even
 // when the Media-page module graph (folders / canvas / viewer) hasn't been
@@ -131,6 +132,7 @@ export function GeneralSection() {
           updateSiteSettings({ faviconUrl: next.trim() || undefined })
         }
       />
+      <VisitorPreferencesFields value={settings.visitorPreferences} onChange={visitorPreferences => updateSiteSettings({ visitorPreferences })} />
     </div>
   )
 }

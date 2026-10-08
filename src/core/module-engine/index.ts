@@ -51,5 +51,6 @@ export {
 export { registry } from './registry'
 
 export { parseModuleProps, ModulePropsValidationError } from './parseModuleProps'
+export { validateModulePublishInput, ModulePublishValidationError } from './validatePublishInput'
 
 export { resolveHtmlTagBadge } from './htmlTagBadge'

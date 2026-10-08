@@ -130,6 +130,8 @@ export interface PluginModuleDefinition {
    * unchanged for modules with no schema.
    */
   propsSchema?: TSchema
+  /** Hard TypeBox validation of resolved `{ props, settings }` before rendering. */
+  publishSchema?: TSchema
   /** Whether the module can hold child modules. */
   canHaveChildren?: boolean
   /**

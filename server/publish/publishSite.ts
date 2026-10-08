@@ -60,6 +60,7 @@ import { MAIN_SCOPE } from '../branches/scope'
 import { pagePublicPath } from '@core/page-tree'
 import { listPublishedRowRoutes, publicDataPath } from '../repositories/data/publish'
 import { compilePublicSiteAssets, writePublicSiteAssets } from './publicSiteAssets'
+import { VISITOR_PREFERENCES_RUNTIME_JS, VISITOR_PREFERENCES_RUNTIME_PATH } from '@core/visitor-preferences'
 
 interface PublishResult {
   publishedPages: number
@@ -239,6 +240,9 @@ async function publishDraftSiteLocked(
   // walk no longer repeats per page. Both authored layers are page-scoped.
   const assetsByPath = new Map<string, Uint8Array>()
   const encoder = new TextEncoder()
+  if (site.settings.visitorPreferences) {
+    assetsByPath.set(VISITOR_PREFERENCES_RUNTIME_PATH, encoder.encode(VISITOR_PREFERENCES_RUNTIME_JS))
+  }
   const collectCssFiles = (cssBundle: SiteCssBundle): void => {
     for (const file of [cssBundle.reset, cssBundle.framework, cssBundle.style, cssBundle.userStyles]) {
       if (file.content.length === 0) continue
