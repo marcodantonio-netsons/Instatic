@@ -24,7 +24,7 @@
 import type { PageNode } from '@core/page-tree'
 import { isPageRef, resolvePageRef } from '@core/page-tree'
 import type { AnyModuleDefinition } from '@core/module-engine'
-import { validateNodeProps } from '@core/module-engine'
+import { parseModuleProps } from '@core/module-engine'
 import { resolveInitialFormValues, resolveFormRenderProps } from '@core/forms'
 import { buildTemplateRenderContext } from '@core/templates'
 import { resolveProps } from '@core/page-tree'
@@ -121,8 +121,8 @@ function attachResolvedAutoSizes(
 }
 
 /**
- * Standard bottom-up render path: children first, then resolve props, attach
- * resolved assets, call the module's pure render(), collect deduped CSS,
+ * Standard bottom-up render path: children first, then attach resolved assets
+ * to the dispatcher-parsed props, call the module's pure render(), collect deduped CSS,
  * inject author classes onto the root element.
  *
  * `base.body` emits no wrapper element — its render returns naked children
@@ -135,25 +135,7 @@ function renderStandardNode(
   config: RenderConfig,
   acc: RenderAccumulators,
 ): string {
-  // Resolve effective props (base + breakpoint shallow-merge for
-  // breakpointOverridable schema keys only — content props always publish
-  // their base value because HTML is a single document) and apply dynamic
-  // template bindings.
-  const effectiveProps = resolveProps(node, config.breakpointId, def.schema)
-  const dynamicProps = resolveDynamicProps(
-    effectiveProps,
-    effectiveNodeBindings(node),
-    config.templateContext,
-  )
-
-  // Resolve internal page references (`cms:page:<id>`) to the target page's
-  // CURRENT public path, so links survive slug renames. Runs before validation
-  // / escaping so the resolved URL flows through the normal href pipeline.
-  const resolvedProps = resolvePageRefProps(dynamicProps, config.site.pages)
-
-  // Coerce/default-fill authored props against the module's TypeBox schema
-  // (soft boundary — never throws; unknown injected keys survive the merge).
-  const validatedProps = validateNodeProps(def, resolvedProps)
+  const validatedProps = node.props
   const formContext = node.moduleId === 'base.form'
     ? { values: resolveInitialFormValues(config.site, config.page, node.id, config.templateContext ?? buildTemplateRenderContext(config.page, config.site, undefined)), active: true }
     : config.formContext
@@ -249,8 +231,8 @@ type SpecialRenderer = (
 
 /**
  * Publisher-side specialised-renderer IMPLEMENTATIONS, keyed by moduleId. Each
- * replaces the entire "render children → resolve props → call render() → inject
- * classes" flow because the moduleId's semantics need a different shape:
+ * replaces the "render children → call render() → inject classes" flow after
+ * the common resolved-props boundary because its semantics need a different shape:
  *
  * - `base.visual-component-ref`: inlines a Visual Component tree recursively,
  *   consuming its `base.slot-instance` children for slot fills.
@@ -322,8 +304,17 @@ export function renderNode(
     return renderHolePlaceholder(node, def, config, acc)
   }
 
-  const specialRenderer = resolveSpecialRenderer(def)
-  if (specialRenderer) return specialRenderer(node, config, acc, renderNode)
+  // One owner materializes every rendered module's props, including special
+  // renderers. Hole subtrees reach this boundary with their real request.
+  const effectiveProps = resolveProps(node, config.breakpointId, def.schema)
+  const dynamicProps = resolveDynamicProps(effectiveProps, effectiveNodeBindings(node), config.templateContext)
+  const resolvedProps = resolvePageRefProps(dynamicProps, config.site.pages)
+  const path = 'pages.' + config.page.id + '.nodes.' + node.id
+  const props = parseModuleProps(def, resolvedProps, path)
+  const materializedNode = { ...node, props }
 
-  return renderStandardNode(node, def, config, acc)
+  const specialRenderer = resolveSpecialRenderer(def)
+  if (specialRenderer) return specialRenderer(materializedNode, config, acc, renderNode)
+
+  return renderStandardNode(materializedNode, def, config, acc)
 }
