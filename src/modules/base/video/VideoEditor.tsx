@@ -31,6 +31,7 @@ import { VideoPublishSchema } from './props'
 import { compiledCheck } from '@core/utils/typeboxCompiler'
 import { useEditorStore } from '@site/store/store'
 import { cn } from '@ui/cn'
+import { htmlAttributesForReact, MODULE_GENERATED_ATTRIBUTE_NAMES } from '@core/htmlAttributes'
 import s from './Video.module.css'
 
 // Canvas tile width hint — drives the poster variant pick. Videos in the
@@ -58,6 +59,8 @@ export const VideoEditor: React.FC<ModuleComponentProps<VideoStoredProps>> = ({ 
     : null
 
   const decorative = props.playbackRole === 'decorative'
+  const generatedNames = [...MODULE_GENERATED_ATTRIBUTE_NAMES['base.video'], ...(decorative ? ['aria-hidden'] : [])]
+  const htmlAttrs = htmlAttributesForReact(props.htmlAttributes, generatedNames)
   if (decorative && !compiledCheck(VideoPublishSchema, { props, settings })) {
     return <CanvasModulePlaceholder {...nodeWrapperProps} className={mcClassName} icon={<VideoSolidIcon size={16} />} label="Decorative video requires visitor defaults, a self-hosted source, muted audio, inline playback and no controls." />
   }
@@ -65,7 +68,6 @@ export const VideoEditor: React.FC<ModuleComponentProps<VideoStoredProps>> = ({ 
   // ─── YouTube ────────────────────────────────────────────────────────────
   if (youtubeId) {
     const src = youtubeEmbedUrl(youtubeId, props.autoplay, props.noRelatedVideos)
-    const iframeTitle = props.title || 'YouTube video'
     if (posterUrl) {
       return (
         <div {...nodeWrapperProps} className={cn(mcClassName, s.facade)}>
@@ -79,8 +81,9 @@ export const VideoEditor: React.FC<ModuleComponentProps<VideoStoredProps>> = ({ 
             className={s.poster}
           />
           <iframe
+            {...htmlAttrs}
             src={src}
-            title={iframeTitle}
+            title={props.title || undefined}
             loading="lazy"
             frameBorder="0"
             allow="autoplay; encrypted-media; fullscreen"
@@ -95,8 +98,9 @@ export const VideoEditor: React.FC<ModuleComponentProps<VideoStoredProps>> = ({ 
     return (
       <div {...nodeWrapperProps} className={cn(mcClassName, s.facade)}>
         <iframe
+          {...htmlAttrs}
           src={src}
-          title={iframeTitle}
+          title={props.title || undefined}
           loading="lazy"
           frameBorder="0"
           allow="autoplay; encrypted-media; fullscreen"
@@ -127,13 +131,15 @@ export const VideoEditor: React.FC<ModuleComponentProps<VideoStoredProps>> = ({ 
   // ─── Uploaded / external video ──────────────────────────────────────────
   return (
     <video
+      {...htmlAttrs}
       {...nodeWrapperProps}
       className={mcClassName}
+      title={props.title || undefined}
       src={decorative ? undefined : props.videoUrl}
       data-instatic-decorative-src={decorative ? props.videoUrl : undefined}
       data-instatic-decorative-preload={decorative ? props.preload : undefined}
       data-instatic-decorative-autoplay={decorative ? String(props.autoplay) : undefined}
-      aria-hidden={decorative ? true : undefined}
+      {...(decorative ? { 'aria-hidden': true } : {})}
       poster={posterUrl ?? undefined}
       width={intrinsic?.width}
       height={intrinsic?.height}

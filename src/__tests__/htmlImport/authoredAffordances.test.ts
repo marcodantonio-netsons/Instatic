@@ -27,11 +27,13 @@ describe('native media and range controls', () => {
 
   it('keeps video poster, preload, label and playback affordances', () => {
     const node = firstNodeOf('<video poster="poster.jpg" preload="none" aria-label="Datacenter" autoplay loop muted playsinline><source src="intro.mp4"></video>', 'base.video')
-    expect(node.props).toMatchObject({ videoUrl: 'intro.mp4', poster: 'poster.jpg', preload: 'none', title: 'Datacenter', autoplay: true, loop: true, muted: true, playsinline: true })
+    expect(node.props).toMatchObject({ videoUrl: 'intro.mp4', poster: 'poster.jpg', preload: 'none', title: '', htmlAttributes: { 'aria-label': 'Datacenter' }, autoplay: true, loop: true, muted: true, playsinline: true })
     const html = renderNode(node)
     expect(html).toContain('poster="poster.jpg"')
     expect(html).toContain('preload="none"')
     expect(html).toContain('src="intro.mp4"')
+    expect(html).toContain('aria-label="Datacenter"')
+    expect(html).not.toContain('title=')
   })
 })
 

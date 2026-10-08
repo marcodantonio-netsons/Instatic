@@ -62,6 +62,16 @@ src/modules/base/
 
 ---
 
+## Video titles and HTML attributes
+
+`base.video.title` is an optional authored title on the native `<video>` or YouTube `<iframe>`. Its default is empty; the renderer never invents a source-specific title. The title supports the normal bindings and language catalogue tokens. An empty title omits the attribute.
+
+The normal HTML attributes panel supports safe attributes such as `aria-label`, `aria-describedby`, `id` and `data-*`. Publication and canvas use the shared HTML attribute sanitiser. These attributes belong to the player, including the iframe inside a YouTube poster facade. HTML import preserves `title` in its native prop and keeps `aria-label` in the attributes bag independently.
+
+The generated-name catalogue reserves the source, poster, dimensions, playback flags, preload and iframe loading/permission attributes for Module settings. Decorative video still forces `aria-hidden="true"` and leaves source loading and autoplay to the visitor preference owner; custom attributes cannot override that policy.
+
+---
+
 ## The `ModuleDefinition` shape
 
 ```ts
