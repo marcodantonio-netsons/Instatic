@@ -7,6 +7,7 @@ import { composeTemplateChain, resolveTemplateChain, buildTemplateRenderContext,
 import { derivePageFormSnapshots } from './snapshot'
 import type { TemplateRenderDataContext } from '@core/templates'
 import { FormConfigurationError } from './errors'
+import { resolveSelectInitialValue } from './selectInitialValue'
 
 /** Native composition and bindings give the server the same form definition as rendering. */
 export function resolvePublishedFormPage(site: SiteDocument, page: Page): Page {
@@ -67,12 +68,7 @@ export function resolveInitialFormValues(site: SiteDocument, page: Page, formNod
     const name = typeof node.props.name === 'string' && node.props.name ? node.props.name : typeof node.props.fieldId === 'string' ? node.props.fieldId : ''
     if (!name || node.props.disabled) continue
     if (node.moduleId === 'base.select') {
-      const options = node.children.flatMap((id) => collectOptions(id, expanded.nodes)).filter((option) => !option.props.disabled)
-      if (node.props.multiple) values[name] = options.filter((option) => option.props.selected).map((option) => option.props.value ?? '')
-      else {
-        const selected = options.find((option) => option.props.selected) ?? options[0]
-        values[name] = selected?.props.value ?? ''
-      }
+      values[name] = resolveSelectInitialValue(node, (id) => expanded.nodes[id])
     } else if (['base.input', 'base.textarea', 'base.radio', 'base.checkbox'].includes(node.moduleId)) {
       if (['base.radio', 'base.checkbox'].includes(node.moduleId) && !node.props.checked) continue
       values[name] = node.props.value ?? (['base.radio', 'base.checkbox'].includes(node.moduleId) ? 'on' : '')
@@ -90,9 +86,4 @@ export function resolveInitialFormValues(site: SiteDocument, page: Page, formNod
     }
   }
   return successful
-}
-function collectOptions(id: string, nodes: Record<string, PageNode>): PageNode[] {
-  const node = nodes[id]
-  if (!node || node.props.disabled) return []
-  return node.moduleId === 'base.option' ? [node] : node.children.flatMap((child) => collectOptions(child, nodes))
 }

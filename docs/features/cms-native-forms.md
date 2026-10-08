@@ -82,6 +82,7 @@ Behavior is stored on editable native nodes; there is no opaque HTML form, per-s
 | Control `requiredWhen` | Recompute requiredness from the same condition engine used by property controls, SSR and CMS validation. |
 | Control `queryParameter` | Initialize a single text/select value from the browser URL, subject to authored limits and offered enabled options. |
 | Control `lockQueryValue` | Lock a valid query value: readonly text controls or only the selected option enabled. The select remains enabled and submits its value. Missing query keeps the authored editable default; invalid query sets a visible invalid state and blocks submission until corrected. |
+| Control `resetBehavior` | `initial` restores the effective authored/query value captured once at attachment; `clear` empties text/select values and deselects choices; `preserve` keeps the current value, including a visitor's correction. Manual resets and successful submissions use the same policy. |
 | Control `valueSourceField` | A declared hidden input mirrors an enabled scalar input/textarea/select outside conditional groups. Checkbox/radio, multiple-select and file sources are rejected because they can be absent or non-scalar. CMS validation rejects forged synchronized values. |
 | `base.form-output.fieldName` | Show a named control's value as plain text. |
 | Control `requiredMessage` / `invalidMessage` | Authored field-local browser validation copy. |
@@ -99,6 +100,10 @@ The condition property control uses shared Input/Select/Button primitives and ed
 ## Declared recipient requests
 
 For `mode: request`, configure `action`, `encoding: multipart | json`, `responseSuccessField` (default `ok`), `responseMessageField` (default `message`), and `resetOnSuccess`. The recipient must return a JSON object with a boolean success field and an optional string message field. HTTP failure, a false success field or malformed JSON produces the authored error state. Request timeout is 20 seconds and the accepted JSON response is bounded. Multipart retains native files; CMS/JSON file inputs are rejected before publication rather than losing uploaded bytes.
+
+Reset policies belong to controls, not a form-specific callback. Reset never rereads the URL. Conditions, requiredness, outputs and synchronized hidden values are recomputed after restoring controls. An invalid initial query remains invalid under `initial`; `preserve` retains a corrected value, and `clear` discards the invalid query. A cancelled reset remains cancelled. Locked query controls cannot use `clear`, mirrored controls reset through their scalar source, and file inputs cannot use `preserve` because browsers prohibit programmatically restoring a chosen file. File inputs always clear through their native reset action.
+
+Single-select initialization preserves an explicitly selected disabled empty placeholder. With no explicit selection it chooses the first enabled option; if multiple options are explicitly selected the last one wins, matching HTML. The canonical `resolveSelectInitialValue` helper provides that value to the publisher's form context and the canvas SelectEditor. Disabled choices remain excluded from server-side offered values, so a required empty placeholder cannot be submitted as a valid choice.
 
 Requests use `credentials: omit`; Instatic does not proxy them, inject a secret, reinterpret the recipient's business protocol, or bypass CORS. The recipient must explicitly permit the published origin and perform its own validation. Native CMS origin/HMAC/challenge/honeypot/rate limits remain unchanged. A UI lock does not replace recipient validation.
 

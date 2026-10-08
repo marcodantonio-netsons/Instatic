@@ -3,14 +3,24 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { ConditionControl } from '@site/property-controls/ConditionControl'
 import { PropertyControlRenderer } from '@site/property-controls/PropertyControlRenderer'
 import { paramTypesCompatibleWithControl } from '@site/property-controls/paramTypeCompat'
-import { FormMessageEditor } from '@modules/base/forms/FormControls'
-import { FormMessageModule } from '@modules/base/forms'
+import { FormMessageEditor, SelectEditor, OptionEditor } from '@modules/base/forms/FormControls'
+import { FormMessageModule, SelectModule, OptionModule } from '@modules/base/forms'
+import { resolveSelectInitialValue } from '@core/forms'
+import { makeNode } from '../fixtures'
 import { resolveDynamicProps, buildTemplateRenderContext } from '@core/templates'
 import { makePage, makeSite } from '../fixtures'
 
 afterEach(cleanup)
 
 describe('native form editor controls', () => {
+  it('renders the same explicit empty placeholder as the native initial-value engine', () => {
+    const nodes = { placeholder: makeNode({ moduleId: 'base.option', props: { value: '', disabled: true, selected: true } }), offered: makeNode({ moduleId: 'base.option', props: { value: 'offered' } }) }
+    const select = makeNode({ moduleId: 'base.select', children: ['placeholder', 'offered'] })
+    const value = resolveSelectInitialValue(select, (id) => nodes[id as keyof typeof nodes])
+    render(<SelectEditor nodeId="select" isSelected={false} props={{ ...SelectModule.defaults, name: 'choice', _formInitialValue: value }}><OptionEditor nodeId="placeholder" isSelected={false} props={{ ...OptionModule.defaults, value: '', disabled: true, selected: true, label: 'Choose' }} /><OptionEditor nodeId="offered" isSelected={false} props={{ ...OptionModule.defaults, value: 'offered', label: 'Offered' }} /></SelectEditor>)
+    expect((screen.getByRole('combobox') as HTMLSelectElement).value).toBe('')
+  })
+
   it('edits nested rules with native controls and emits structured values', () => {
     const change = mock(() => {})
     render(<ConditionControl propKey="condition" label="Visible when" value={{ and: [{ field: 'purpose', in: ['support','commercial'] }] }} onChange={change} />)

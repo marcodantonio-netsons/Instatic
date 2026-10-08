@@ -49,6 +49,12 @@ export function InputEditor({ mcClassName, nodeWrapperProps, props }: ModuleComp
       disabled={props.disabled}
       readOnly={props.readOnly}
       autoComplete={props.autocomplete || undefined}
+      min={props.min !== '' ? props.min : undefined}
+      max={props.max !== '' ? props.max : undefined}
+      step={props.step !== '' ? props.step : undefined}
+      minLength={props.minLength > 0 ? props.minLength : undefined}
+      maxLength={props.maxLength > 0 ? props.maxLength : undefined}
+      pattern={props.pattern || undefined}
     />
   )
 }
@@ -66,11 +72,13 @@ export function TextareaEditor({ mcClassName, nodeWrapperProps, props }: ModuleC
       disabled={props.disabled}
       readOnly={props.readOnly}
       rows={props.rows}
+      minLength={props.minLength > 0 ? props.minLength : undefined}
+      maxLength={props.maxLength > 0 ? props.maxLength : undefined}
     />
   )
 }
 
-export function SelectEditor({ children, mcClassName, nodeWrapperProps, props }: ModuleComponentProps<SelectProps>) {
+export function SelectEditor({ children, mcClassName, nodeWrapperProps, props }: ModuleComponentProps<SelectProps & { _formInitialValue?: string | string[] }>) {
   return (
     <select
       {...nodeWrapperProps}
@@ -80,6 +88,7 @@ export function SelectEditor({ children, mcClassName, nodeWrapperProps, props }:
       required={props.required}
       disabled={props.disabled}
       multiple={props.multiple}
+      defaultValue={props._formInitialValue}
     >
       {children}
     </select>

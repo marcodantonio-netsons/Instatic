@@ -39,12 +39,13 @@ return function check(value) {
     ((check_T0(value.requiredWhen)) || ((value.requiredWhen === null))) &&
     (typeof value.queryParameter === 'string') &&
     (typeof value.lockQueryValue === 'boolean') &&
+    (((value.resetBehavior === 'initial')) || ((value.resetBehavior === 'clear')) || ((value.resetBehavior === 'preserve'))) &&
     (typeof value.valueSourceField === 'string') &&
     (typeof value.requiredMessage === 'string') &&
     (typeof value.invalidMessage === 'string') &&
     (typeof value.required === 'boolean') &&
     (typeof value.disabled === 'boolean') &&
-    Object.getOwnPropertyNames(value).length === 8
+    Object.getOwnPropertyNames(value).length === 9
   )
 }
 })();

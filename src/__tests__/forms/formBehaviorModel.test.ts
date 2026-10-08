@@ -38,6 +38,35 @@ function fixture() {
 }
 
 describe('native form composition and published authority', () => {
+  it('preserves disabled selected empty placeholders in initial SSR and server authority', () => {
+    const { site, page, component } = fixture()
+    component.tree.nodes.selector.props.required = true
+    component.tree.nodes.selector.children.unshift('placeholder')
+    component.tree.nodes.placeholder = makeNode({ id: 'placeholder', moduleId: 'base.option', props: { value: '', label: 'Choose', selected: true, disabled: true } })
+    const values = resolveInitialFormValues(site, page, 'root', buildTemplateRenderContext(page, site, undefined))
+    expect(values.purpose).toBe('')
+    const html = publishPage(page, site, registry).html
+    expect(html).toContain('<option value="" selected disabled>Choose</option>')
+    const [snapshot] = derivePublishedPageFormSnapshots(site, page)
+    expect(snapshot.controls[0].options).toEqual(['basic', 'advanced'])
+    const table = { ...Value.Create(DataTableSchema), fields: [{ id: 'purpose', label: 'Purpose', type: 'text' as const }] }
+    expect(validateFormSubmission({ table, controls: snapshot.controls, values: {} }).ok).toBe(false)
+    expect(validateFormSubmission({ table, controls: snapshot.controls, values: { purpose: '' } }).ok).toBe(false)
+  })
+
+  it('rejects contradictory reset policies and preservation of browser file selections', () => {
+    const { site, component } = fixture()
+    component.tree.nodes.selector.props.resetBehavior = 'clear'
+    component.tree.nodes.selector.props.lockQueryValue = true
+    expect(() => assertSiteForms(site)).toThrow('locked query value cannot be cleared')
+    component.tree.nodes.selector.props.lockQueryValue = false
+    component.tree.nodes.form.children.push('file')
+    component.tree.nodes.file = makeNode({ id: 'file', moduleId: 'base.input', props: { name: 'file', inputType: 'file', resetBehavior: 'preserve' } })
+    expect(() => assertSiteForms(site)).toThrow('cannot preserve selected files')
+    component.tree.nodes.file.props = { name: 'range', inputType: 'range', min: '0', max: '10', step: '2', queryParameter: 'amount', lockQueryValue: true }
+    expect(() => assertSiteForms(site)).toThrow('supporting readonly semantics')
+  })
+
   it('uses identical language files and frames for publisher and CMS snapshots in nine languages', () => {
     const { site, page } = fixture()
     assertSiteTranslations(site)
