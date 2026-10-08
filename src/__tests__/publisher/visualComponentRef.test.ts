@@ -451,10 +451,8 @@ describe('VC inlining — class CSS collection', () => {
       'base.visual-component-ref': VisualComponentRefModule as never,
       'base.slot-outlet': SlotOutletModule as never,
       'test.styled': makeModule('test.styled', {
-        render: (props) => ({
-          html: `<p>${String((props as { text: unknown }).text)}</p>`,
-          css: 'p { color: navy; }',
-        }),
+        assets: { css: 'p { color: navy; }' },
+        render: (props) => ({ html: `<p>${String((props as { text: unknown }).text)}</p>` }),
       }),
       'base.container': ContainerModule as never,
     })

@@ -9,7 +9,7 @@
  *
  *  (a) the expensive all-pages walk runs ONCE across many renders at the same
  *      publish version (the page-invariant files are reused by reference, and
- *      the module-render walk is not repeated);
+ *      the module-metadata walk is not repeated);
  *  (b) `bumpPublishVersion()` invalidates the memo so a content change can never
  *      serve stale framework CSS;
  *  (c) the EMITTED CSS is byte-identical to the un-memoised `buildSiteCssBundle`
@@ -30,16 +30,14 @@ import { makeModule, makeRegistry, makePage, makeSite } from '../publisher/helpe
 import type { SiteDocument } from '@core/page-tree'
 
 describe('buildPublishedSiteCssBundle — page-invariant memo', () => {
-  let renderCalls = 0
+  let assetReads = 0
   const styledTextDef = makeModule('base.text', {
-    render: (_props, _children) => {
-      // Every node visited by the all-pages module-CSS walk runs this. Counting
-      // invocations lets a test assert the walk happened exactly once per version.
-      renderCalls += 1
-      return { html: '<h1>Hi</h1>', css: 'h1 { color: black; }' }
-    },
+    assets: { css: 'h1 { color: black; }' },
+    render: () => { throw new Error('Asset discovery must never invoke render') },
   })
   const registry = makeRegistry({ 'base.text': styledTextDef })
+  const getDefinition = registry.get
+  registry.get = (id) => { assetReads++; return getDefinition(id) }
 
   function makeMultiPageSite(): SiteDocument {
     const site = makeSite()
@@ -53,14 +51,14 @@ describe('buildPublishedSiteCssBundle — page-invariant memo', () => {
 
   beforeEach(() => {
     resetPublishStateForTests()
-    renderCalls = 0
+    assetReads = 0
   })
 
   it('runs the all-pages walk once across many renders at the same version', () => {
     const site = makeMultiPageSite()
 
     const first = buildPublishedSiteCssBundle(site, registry, site.pages[0])
-    const callsAfterFirst = renderCalls
+    const callsAfterFirst = assetReads
     expect(callsAfterFirst).toBeGreaterThan(0)
 
     // Render the other two pages at the SAME publish version.
@@ -69,7 +67,7 @@ describe('buildPublishedSiteCssBundle — page-invariant memo', () => {
 
     // The expensive walk did not run again — the framework files came
     // from the memo, not a fresh O(all-pages) traversal.
-    expect(renderCalls).toBe(callsAfterFirst)
+    expect(assetReads).toBe(callsAfterFirst)
 
     // The page-invariant files are the very same objects (memo hit by reference).
     const second = buildPublishedSiteCssBundle(site, registry, site.pages[1])
@@ -92,13 +90,13 @@ describe('buildPublishedSiteCssBundle — page-invariant memo', () => {
     const site = makeMultiPageSite()
 
     const before = buildPublishedSiteCssBundle(site, registry, site.pages[0])
-    const callsAfterFirst = renderCalls
+    const callsAfterFirst = assetReads
 
     bumpPublishVersion()
 
     const after = buildPublishedSiteCssBundle(site, registry, site.pages[0])
     // The walk ran again for the new version — the memo was invalidated.
-    expect(renderCalls).toBeGreaterThan(callsAfterFirst)
+    expect(assetReads).toBeGreaterThan(callsAfterFirst)
     // New file objects (recomputed, not the stale cached ones).
     expect(after.framework).not.toBe(before.framework)
     expect(after.style).not.toBe(before.style)
@@ -114,11 +112,11 @@ describe('buildPublishedSiteCssBundle — page-invariant memo', () => {
     const secondSite = makeMultiPageSite()
 
     const first = buildPublishedSiteCssBundle(firstSite, registry, firstSite.pages[0])
-    const callsAfterFirstSite = renderCalls
+    const callsAfterFirstSite = assetReads
 
     const second = buildPublishedSiteCssBundle(secondSite, registry, secondSite.pages[0])
 
-    expect(renderCalls).toBe(callsAfterFirstSite)
+    expect(assetReads).toBe(callsAfterFirstSite)
     expect(second.framework).toBe(first.framework)
     expect(second.style).not.toBe(first.style)
   })
@@ -130,10 +128,10 @@ describe('buildPublishedSiteCssBundle — page-invariant memo', () => {
     const site = makeMultiPageSite()
 
     const current = buildPublishedSiteCssBundle(site, registry, site.pages[0])
-    const callsAfterCurrent = renderCalls
+    const callsAfterCurrent = assetReads
 
     const next = buildPublishedSiteCssBundle(site, registry, site.pages[0], 1)
-    expect(renderCalls).toBeGreaterThan(callsAfterCurrent)
+    expect(assetReads).toBeGreaterThan(callsAfterCurrent)
     expect(next.framework).not.toBe(current.framework)
   })
 

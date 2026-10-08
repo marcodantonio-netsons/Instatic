@@ -80,10 +80,8 @@ const buttonModule = makeModule('base.button', {
 
 const headingModule = makeModule('base.text', {
   canHaveChildren: false,
-  render: (props) => ({
-    html: `<h2 class="instatic-heading">${props['text'] ?? ''}</h2>`,
-    css: '.instatic-heading { font-size: 1.5rem; }',
-  }),
+  assets: { css: '.instatic-heading { font-size: 1.5rem; }' },
+  render: (props) => ({ html: `<h2 class="instatic-heading">${props['text'] ?? ''}</h2>` }),
 })
 
 const reg = makeRegistry({

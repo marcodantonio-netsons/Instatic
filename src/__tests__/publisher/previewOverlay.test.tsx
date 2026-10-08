@@ -330,10 +330,8 @@ describe('publishPage — 2-node tree golden test (Phase 7)', () => {
 
   const headingModule = makeModule('base.text', {
     canHaveChildren: false,
-    render: (props) => ({
-      html: `<h1 class="instatic-heading">${props['text'] ?? ''}</h1>`,
-      css: '/* base.text */\n.instatic-heading { font-family: sans-serif; margin: 0; }',
-    }),
+    assets: { css: '/* base.text */\n.instatic-heading { font-family: sans-serif; margin: 0; }' },
+    render: (props) => ({ html: `<h1 class="instatic-heading">${props['text'] ?? ''}</h1>` }),
   })
 
   const reg = makeRegistry({ 'base.body': rootModule, 'base.text': headingModule })

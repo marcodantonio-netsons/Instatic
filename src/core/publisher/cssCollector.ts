@@ -66,7 +66,7 @@ export function collectClassCSS(site: SiteDocument, page: Page, options: ClassCs
  * Neutralise any `</style` sequence in CSS before injection into a `<style>` block.
  *
  * Constraint #228: module CSS is inserted directly between `<style>…</style>` tags.
- * A module that returns `css: 'h1{color:red}</style><script>…</script><style>'`
+ * A module that declares `assets.css: 'h1{color:red}</style><script>…</script><style>'`
  * would break out of the style block and inject arbitrary HTML/script.
  *
  * The HTML5 RAWTEXT tokenizer recognises an end-tag for `<style>` whenever

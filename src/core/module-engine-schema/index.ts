@@ -35,3 +35,6 @@ export {
 export { evaluateCondition } from '@core/value-conditions'
 
 export { resolveHtmlTagBadge } from '../module-engine/htmlTagBadge'
+
+export { ModuleAssetsSchema, ModuleAssetUsageSchema } from '../module-engine/moduleAssets'
+export type { ModuleAssets, ModuleAssetUsage } from '../module-engine/moduleAssets'

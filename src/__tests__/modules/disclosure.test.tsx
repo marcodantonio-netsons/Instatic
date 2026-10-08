@@ -25,8 +25,8 @@ describe('native disclosure authoring and publishing', () => {
     expect(details.getAttribute('name')).toBe('navigation')
     expect(details.open).toBe(true)
     expect(details.getAttribute('role')).toBeNull()
-    expect(result.css).toBeUndefined()
-    expect(result.js).toBe(DISCLOSURE_RUNTIME_JS)
+    expect(DisclosureModule.assets?.css).toBeUndefined()
+    expect(DisclosureModule.assets?.js).toBe(DISCLOSURE_RUNTIME_JS)
   })
 
   it('escapes labels/group names and rejects runtime attribute overrides', () => {

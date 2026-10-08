@@ -53,3 +53,6 @@ export { registry } from './registry'
 export { parseModuleProps, ModulePropsValidationError } from './parseModuleProps'
 
 export { resolveHtmlTagBadge } from './htmlTagBadge'
+
+export { ModuleAssetsSchema, ModuleAssetUsageSchema } from './moduleAssets'
+export type { ModuleAssets, ModuleAssetUsage } from './moduleAssets'

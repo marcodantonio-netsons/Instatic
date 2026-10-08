@@ -29,7 +29,7 @@ import { resolveInitialFormValues, resolveFormRenderProps } from '@core/forms'
 import { buildTemplateRenderContext } from '@core/templates'
 import { resolveProps } from '@core/page-tree'
 import { resolveDynamicProps, effectiveNodeBindings } from '@core/templates'
-import { sanitizeModuleCSS } from './cssCollector'
+import { collectModuleAssets } from './moduleAssets'
 import { escapeHtml } from './utils'
 import { escapeProps } from './escapeProps'
 import { injectNodeClassIds, injectNodeId, injectNodeInlineStyles } from './classInjection'
@@ -151,19 +151,8 @@ function renderStandardNode(
 
   const output = def.render(safeProps as never, renderedChildren)
 
-  // CSS dedup — one entry per moduleId. Sanitize before storage to neutralise
-  // any `</style` so the HTML5 RAWTEXT tokenizer cannot escape the
-  // surrounding <style> block (Constraint #228).
-  if (output.css && !acc.cssMap.has(node.moduleId)) {
-    acc.cssMap.set(node.moduleId, sanitizeModuleCSS(output.css))
-  }
-
-  // JS dedup — one entry per moduleId, mirroring CSS. No escaping needed:
-  // module JS is served as an external file (`/_instatic/module-js/<id>.js`),
-  // never inlined into the document.
-  if (output.js && !acc.jsMap.has(node.moduleId)) {
-    acc.jsMap.set(node.moduleId, output.js)
-  }
+  // Payloads are type metadata; only activation depends on this real render.
+  collectModuleAssets(def, acc, output.assetUsage)
 
   // CSP source requirements — union all sources declared by this render into
   // the per-page accumulator. Deduplication is implicit (Set). addCspSources

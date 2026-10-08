@@ -21,12 +21,8 @@ import { makeModule, makeRegistry, makePage, makeSite } from '../publisher/helpe
 
 describe('buildSiteCssBundle', () => {
   const styledTextDef = makeModule('base.text', {
-    render: (_props, _children) => ({
-      html: '<h1>Hello</h1>',
-      // Plugins MAY emit module CSS via render(); base modules don't, but the
-      // bundle builder must handle both. This stand-in proves the path works.
-      css: 'h1 { color: black; }',
-    }),
+    assets: { css: 'h1 { color: black; }' },
+    render: (_props, _children) => ({ html: '<h1>Hello</h1>' }),
   })
   const registry = makeRegistry({ 'base.text': styledTextDef })
   const colorFramework = {
