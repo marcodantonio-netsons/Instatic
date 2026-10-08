@@ -76,14 +76,13 @@ export const LoopModule: ModuleDefinition<LoopProps> = {
   // standard walk — declared here so the dispatch is visible on the definition.
   publishBehavior: 'special',
 
-  // Loop properties are NOT panel-edited via the generic schema renderer
-  // because filterSchema is dynamic per source. The Properties Panel
-  // branches on moduleId === 'base.loop' and renders LoopPropertiesView,
-  // which itself renders the shared htmlTag controls.
+  // Source configuration uses LoopPropertiesView because filterSchema is
+  // dynamic per source. Loading labels use ordinary schema controls so they
+  // share native bindings and Visual Component parameter authoring.
   schema: {
-    loadMoreLabel: { type: 'text', label: 'Load more label' },
-    loadingLabel: { type: 'text', label: 'Loading label' },
-    retryLabel: { type: 'text', label: 'Retry label' },
+    loadMoreLabel: { type: 'text', label: 'Load more label', condition: { field: 'pagination', eq: 'infinite' } },
+    loadingLabel: { type: 'text', label: 'Loading label', condition: { field: 'pagination', eq: 'infinite' } },
+    retryLabel: { type: 'text', label: 'Retry label', condition: { field: 'pagination', eq: 'infinite' } },
   },
 
   propsSchema: LoopPropsSchema,
