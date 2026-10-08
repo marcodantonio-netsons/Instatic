@@ -5,7 +5,7 @@ Modules are the building blocks the visual editor places on the canvas — `base
 A module declares:
 - A unique `id` (namespaced: `base.text`, `acme.product-card`)
 - A `PropertySchema` describing its props (drives the right-panel form)
-- A pure `render(props, renderedChildren)` function that returns `{ html, css? }`
+- A pure `render(props, renderedChildren)` function that returns `{ html, assetUsage?, cspSources? }`
 - An optional canvas `component` (React) for in-editor preview
 - Required metadata: `name`, `category`, `icon`, `version`, `trusted`, `canHaveChildren`, `defaults`
 
@@ -158,7 +158,7 @@ interface ModuleDefinition<TProps extends Record<string, unknown>> {
 
 Constraint #179: **`render()` is pure** — no DOM, no React, no side effects. Inputs in, strings out.
 
-`render()` may also return `js` next to `html`/`css` — an optional vanilla-JS runtime for the module TYPE, deduplicated per moduleId (like CSS) and served as an external file at `/_instatic/module-js/<moduleId>.js` on published pages. Authoring contract: a self-contained IIFE; bind via document-level event delegation (hole fragments insert into the DOM after load); idempotent; no load-order assumptions; no framework runtimes. Size discipline in the spirit of the ~1 KB hole runtime — the ~8 KB form runtime is the ceiling, not the norm. Module JS never executes in the admin canvas: the canvas renders React editor components, never published render() output.
+Declare invariant CSS and vanilla-JS in `ModuleDefinition.assets`. `render()` returns HTML, optional boolean `assetUsage` and instance-specific CSP requirements; it never returns asset payloads. The actual render may disable a payload, for example a native HTML form with enhancement disabled. Published JS is served at `/_instatic/module-js/<moduleId>.js`. Author it as a self-contained, idempotent IIFE with document-level event delegation and no framework runtime. The editor reads declared CSS and never executes published module JS. See `src/core/module-engine/moduleAssets.ts` for the shared TypeBox schemas.
 
 ---
 
@@ -441,13 +441,13 @@ export const HeadingModule: ModuleDefinition<HeadingProps> = {
       ],
     },
   },
+  assets: { css: '.heading[data-align="center"] { text-align: center; } .heading[data-align="right"] { text-align: right; }' },
   component: HeadingEditor,
   htmlTag: 'h2',
   render: (props) => {
     const tag = `h${Math.max(1, Math.min(6, Number(props.level) || 2))}`
     return {
       html: `<${tag} class="heading" data-align="${props.align}">${props.text}</${tag}>`,
-      css: `.heading[data-align="center"] { text-align: center; } .heading[data-align="right"] { text-align: right; }`,
     }
   },
 }

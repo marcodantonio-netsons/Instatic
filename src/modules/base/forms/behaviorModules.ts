@@ -15,8 +15,8 @@ export const FormConditionalModule: ModuleDefinition<ConditionalProps> = {
   icon: FileTextSolidIcon, trusted: true, canHaveChildren: true, htmlTag: 'div',
   schema: { condition: { type: 'condition', label: 'Visible when', category: 'layout' } },
   propsSchema: ConditionalPropsSchema, defaults: Value.Create(ConditionalPropsSchema), component: ConditionalEditor,
+  assets: { css: '[data-instatic-form-condition][hidden]{display:none}' },
   render: (props, children) => ({
-    css: '[data-instatic-form-condition][hidden]{display:none}',
     html: `<div data-instatic-form-condition="${escapeHtml(JSON.stringify(props.condition))}"${'_formConditionVisible' in props && props._formConditionVisible === false ? ' hidden' : ''}>${children.join('')}</div>`,
   }),
 }

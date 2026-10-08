@@ -54,3 +54,6 @@ export { parseModuleProps, ModulePropsValidationError } from './parseModuleProps
 export { validateModulePublishInput, ModulePublishValidationError } from './validatePublishInput'
 
 export { resolveHtmlTagBadge } from './htmlTagBadge'
+
+export { ModuleAssetsSchema, ModuleAssetUsageSchema } from './moduleAssets'
+export type { ModuleAssets, ModuleAssetUsage } from './moduleAssets'

@@ -24,6 +24,7 @@ import type {
   ModuleComponentProps,
 } from '@core/module-engine'
 import type { PluginManifest } from '@core/plugin-sdk'
+import type { ModuleAssets, ModuleAssetUsage } from '@core/module-engine-schema'
 import type {
   PluginEditorRuntime,
   PluginModuleDefinition,
@@ -162,13 +163,14 @@ export interface SandboxedModulePack {
     canHaveChildren?: boolean
     htmlTag?: string
     hasPreview: boolean
+    assets?: ModuleAssets
     /** Package dependencies declared by the module — surfaced in the Dependencies Panel. */
     dependencies?: PluginModuleDependencies
     /** Optional iframe-backed editor preview source. */
     editorRuntime?: PluginEditorRuntime
   }>
-  render(moduleId: string, props: Record<string, unknown>, children: string[]): { html: string; css?: string; js?: string }
-  preview(moduleId: string, props: Record<string, unknown>, children: string[]): { html: string; css?: string; js?: string }
+  render(moduleId: string, props: Record<string, unknown>, children: string[]): { html: string; assetUsage?: ModuleAssetUsage }
+  preview(moduleId: string, props: Record<string, unknown>, children: string[]): { html: string; assetUsage?: ModuleAssetUsage }
   dispose(): void
 }
 
@@ -207,6 +209,7 @@ export function activateSandboxedPluginModulePack(
       propsSchema: deserializeTypeBoxSchema(meta.propsSchema),
       publishSchema: deserializeTypeBoxSchema(meta.publishSchema),
       canHaveChildren: meta.canHaveChildren,
+      ...(meta.assets ? { assets: meta.assets } : {}),
       htmlTag: meta.htmlTag,
       ...(meta.dependencies ? { dependencies: meta.dependencies } : {}),
       ...(meta.editorRuntime ? { editorRuntime: meta.editorRuntime } : {}),

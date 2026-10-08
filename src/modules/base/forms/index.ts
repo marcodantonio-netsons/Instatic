@@ -83,6 +83,7 @@ export const FormModule: ModuleDefinition<FormProps> = {
   propsSchema: FormPropsSchema,
   defaults: Value.Create(FormPropsSchema),
   component: FormEditor,
+  assets: { js: FORM_RUNTIME_JS },
   htmlTag: 'form',
   render: (props, renderedChildren) => {
     const formId = normalizeIdentifierValue(props.formId, 'form')
@@ -114,8 +115,8 @@ export const FormModule: ModuleDefinition<FormProps> = {
       : ''
     return {
       html: `<form ${attrs}${authored}>${honeypot}${renderedChildren.join('')}</form>`,
-      // Only the form root owns runtime emission; ordinary HTML actions stay native.
-      ...(props.mode !== 'custom' || props.enhance ? { js: FORM_RUNTIME_JS } : {}),
+      // Ordinary HTML actions stay native; this instance needs no enhancement.
+      assetUsage: { js: props.mode !== 'custom' || props.enhance },
       ...(props.mode !== 'cms' && /^https?:\/\//i.test(props.action) ? { cspSources: [
         ...(props.mode === 'request' ? [{ directive: 'connect-src' as const, sources: [new URL(props.action).origin] }] : []),
         { directive: 'form-action' as const, sources: [new URL(props.action).origin] },

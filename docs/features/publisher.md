@@ -425,7 +425,7 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 
 ## Module JS channel
 
-`render()` may return `js` next to `html`/`css` (`RenderOutput`, `src/core/module-engine/types.ts`). The walker dedupes it per moduleId into `RenderAccumulators.jsMap`; `publishPage` reports per-page candidates (`jsModuleIds` = render-emitted ids ∪ every moduleId inside the page's hole subtrees via `collectHoleSubtreeModuleIds`); the server intersects candidates with the site-wide map (`buildPublishedSiteModuleJsMap`) and injects one external `<script defer>` per module before `</body>`. JS is never inlined — no `</script>` escaping anywhere. Pages with no module JS ship zero script tags and keep `script-src 'none'`. The CMS form runtime is the first consumer: `base.form` emits it when `mode === 'cms'` (`src/modules/base/forms/formRuntimeJs.ts`); token stamping stays server-side (`stampFormPageTokens`, applied to baked pages and hole fragments).
+`ModuleDefinition.assets` owns invariant CSS and JS payloads (`src/core/module-engine/moduleAssets.ts`). The real node render returns optional boolean `assetUsage`, so conditional activation uses resolved instance props without moving payloads into render output. `collectSiteModuleAssets` performs one structural census through `publishedRenderScopes` and `walkRenderTree`; it never calls render, fetches loop rows, or invents a current-entry/request context. Selected component slots, inherited parameters, 404/entry composition and zero-row loop variants share native reachability. Losing templates and unused fills contribute no assets. Real renders accumulate active JS into `RenderAccumulators.jsMap`; hole candidates use the same materialized walker. The server intersects candidates with the declared site map and injects one external deferred script per module. Pages with no active module JS keep their locked script CSP.
 
 ---
 
@@ -445,7 +445,7 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | `server/publish/publicRenderer.ts`              | `renderPublishedSnapshot`, `renderPublishedDataRowTemplate` — thin wrappers (resolve + compose the template chain, seed the context) over one shared `renderMergedTemplate` (CSS bundle + loop/media prefetch + `publishPage` + publish-version stamping). The entry path also passes the row's `readEntrySeoOverride(...)` through as `documentMeta`. |
 | `server/publish/publishedHtmlPipeline.ts`       | Post-process: DOMPurify the final HTML, run plugin `publish.html` filter, splice in declarative tags from plugin manifests, inject runtime assets. Runs at publish time only — never per-request. |
 | `server/publish/siteCssBundle.ts`               | Hash the four CSS strings, write `uploads/css/...` files. The framework bundle's module-CSS half comes from the shared walk in `siteModuleAssets.ts`. |
-| `server/publish/siteModuleAssets.ts`            | `collectSiteModuleAssets` — the one full-site render walk whose accumulators feed BOTH the framework CSS bundle (`cssMap`) and the published module-JS map (`jsMap`). |
+| `server/publish/siteModuleAssets.ts`            | `collectSiteModuleAssets` — the structural census of native public scopes whose maps feed both the framework CSS bundle (`cssMap`) and the published module-JS map (`jsMap`). |
 | `server/publish/moduleJsBundle.ts`              | Module-JS channel: `buildSiteModuleJsMap` (fresh), `buildPublishedSiteModuleJsMap` (memoised per publishVersion + site, invalidated by `bumpPublishVersion()`), and `injectModuleScripts` (per-page `<script defer>` tags + CSP `script-src 'self'` relaxation). |
 | `server/publish/republish.ts`                   | Bulk re-publish on settings change (touches every page).            |
 | `server/publish/publishScheduler.ts`            | Scheduled publish jobs (cron-style).                                |
@@ -597,7 +597,7 @@ The published `SiteDocument` is stored once per publish in `site_snapshots` and 
 The publisher doesn't know about specific modules — it asks the registry. To add a new first-party module that renders correctly:
 
 1. Define a `ModuleDefinition<TProps>` and call `registry.registerOrReplace(...)` from `src/modules/base/index.ts` (see [docs/features/modules.md](modules.md) and [docs/reference/module-engine.md](../reference/module-engine.md)).
-2. Implement `render(props, renderedChildren) → { html, css? }` as a pure function.
+2. Declare invariant `assets: { css?, js? }` and implement `render(props, renderedChildren) → { html, assetUsage?, cspSources? }` as a pure function.
 
 That's it. The walker, escape, class injection, and CSS dedup all work automatically.
 

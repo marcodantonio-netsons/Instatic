@@ -84,3 +84,6 @@ export { PUBLISHER_RESET_CSS } from './reset'
 export { resolveAutoSizes } from './sizesResolver'
 
 export type { CssBundleFile, SiteCssBundle, SiteCssBundleId } from './siteCssBundle'
+
+export { collectModuleAssets } from './moduleAssets'
+export type { ModuleAssetMaps } from './moduleAssets'

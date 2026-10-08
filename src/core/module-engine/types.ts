@@ -9,6 +9,7 @@ import type {
 import type { IconComponent } from 'pixel-art-icons/types'
 import type { TSchema } from '@core/utils/typeboxHelpers'
 import type { PropertySchema } from './propertySchema'
+import type { ModuleAssets, ModuleAssetUsage } from './moduleAssets'
 
 // ---------------------------------------------------------------------------
 // Module package dependencies — dependency-backed editor runtimes
@@ -45,7 +46,7 @@ interface ModuleEditorRuntime {
 
 // ---------------------------------------------------------------------------
 // Render Output — the canonical return type for ModuleDefinition.render()
-// Decision #309: render() returns { html, css? } not a plain string
+// Decision #309: render() returns { html, assetUsage?, cspSources? } not a plain string
 // ---------------------------------------------------------------------------
 
 /**
@@ -80,22 +81,8 @@ export interface CspSourceRequirement {
 export interface RenderOutput {
   /** Clean HTML string — no editor code, no React, no framework runtime */
   html: string
-  /**
-   * Optional scoped CSS for this module TYPE.
-   * The publisher deduplicates across all instances (one CSS block per module type).
-   */
-  css?: string
-  /**
-   * Optional vanilla-JS runtime for this module TYPE, deduplicated per
-   * moduleId exactly like `css` and served as an external per-module asset
-   * (`/_instatic/module-js/<moduleId>.js`) on published pages — never inlined,
-   * so no `</script>` escaping is needed. Authoring contract: a self-contained
-   * IIFE; bind via document-level event delegation (hole fragments insert into
-   * the DOM after load); idempotent; no load-order assumptions; no framework
-   * runtimes. Never executed in the admin canvas (the canvas renders editor
-   * React components, not published render() output).
-   */
-  js?: string
+  /** Disable a declared type asset for this resolved instance; omitted means enabled. */
+  assetUsage?: ModuleAssetUsage
   /**
    * Optional CSP source requirements for this specific render instance.
    *
@@ -388,6 +375,8 @@ export interface ModuleDefinition<
    * Validation never supplies defaults or repairs a failing value.
    */
   publishSchema?: TSchema
+  /** Invariant CSS / vanilla-JS payloads, shared by every instance of this type. */
+  assets?: ModuleAssets
 
   /** Default property values matching the schema */
   defaults: TProps
@@ -423,7 +412,7 @@ export interface ModuleDefinition<
    * - No imports from src/editor/
    * - ALL string props MUST be HTML-escaped before interpolation
    * - MUST reject javascript: URLs in href/src/action attributes
-   * Decision #309: returns RenderOutput { html, css? } not a plain string
+   * Decision #309: returns RenderOutput { html, assetUsage?, cspSources? } not a plain string
    */
   render: (props: TProps, renderedChildren: string[]) => RenderOutput
 

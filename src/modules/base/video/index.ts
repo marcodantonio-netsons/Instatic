@@ -53,6 +53,33 @@ type VideoProps = VideoStoredProps & {
   _resolvedMediaByKey?: Record<string, RenderResolvedMedia>
 } & Record<string, unknown>
 
+const YOUTUBE_FACADE_CSS = `
+.bv-yt {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background-color: #000;
+  overflow: hidden;
+}
+.bv-yt > .bv-yt-poster,
+.bv-yt > .bv-yt-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 0;
+}
+.bv-yt > .bv-yt-poster {
+  object-fit: cover;
+}
+.bv-yt > .bv-yt-frame {
+  background: transparent;
+  z-index: 1;
+}
+`.trim()
+
 export const VideoModule: ModuleDefinition<VideoProps> = {
   id: 'base.video',
   name: 'Video',
@@ -65,6 +92,7 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
 
   propsSchema: VideoPropsSchema,
   publishSchema: VideoPublishSchema,
+  assets: { css: YOUTUBE_FACADE_CSS },
 
   schema: {
     playbackRole: {
@@ -134,7 +162,7 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
     }
 
     const videoSrc = safeUrl(rawUrl)
-    if (!videoSrc) return { html: '<video></video>' }
+    if (!videoSrc) return { html: '<video></video>', assetUsage: { css: false } }
 
     // Resolved video asset gives us intrinsic dimensions — emits
     // `width` / `height` attrs so the browser reserves layout space
@@ -170,7 +198,7 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
     if (props.muted) attrs.push('muted')
     if (props.controls) attrs.push('controls')
 
-    return { html: `<video ${attrs.join(' ')}></video>` }
+    return { html: `<video ${attrs.join(' ')}></video>`, assetUsage: { css: false } }
   },
 }
 
@@ -272,37 +300,8 @@ function renderYoutube(input: YoutubeRenderInput): RenderOutput {
     + `<iframe class="bv-yt-frame" ${iframeAttrs.join(' ')}></iframe>`
     + `</div>`
 
-  return { html, css: YOUTUBE_FACADE_CSS, cspSources: YOUTUBE_CSP_SOURCES }
+  return { html, cspSources: YOUTUBE_CSP_SOURCES }
 }
 
-// Scoped to `.bv-yt` so the publisher's per-moduleId CSS dedup applies
-// (one block per page, not per instance). Constraint #310: this string
-// is props-independent — no template interpolation of `props.*`.
-const YOUTUBE_FACADE_CSS = `
-.bv-yt {
-  position: relative;
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background-color: #000;
-  overflow: hidden;
-}
-.bv-yt > .bv-yt-poster,
-.bv-yt > .bv-yt-frame {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  border: 0;
-}
-.bv-yt > .bv-yt-poster {
-  object-fit: cover;
-}
-.bv-yt > .bv-yt-frame {
-  background: transparent;
-  z-index: 1;
-}
-`.trim()
 
 registry.registerOrReplace(VideoModule)

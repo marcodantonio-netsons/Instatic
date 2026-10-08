@@ -30,12 +30,12 @@ export const DisclosureModule: ModuleDefinition<DisclosureStoredProps> = {
     htmlAttributes: htmlAttributesControl(),
   },
   component: DisclosureEditor,
+  assets: { js: DISCLOSURE_RUNTIME_JS },
   render(props, children) {
     // Dedicated props own open/name; custom attributes cannot contradict them.
     const attrs = Object.fromEntries(Object.entries(props.htmlAttributes).filter(([name]) => !['open', 'name'].includes(name.trim().toLowerCase())))
     return {
       html: `<details${htmlAttributesAttr(attrs)}${props.group ? ` name="${props.group}"` : ''}${props.initiallyOpen ? ' open' : ''} data-instatic-disclosure="" data-instatic-close-on-escape="${props.closeOnEscape}" data-instatic-close-on-outside-pointer="${props.closeOnOutsidePointer}" data-instatic-close-on-focus-leave="${props.closeOnFocusLeave}"><summary>${props.label}</summary>${children.join('')}</details>`,
-      js: DISCLOSURE_RUNTIME_JS,
     }
   },
 }

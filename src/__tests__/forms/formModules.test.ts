@@ -232,7 +232,7 @@ describe('base form primitive modules', () => {
     expect(formOutput.html).toContain('action="https://example.com/submit"')
     expect(formOutput.html).toContain('data-instatic-success-redirect="#"')
     expect(formOutput.html).not.toContain('javascript:')
-    expect(formOutput.js).toBeUndefined()
+    expect(formOutput.assetUsage?.js).toBe(false)
 
     expect(SubmitModule.render({ ...SubmitModule.defaults, formId: 'Contact Form!' }, []).html)
       .toBe('<button type="submit" form="Contact-Form">Submit</button>')
