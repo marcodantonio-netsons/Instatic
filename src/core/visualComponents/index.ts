@@ -14,6 +14,7 @@ export type { VisualComponent, VCNode, VCParam, VCParamType } from './schemas'
 
 export { instantiateVCAtRef } from './instantiate'
 export { walkRenderTree } from './renderTreeWalk'
+export type { RenderTreeFrame } from './renderTreeWalk'
 export type { InstantiatedVCNode } from './instantiate'
 
 export { validateComponentName, validateParamName, vcSlugFromName } from './nameValidation'

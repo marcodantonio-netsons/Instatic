@@ -27,6 +27,22 @@ function siteWith(vcs: Array<{ id: string; rootNodeId: string; nodes: Record<str
 }
 
 describe('walkRenderTree', () => {
+  test('provides distinct instance ids and parent frames for repeated components', () => {
+    const site = siteWith([{ id: 'shared', rootNodeId: 'control', nodes: { control: n('control', 'base.input') } }])
+    const nodes = {
+      root: n('root', 'base.body', ['first', 'second']),
+      first: n('first', 'base.visual-component-ref', [], { componentId: 'shared' }),
+      second: n('second', 'base.visual-component-ref', [], { componentId: 'shared' }),
+    }
+    const instances: { id: string; parentId: string | null; components: string[] }[] = []
+    walkRenderTree(nodes, 'root', site.visualComponents, (node, frame) => {
+      if (node.moduleId === 'base.input') instances.push({ id: frame.id, parentId: frame.parentId, components: [...frame.componentIds] })
+    })
+    expect(instances).toEqual([
+      { id: 'first:control', parentId: 'first', components: ['shared'] },
+      { id: 'second:control', parentId: 'second', components: ['shared'] },
+    ])
+  })
   test('descends into a referenced VC definition tree', () => {
     const site = siteWith([
       {
