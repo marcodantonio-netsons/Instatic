@@ -18,6 +18,7 @@ export const LabelPropsSchema = Type.Object({
 export type LabelProps = Static<typeof LabelPropsSchema>
 
 export const InputPropsSchema = Type.Object({
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
   ...FormControlBehaviorProperties,
   inputType: Type.Union([
     Type.Literal('text'),
@@ -54,6 +55,7 @@ export const InputPropsSchema = Type.Object({
 export type InputProps = Static<typeof InputPropsSchema>
 
 export const TextareaPropsSchema = Type.Object({
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
   ...FormControlBehaviorProperties,
   fieldId: Type.String({ default: '' }),
   name: Type.String({ default: '' }),
@@ -71,6 +73,7 @@ export const TextareaPropsSchema = Type.Object({
 export type TextareaProps = Static<typeof TextareaPropsSchema>
 
 export const SelectPropsSchema = Type.Object({
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
   ...FormControlBehaviorProperties,
   fieldId: Type.String({ default: '' }),
   name: Type.String({ default: '' }),
@@ -99,6 +102,7 @@ export const OptionGroupPropsSchema = Type.Object({
 export type OptionGroupProps = Static<typeof OptionGroupPropsSchema>
 
 export const ChoicePropsSchema = Type.Object({
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
   ...FormControlBehaviorProperties,
   fieldId: Type.String({ default: '' }),
   name: Type.String({ default: '' }),

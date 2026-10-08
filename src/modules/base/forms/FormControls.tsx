@@ -4,6 +4,7 @@ import type { TurnstileConfigurationSchema } from '@core/forms-schema'
 import type { ConditionalPropsSchema, OutputPropsSchema } from './behaviorSchemas'
 import type { ModuleComponentProps } from '@core/module-engine'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
+import { htmlAttributesForReact, MODULE_GENERATED_ATTRIBUTE_NAMES } from '@core/htmlAttributes'
 
 type EditorFormPreviewProps = { editorPreviewState?: FormPreviewState; editorPreviewMessage?: string }
 type FormPreviewState = 'default' | 'submitting' | 'success' | 'error'
@@ -14,6 +15,7 @@ export function FormEditor({ children, mcClassName, nodeWrapperProps, props }: M
   const formId = normalizeIdentifierValue(props.formId, 'form')
   return (
     <form
+      {...htmlAttributesForReact(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.form'])}
       {...nodeWrapperProps}
       className={mcClassName}
       data-instatic-form-id={formId}
@@ -38,10 +40,11 @@ export function LabelEditor({ mcClassName, nodeWrapperProps, props }: ModuleComp
 export function InputEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<InputProps>) {
   return (
     <input
+      {...htmlAttributesForReact(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.input'])}
       {...nodeWrapperProps}
       className={mcClassName}
       type={props.inputType}
-      name={props.name}
+      name={props.name || props.fieldId}
       id={props.id || undefined}
       placeholder={props.placeholder || undefined}
       defaultValue={props.value || undefined}
@@ -62,9 +65,10 @@ export function InputEditor({ mcClassName, nodeWrapperProps, props }: ModuleComp
 export function TextareaEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<TextareaProps>) {
   return (
     <textarea
+      {...htmlAttributesForReact(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.textarea'])}
       {...nodeWrapperProps}
       className={mcClassName}
-      name={props.name}
+      name={props.name || props.fieldId}
       id={props.id || undefined}
       placeholder={props.placeholder || undefined}
       defaultValue={props.value || undefined}
@@ -81,9 +85,10 @@ export function TextareaEditor({ mcClassName, nodeWrapperProps, props }: ModuleC
 export function SelectEditor({ children, mcClassName, nodeWrapperProps, props }: ModuleComponentProps<SelectProps & { _formInitialValue?: string | string[] }>) {
   return (
     <select
+      {...htmlAttributesForReact(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.select'])}
       {...nodeWrapperProps}
       className={mcClassName}
-      name={props.name}
+      name={props.name || props.fieldId}
       id={props.id || undefined}
       required={props.required}
       disabled={props.disabled}
@@ -114,10 +119,11 @@ export function OptionGroupEditor({ children, nodeWrapperProps, props }: ModuleC
 export function CheckboxEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<ChoiceProps>) {
   return (
     <input
+      {...htmlAttributesForReact(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.checkbox'])}
       {...nodeWrapperProps}
       className={mcClassName}
       type="checkbox"
-      name={props.name}
+      name={props.name || props.fieldId}
       id={props.id || undefined}
       value={props.value}
       defaultChecked={props.checked}
@@ -130,10 +136,11 @@ export function CheckboxEditor({ mcClassName, nodeWrapperProps, props }: ModuleC
 export function RadioEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<ChoiceProps>) {
   return (
     <input
+      {...htmlAttributesForReact(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.radio'])}
       {...nodeWrapperProps}
       className={mcClassName}
       type="radio"
-      name={props.name}
+      name={props.name || props.fieldId}
       id={props.id || undefined}
       value={props.value}
       defaultChecked={props.checked}
