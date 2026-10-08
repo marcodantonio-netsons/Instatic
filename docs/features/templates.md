@@ -29,7 +29,6 @@ src/core/templates/
 ├── templateCompose.ts                 — composeTemplateChain, TerminalContent
 ├── contextFrames.ts                   — PageFrame, SiteFrame, RouteFrame + builders
 ├── dynamicBindings.ts                 — TemplateRenderDataContext + resolveDynamicProps
-├── templatePreviewData.ts             — buildPreviewCells, dataTablePreviewToLoopItem
 └── tokenInterpolation.ts             — parseTokenString, interpolateTokens, walkFieldPath
 
 src/modules/base/outlet/               — base.outlet module (Content Outlet)
@@ -252,12 +251,12 @@ All three render surfaces — the publisher (`renderNode.ts`), the editor canvas
 
 ## Editor canvas preview
 
-When editing a template page, the canvas previews against **live data**, falling back to synthetic sample data only when none exists. `useTemplatePreviewContext` in `src/admin/pages/site/hooks/useTemplatePreviewContext.ts` builds the `currentEntry`:
+When editing a template page, the canvas previews against **live data**. `useTemplatePreviewContext` in `src/admin/pages/site/hooks/useTemplatePreviewContext.ts` builds the `currentEntry`:
 
-- **`postTypes` target:** fetches a window of published rows for `target.tableSlugs[0]` via `previewCmsDataLoopItems` and seeds the entry stack with the first one (or the author-picked one — see below). When the table has **no** published rows, it falls back to a synthetic sample row via `dataTablePreviewToLoopItem(table)` so the layout stays visible.
+- **`postTypes` target:** fetches authorized published rows for `target.tableSlugs[0]` via `previewCmsDataLoopItems`, using the canonical page language, and seeds the entry stack with the first row or the author-picked row. Empty sources have no current entry. Failed requests and an unavailable explicit selection surface errors with native retry controls; they never become sample content.
 - **`everywhere` target:** no current entry — the outlet previews the first non-template page's tree read-only via `ReadOnlyNodeTree` (or the author-picked page).
 
-Synthetic fallback values are generic placeholders: `'Example Post Title'` for the `title` field, `null` for `media` fields. Modules must handle `null` media gracefully — the canvas shows "No image selected" for an unbound or null image source.
+The source selector, canvas and live link share this preview owner. Localized cells resolve through the normal catalogue projection, while field schemas remain available for binding authoring even when no real entry exists. Modules handle absent media through their normal empty state.
 
 #### Floating controls — `TemplateModeControl` / `VisualComponentModeControl`
 
@@ -306,7 +305,7 @@ DataMeta is fetched once from `/data/_meta` and cached module-level in `cache.ts
 
 ## Template management in the editor
 
-The **Site Explorer** panel (`src/admin/pages/site/panels/SiteExplorerPanel/`) shows **Pages** and **Templates** in separate labelled sections. Clicking a template row opens it in the canvas like a page; the canvas preview uses the synthetic entry from `useTemplatePreviewContext`.
+The **Site Explorer** panel (`src/admin/pages/site/panels/SiteExplorerPanel/`) shows **Pages** and **Templates** in separate labelled sections. Clicking a template row opens it in the canvas like a page; the canvas preview uses the authorized real entry from `useTemplatePreviewContext`.
 
 ### Converting a page to a template
 
@@ -422,9 +421,8 @@ node.props.text = 'Posted by {currentEntry.author.displayName} on {currentEntry.
   - `src/core/templates/tokenInterpolation.ts` — `parseTokenString`, `interpolateTokens`
   - `src/modules/base/outlet/index.ts` — `base.outlet` module
   - `src/admin/pages/site/property-controls/DynamicBindingControl/` — binding affordance + picker popover
-  - `src/admin/pages/site/hooks/useTemplatePreviewContext.ts` — synthetic preview context for the canvas
+  - `src/admin/pages/site/hooks/useTemplatePreviewContext.ts` — canonical page context and real entry previews
   - `src/admin/pages/site/hooks/useActiveLivePath.ts` — resolves the toolbar "Open live page" path for templates
-  - `src/core/templates/templatePreviewData.ts` — `buildPreviewCells`, `dataTablePreviewToLoopItem`
   - `server/publish/publicRenderer.ts` — chain-aware render paths
   - `src/admin/pages/site/hooks/useInsertModule.ts` — hook-level outlet guard (toast + null return)
   - `src/admin/pages/site/store/slices/site/nodeActions.ts` — store-level outlet backstop in `insertNode`

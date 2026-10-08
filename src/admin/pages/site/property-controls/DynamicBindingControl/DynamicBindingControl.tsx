@@ -216,7 +216,6 @@ export function DynamicBindingControl({
           scopedTableId={loopTableId}
           scopedTableSlug={activePageTableSlug}
           scopeLabel={loopTableId ? 'Loop row' : 'Current row'}
-          loadPublishedPreview={Boolean(loopTableId)}
           systemPreviewValues={{
             page: pageFrame,
             site: siteFrame,

@@ -22,6 +22,7 @@
 
 import type { LoopItem } from '@core/loops-schema'
 import type { PropertySchema } from '@core/module-engine'
+import type { DataLocalizationContext } from '@core/data/localizedCells'
 import type { SiteDocument } from '@core/page-tree'
 
 // ---------------------------------------------------------------------------
@@ -106,6 +107,8 @@ export interface LoopSourceDb {
 export interface SourceFetchContext {
   db: LoopSourceDb
   site: SiteDocument
+  /** The native page/site frame owns the selected language and catalogue. */
+  localization?: DataLocalizationContext
   /** Source-specific filter values, validated against `filterSchema`. */
   filters: Record<string, unknown>
   /** One of the source's `orderByOptions[].id` values. */

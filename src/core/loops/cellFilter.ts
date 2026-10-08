@@ -182,6 +182,20 @@ export function cellFilterSql(input: {
   }
 }
 
+/** The same closed conditions apply after native localized-cell projection. */
+export function matchesCellFilter(cells: Record<string, unknown>, filter: CellFilter): boolean {
+  const value = cells[filter.field]
+  const text = value === undefined || value === null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value)
+  switch (filter.operator) {
+    case 'is': return text === filter.value
+    case 'isNot': return text !== filter.value
+    case 'isTrue': return text === 'true' || text === '1'
+    case 'isFalse': return text === 'false' || text === '0' || text === ''
+    case 'isSet': return text !== ''
+    case 'isEmpty': return text === ''
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Which fields a cell condition can address
 // ---------------------------------------------------------------------------

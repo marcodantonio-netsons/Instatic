@@ -66,7 +66,7 @@ import {
   requireDataEditor,
   requireDataPublisher,
   requireDataRowMover,
-} from './access'
+} from '../../../auth/dataAccess'
 import { handleRowPreview } from './preview'
 import { isMainScope, type BranchScope } from '../../../branches/scope'
 

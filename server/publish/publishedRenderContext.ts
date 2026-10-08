@@ -42,11 +42,9 @@ export function buildPublishedEntryRenderContext(
   if (chain.length === 0) return null
   const merged = composeTemplateChain(chain, { kind: 'entry' })
   if (typeof row.cells.title === 'string') merged.title = row.cells.title
-  return {
-    page: merged,
-    templateContext: buildTemplateRenderContext(merged, snapshot.site, {
-      entryStack: [publishedDataRowToLoopItem(row)],
-      ...(url ? { route: buildRouteFrame(url.toString()) } : {}),
-    }),
-  }
+  const templateContext = buildTemplateRenderContext(merged, snapshot.site, {
+    entryStack: [], ...(url ? { route: buildRouteFrame(url.toString()) } : {}),
+  })
+  const localization = templateContext.site?.language ? { language: templateContext.site.language, translations: templateContext.site.translations } : undefined
+  return { page: merged, templateContext: { ...templateContext, entryStack: [publishedDataRowToLoopItem(row, localization)] } }
 }

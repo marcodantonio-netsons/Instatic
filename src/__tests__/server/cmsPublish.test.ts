@@ -32,6 +32,14 @@ function createPublishFakeDb() {
   const db = createFakeDb(async (rawSql, params): Promise<DbResult> => {
     const sql = rawSql.replace(/\s+/g, ' ').trim().toLowerCase()
 
+    // Repository writers inspect the real target schema before persisting cells.
+    if (sql.includes('from data_tables') && params[0] === 'pages') {
+      return { rows: [{ logical_id: 'pages', name: 'Pages', slug: 'pages', kind: 'page', route_base: '/',
+        singular_label: 'Page', plural_label: 'Pages', primary_field_id: 'title', system: true,
+        fields_json: [{ id: 'title', label: 'Title', type: 'text' }, { id: 'body', label: 'Body', type: 'pageTree' }],
+        created_by_user_id: null, updated_by_user_id: null, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }], rowCount: 1 }
+    }
+
     // saveDraftSite — insert or update site row (NOT site_snapshots)
     if (sql.startsWith('insert into site (')) {
       state.site = {

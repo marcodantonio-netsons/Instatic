@@ -112,6 +112,22 @@ export default [defineModule({
 
 `publishSchema` sees resolved bindings rather than editorial fallback values. A failure is a typed publish error with a page/node/schema path. Add the module entrypoint and `modules.register` permission to a module-pack manifest as described in [the plugin system](../../../docs/features/plugin-system.md).
 
+## Localized CMS queries
+
+Plugins that declare and receive `cms.content.read` plus the matching `contentAccess` read mode can query a localized table with an explicit language:
+
+```js
+const page = await api.cms.content.table('articles').list({
+  language: 'de',
+  filter: { heading: { like: '%Sicherheit%' } },
+  orderBy: { heading: 'asc' },
+  limit: 10,
+})
+const { results, localization } = await api.cms.content.search('Sicherheit', { language: 'de', limit: 25 })
+```
+
+The configured language files supply the text; list entries retain their raw `{ key }` authoring cells. Queries derive text before filtering, ordering, counting and paging. Omitting a language returns choices and permits authoring reads, but a localized field comparison/order fails. Search without a language reads only slug metadata in localized tables. Catalogue projections contain only keys referenced by the authorized table, never source files or unrelated text. This starter's default manifest does not request content access; declare the tables your plugin needs before using these calls.
+
 ## Permissions
 
 The template requests:
