@@ -30,6 +30,7 @@ import { getDraftPublishStatus } from '../../repositories/publish'
 import { publishDraftSite } from '../../publish/publishSite'
 import { RuntimeScriptBuildError } from '../../publish/runtime/buildError'
 import { PublicAssetValidationError } from '@core/files/publicAssets'
+import { ModulePropsValidationError } from '@core/module-engine'
 import { jsonResponse, methodNotAllowed } from '../../http'
 import type { CmsHandlerOptions } from './shared'
 import { requestAuditContext } from './shared'
@@ -63,7 +64,7 @@ export async function handlePublishRoutes(
     try {
       result = await publishDraftSite(db, user.id, options.uploadsDir)
     } catch (err) {
-      if (err instanceof FormConfigurationError || err instanceof RuntimeScriptBuildError || err instanceof LocalizationError || err instanceof PageTranslationError || err instanceof PublicAssetValidationError || err instanceof LoopScopeConfigurationError) {
+      if (err instanceof FormConfigurationError || err instanceof RuntimeScriptBuildError || err instanceof ModulePropsValidationError || err instanceof LocalizationError || err instanceof PageTranslationError || err instanceof PublicAssetValidationError || err instanceof LoopScopeConfigurationError) {
         return jsonResponse({ error: err.message }, { status: 422 })
       }
       throw err
