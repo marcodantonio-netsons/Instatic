@@ -116,6 +116,25 @@ export function effectiveNodeBindings(node: {
   return node.dynamicBindings
 }
 
+/** Effective values after whole-prop bindings, before inline token interpolation. */
+export function resolveBoundProps(
+  staticProps: Record<string, unknown>,
+  bindings: Record<string, DynamicPropBinding> | undefined,
+  context: TemplateRenderDataContext | undefined,
+): Record<string, unknown> {
+  if (!context || !bindings) return staticProps
+  const resolved = { ...staticProps }
+  for (const [propKey, binding] of Object.entries(bindings)) {
+    const value = resolveBindingValue(binding, context)
+    if (value === undefined || value === null) {
+      if (binding.fallback === 'empty') resolved[propKey] = ''
+      continue
+    }
+    resolved[propKey] = value
+  }
+  return resolved
+}
+
 export function resolveDynamicProps(
   staticProps: Record<string, unknown>,
   bindings: Record<string, DynamicPropBinding> | undefined,
@@ -129,18 +148,8 @@ export function resolveDynamicProps(
 
   // Step 1: structured whole-prop binding overrides (for non-string props, this
   // is the only way a prop gets a dynamic value).
-  let resolved: Record<string, unknown> | null = null
-  if (bindings) {
-    resolved = { ...staticProps }
-    for (const [propKey, binding] of Object.entries(bindings)) {
-      const value = resolveBindingValue(binding, context)
-      if (value === undefined || value === null) {
-        if (binding.fallback === 'empty') resolved[propKey] = ''
-        continue
-      }
-      resolved[propKey] = value
-    }
-  }
+  const boundProps = resolveBoundProps(staticProps, bindings, context)
+  let resolved: Record<string, unknown> | null = boundProps === staticProps ? null : boundProps
 
   // Step 2: token interpolation for every string-typed prop value. Both
   // the original static props and any string overwritten by step 1 are

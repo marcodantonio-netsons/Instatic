@@ -5,13 +5,14 @@ import { normalizeIdentifierValue } from '@core/utils/identifier'
 import { Value } from '@sinclair/typebox/value'
 import { compiledCheck } from '@core/utils/typeboxCompiler'
 import { FormConfigurationSchema, FormControlBehaviorSchema, TurnstileConfigurationSchema } from '@core/forms-schema'
-import { resolvePublishedFormPage } from './publishedTree'
+import { resolvePublishedFormScope } from './publishedTree'
+import { publishedRenderScopes } from '@core/templates'
 import { FormConfigurationError } from './errors'
 import { MODULE_GENERATED_ATTRIBUTE_NAMES, normalizeHtmlAttributeName } from '@core/htmlAttributes'
 const CONTROLS = new Set(['base.input', 'base.select', 'base.textarea', 'base.checkbox', 'base.radio'])
 
 export function assertSiteForms(site: SiteDocument) {
-  for (const page of site.pages) assertPageForms(resolvePublishedFormPage(site, page))
+  for (const scope of publishedRenderScopes(site)) assertPageForms(resolvePublishedFormScope(site, scope))
 }
 function fields(condition: PropertyCondition): string[] {
   if ('and' in condition) return condition.and.flatMap(fields)

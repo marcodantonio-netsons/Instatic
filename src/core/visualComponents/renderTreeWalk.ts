@@ -6,6 +6,9 @@ import { resolveSlotName, safePropOverrides } from './propGuards'
 export interface RenderTreeFrame {
   readonly nodes: Readonly<Record<string, BaseNode>>
   readonly ancestors: readonly PageNode[]
+  readonly id: string
+  readonly parentId: string | null
+  readonly componentIds: ReadonlySet<string>
 }
 
 /** Walk the materialized render tree, including effective VC params and slots. */
@@ -22,26 +25,29 @@ export function walkRenderTree(
     seenComponents: ReadonlySet<string>,
     ancestors: ReadonlySet<string>,
     renderAncestors: readonly PageNode[],
+    prefix: string,
+    parentId: string | null,
   ): void => {
     const node = currentNodes[nodeId]
     if (!node || node.hidden || ancestors.has(nodeId)) return
-    onNode(node, { nodes: currentNodes, ancestors: renderAncestors })
+    const id = prefix + node.id
+    onNode(node, { nodes: currentNodes, ancestors: renderAncestors, id, parentId, componentIds: seenComponents })
     const nextRenderAncestors = [...renderAncestors, node]
     if (node.moduleId === 'base.visual-component-ref') {
-      const id = typeof node.props.componentId === 'string' ? node.props.componentId.trim() : ''
-      const component = byId.get(id)
-      if (!component || seenComponents.has(id)) return
+      const componentId = typeof node.props.componentId === 'string' ? node.props.componentId.trim() : ''
+      const component = byId.get(componentId)
+      if (!component || seenComponents.has(componentId)) return
       const slots: Record<string, string[]> = {}
       for (const childId of node.children) {
         const child = currentNodes[childId]
         if (child?.moduleId === 'base.slot-instance') slots[resolveSlotName(child.props)] = child.children
       }
       const tree = instantiateVCAtRef(component, safePropOverrides(node.props), slots, currentNodes, node.id)
-      visit(tree.nodes, tree.rootNodeId, new Set(seenComponents).add(id), new Set(), nextRenderAncestors)
+      visit(tree.nodes, tree.rootNodeId, new Set(seenComponents).add(componentId), new Set(), nextRenderAncestors, id + ':', id)
       return
     }
     const nextAncestors = new Set(ancestors).add(nodeId)
-    for (const childId of node.children) visit(currentNodes, childId, seenComponents, nextAncestors, nextRenderAncestors)
+    for (const childId of node.children) visit(currentNodes, childId, seenComponents, nextAncestors, nextRenderAncestors, prefix, id)
   }
-  visit(nodes, rootNodeId, new Set(), new Set(), [])
+  visit(nodes, rootNodeId, new Set(), new Set(), [], '', null)
 }
