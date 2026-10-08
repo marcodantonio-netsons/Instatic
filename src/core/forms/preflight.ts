@@ -7,6 +7,7 @@ import { compiledCheck } from '@core/utils/typeboxCompiler'
 import { FormConfigurationSchema, FormControlBehaviorSchema, TurnstileConfigurationSchema } from '@core/forms-schema'
 import { resolvePublishedFormPage } from './publishedTree'
 import { FormConfigurationError } from './errors'
+import { MODULE_GENERATED_ATTRIBUTE_NAMES, normalizeHtmlAttributeName } from '@core/htmlAttributes'
 const CONTROLS = new Set(['base.input', 'base.select', 'base.textarea', 'base.checkbox', 'base.radio'])
 
 export function assertSiteForms(site: SiteDocument) {
@@ -76,6 +77,10 @@ function assertPageForms(page: Page) {
         if (!controlByName.has(String(child.props.fieldName))) fail(child, 'Output requires an existing control name')
       }
       if (CONTROLS.has(child.moduleId)) {
+        const generatedNames = MODULE_GENERATED_ATTRIBUTE_NAMES[child.moduleId] ?? []
+        for (const name of Object.keys(child.props.htmlAttributes ?? {})) {
+          if (generatedNames.includes(normalizeHtmlAttributeName(name))) fail(child, `HTML attribute is managed by native control props: ${name}`)
+        }
         const behavior = Value.Default(FormControlBehaviorSchema, Object.fromEntries(Object.keys(FormControlBehaviorSchema.properties).filter((key) => Object.hasOwn(child.props, key)).map((key) => [key, child.props[key]])))
         if (!compiledCheck(FormControlBehaviorSchema, behavior)) fail(child, 'Invalid native control behavior')
         assertCondition(child, child.props.requiredWhen)

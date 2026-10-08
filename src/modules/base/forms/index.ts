@@ -35,6 +35,7 @@ import {
   htmlAttributesControl,
 } from '@modules/base/shared/htmlAttributes'
 import { htmlAttributesAttr } from '@core/publisher'
+import { MODULE_GENERATED_ATTRIBUTE_NAMES } from '@core/htmlAttributes'
 
 export const FormModule: ModuleDefinition<FormProps> = {
   id: 'base.form',
@@ -107,7 +108,7 @@ export const FormModule: ModuleDefinition<FormProps> = {
     ].filter(Boolean).join(' ')
     // Authored attributes (progressive-enhancement hooks, ARIA, data-*) ride
     // alongside the generated form wiring instead of being dropped.
-    const authored = htmlAttributesAttr(props.htmlAttributes)
+    const authored = htmlAttributesAttr(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.form'])
     const honeypot = props.mode === 'cms'
       ? `<input type="text" name="${props.honeypotName}" autocomplete="off" tabindex="-1" data-instatic-honeypot hidden>`
       : ''
@@ -181,7 +182,7 @@ export const InputModule: ModuleDefinition<InputProps> = {
     ['minlength', positiveNumber(props.minLength)],
     ['maxlength', positiveNumber(props.maxLength)],
     ['pattern', props.pattern],
-  ])}${booleanAttrs(props, ['required', 'disabled', 'readOnly'])}${controlBehaviorAttrs(props)}>` }),
+  ])}${booleanAttrs(props, ['required', 'disabled', 'readOnly'])}${controlBehaviorAttrs(props)}${htmlAttributesAttr(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.input'])}>` }),
 }
 
 export const TextareaModule: ModuleDefinition<TextareaProps> = {
@@ -195,6 +196,7 @@ export const TextareaModule: ModuleDefinition<TextareaProps> = {
   canHaveChildren: false,
   schema: {
     ...formBehaviorControls,
+    htmlAttributes: htmlAttributesControl(),
     fieldId: { type: 'text', category: 'layout', label: 'Field ID' },
     name: { type: 'text', category: 'layout', label: 'Name' },
     id: { type: 'text', label: 'ID' },
@@ -220,7 +222,7 @@ export const TextareaModule: ModuleDefinition<TextareaProps> = {
     ['rows', props.rows],
     ['minlength', positiveNumber(props.minLength)],
     ['maxlength', positiveNumber(props.maxLength)],
-  ])}${booleanAttrs(props, ['required', 'disabled', 'readOnly'])}${controlBehaviorAttrs(props)}>${props.value}</textarea>` }),
+  ])}${booleanAttrs(props, ['required', 'disabled', 'readOnly'])}${controlBehaviorAttrs(props)}${htmlAttributesAttr(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.textarea'])}>${props.value}</textarea>` }),
 }
 
 export const SelectModule: ModuleDefinition<SelectProps> = {
@@ -234,6 +236,7 @@ export const SelectModule: ModuleDefinition<SelectProps> = {
   canHaveChildren: true,
   schema: {
     ...formBehaviorControls,
+    htmlAttributes: htmlAttributesControl(),
     fieldId: { type: 'text', category: 'layout', label: 'Field ID' },
     name: { type: 'text', category: 'layout', label: 'Name' },
     id: { type: 'text', label: 'ID' },
@@ -251,7 +254,7 @@ export const SelectModule: ModuleDefinition<SelectProps> = {
       ['data-instatic-field-id', props.fieldId],
       ['name', props.name || props.fieldId],
       ['id', props.id],
-    ])}${booleanAttrs(props, ['required', 'disabled', 'multiple'])}${controlBehaviorAttrs(props)}>${renderedChildren.join('')}</select>`,
+    ])}${booleanAttrs(props, ['required', 'disabled', 'multiple'])}${controlBehaviorAttrs(props)}${htmlAttributesAttr(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.select'])}>${renderedChildren.join('')}</select>`,
   }),
 }
 
@@ -369,6 +372,7 @@ export const FormMessageModule: ModuleDefinition<FormMessageProps> = {
 
 function inputLikeSchema(typeLabel: string): ModuleDefinition<InputProps>['schema'] {
   return {
+    htmlAttributes: htmlAttributesControl(),
     inputType: { type: 'select', label: typeLabel, options: [
       'text',
       'email',
@@ -420,6 +424,7 @@ function choiceModule(args: {
     canHaveChildren: false,
     schema: {
       ...formBehaviorControls,
+      htmlAttributes: htmlAttributesControl(),
     fieldId: { type: 'text', category: 'layout', label: 'Field ID' },
       name: { type: 'text', category: 'layout', label: 'Name' },
       id: { type: 'text', label: 'ID' },
@@ -439,7 +444,7 @@ function choiceModule(args: {
         ['name', props.name || props.fieldId],
         ['id', props.id],
         ['value', props.value],
-      ])}${booleanAttrs(props, ['checked', 'required', 'disabled'])}${controlBehaviorAttrs(props)}>`,
+      ])}${booleanAttrs(props, ['checked', 'required', 'disabled'])}${controlBehaviorAttrs(props)}${htmlAttributesAttr(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES[args.id])}>`,
     }),
   }
 }
