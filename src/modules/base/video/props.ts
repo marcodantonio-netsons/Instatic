@@ -1,5 +1,6 @@
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { SiteVisitorPreferencesSchema } from '@core/visitor-preferences-schema'
+import { HtmlAttributesPropSchemaOptions } from '@modules/base/shared/htmlAttributes'
 
 export const VideoPropsSchema = Type.Object({
   playbackRole: Type.Union([Type.Literal('content'), Type.Literal('decorative')], { default: 'content' }),
@@ -14,8 +15,9 @@ export const VideoPropsSchema = Type.Object({
     [Type.Literal('none'), Type.Literal('metadata'), Type.Literal('auto')],
     { default: 'metadata' },
   ),
-  /** Iframe title attribute for YouTube embeds. Improves accessibility. */
-  title: Type.String({ default: 'YouTube video' }),
+  /** Authored title on the native video or YouTube player. */
+  title: Type.String({ default: '' }),
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
   /** When true, appends rel=0 to the YouTube embed URL to suppress related videos. */
   noRelatedVideos: Type.Boolean({ default: false }),
 })

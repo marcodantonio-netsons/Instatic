@@ -12,4 +12,5 @@ export const MODULE_GENERATED_ATTRIBUTE_NAMES: Readonly<Record<string, readonly 
   'base.radio': choiceAttributes,
   'base.image': ['alt', 'decoding', 'fetchpriority', 'height', 'loading', 'sizes', 'src', 'srcset', 'style', 'width'],
   'base.link': ['href', 'rel', 'target'],
+  'base.video': ['allow', 'allowfullscreen', 'autoplay', 'controls', 'frameborder', 'height', 'loading', 'loop', 'muted', 'playsinline', 'poster', 'preload', 'src', 'title', 'width'],
 }

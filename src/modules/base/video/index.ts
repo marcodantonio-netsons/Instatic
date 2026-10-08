@@ -25,7 +25,8 @@
  */
 import { registry } from '@core/module-engine'
 import type { ModuleDefinition, RenderOutput, CspSourceRequirement } from '@core/module-engine'
-import type { RenderResolvedMedia } from '@core/publisher'
+import { htmlAttributesAttr, type RenderResolvedMedia } from '@core/publisher'
+import { MODULE_GENERATED_ATTRIBUTE_NAMES } from '@core/htmlAttributes'
 import { Value } from '@core/utils/typeboxHelpers'
 import { VideoSolidIcon } from 'pixel-art-icons/icons/video-solid'
 import { safeUrl } from '@modules/base/utils/escape'
@@ -33,6 +34,7 @@ import { buildMediaSrcset, pickMediaVariantUrl } from '@modules/base/utils/media
 import { VideoEditor } from './VideoEditor'
 import { parseYoutubeId, youtubeEmbedUrl } from './youtube'
 import { VideoPropsSchema, VideoPublishSchema, type VideoStoredProps } from './props'
+import { htmlAttributesControl } from '@modules/base/shared/htmlAttributes'
 
 // ---------------------------------------------------------------------------
 // Props schema — authored fields only. The publisher-injected field
@@ -125,7 +127,8 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
         { label: 'Auto', value: 'auto' },
       ],
     },
-    title: { type: 'text', label: 'Video title', description: 'Accessibility label for the embedded YouTube player iframe.' },
+    title: { type: 'text', label: 'Video title', description: 'Authored title for the video or YouTube player. Use HTML attributes for an ARIA label.' },
+    htmlAttributes: htmlAttributesControl(),
     noRelatedVideos: { type: 'toggle', label: 'Hide related videos', description: 'Adds rel=0 to suppress YouTube recommended videos after playback.' },
   },
 
@@ -149,20 +152,25 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
   render: (props) => {
     const rawUrl = String(props.videoUrl ?? '')
     const youtubeId = parseYoutubeId(rawUrl)
+    const decorative = props.playbackRole === 'decorative'
+    const generatedNames = [...MODULE_GENERATED_ATTRIBUTE_NAMES['base.video'], ...(decorative ? ['aria-hidden'] : [])]
+    const htmlAttrs = htmlAttributesAttr(props.htmlAttributes, generatedNames)
+    const titleAttr = props.title ? ` title="${props.title}"` : ''
 
     if (youtubeId) {
       return renderYoutube({
         youtubeId,
         autoplay: Boolean(props.autoplay),
         noRelatedVideos: Boolean(props.noRelatedVideos),
-        title: String(props.title || 'YouTube video'),
+        title: props.title,
+        htmlAttrs,
         posterUrl: String(props.poster ?? ''),
         posterMedia: props._resolvedMediaByKey?.poster ?? null,
       })
     }
 
     const videoSrc = safeUrl(rawUrl)
-    if (!videoSrc) return { html: '<video></video>', assetUsage: { css: false } }
+    if (!videoSrc) return { html: `<video${titleAttr}${htmlAttrs}></video>`, assetUsage: { css: false } }
 
     // Resolved video asset gives us intrinsic dimensions — emits
     // `width` / `height` attrs so the browser reserves layout space
@@ -183,7 +191,6 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
     const preload =
       props.preload === 'none' ? 'none' : props.preload === 'auto' ? 'auto' : 'metadata'
 
-    const decorative = props.playbackRole === 'decorative'
     // Only the document preference owner attaches decorative source/loading/
     // autoplay. Parser-time markup cannot start a download before its policy.
     const attrs: string[] = decorative
@@ -198,7 +205,7 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
     if (props.muted) attrs.push('muted')
     if (props.controls) attrs.push('controls')
 
-    return { html: `<video ${attrs.join(' ')}></video>`, assetUsage: { css: false } }
+    return { html: `<video ${attrs.join(' ')}${titleAttr}${htmlAttrs}></video>`, assetUsage: { css: false } }
   },
 }
 
@@ -212,6 +219,8 @@ interface YoutubeRenderInput {
   noRelatedVideos: boolean
   /** Accessibility title for the iframe element. */
   title: string
+  /** Sanitised attributes belong to the player, including inside a poster facade. */
+  htmlAttrs: string
   /** Raw author-set poster URL (already escapeProps-passed). */
   posterUrl: string
   /** Resolved poster asset (variants, intrinsic dims) if the publisher pre-pass ran. */
@@ -251,13 +260,13 @@ function renderYoutube(input: YoutubeRenderInput): RenderOutput {
 
   const iframeAttrs = [
     `src="${embedSrc}"`,
-    `title="${input.title}"`,
     `loading="lazy"`,
     `frameborder="0"`,
     `allow="autoplay; encrypted-media; fullscreen"`,
     `allowfullscreen`,
   ]
-  const iframeHtml = `<iframe ${iframeAttrs.join(' ')}></iframe>`
+  if (input.title) iframeAttrs.push(`title="${input.title}"`)
+  const iframeHtml = `<iframe ${iframeAttrs.join(' ')}${input.htmlAttrs}></iframe>`
 
   if (!input.posterUrl && !input.posterMedia) {
     return { html: iframeHtml, cspSources: YOUTUBE_CSP_SOURCES }
@@ -297,7 +306,7 @@ function renderYoutube(input: YoutubeRenderInput): RenderOutput {
   const html =
     `<div class="bv-yt">`
     + `<img ${imgAttrs.join(' ')}>`
-    + `<iframe class="bv-yt-frame" ${iframeAttrs.join(' ')}></iframe>`
+    + `<iframe class="bv-yt-frame" ${iframeAttrs.join(' ')}${input.htmlAttrs}></iframe>`
     + `</div>`
 
   return { html, cspSources: YOUTUBE_CSP_SOURCES }

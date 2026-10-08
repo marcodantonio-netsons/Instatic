@@ -118,6 +118,7 @@ const HTML_ATTRIBUTE_MODULES = new Set([
   'base.link',
   'base.button',
   'base.image',
+  'base.video',
   // A form is the anchor an authored progressive-enhancement script binds to,
   // so its safe data-* / ARIA attributes have to survive import like any other
   // element's. Without this the hooks silently vanish and the script no-ops.
