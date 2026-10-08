@@ -24,7 +24,7 @@
 import type { PageNode } from '@core/page-tree'
 import { isPageRef, resolvePageRef } from '@core/page-tree'
 import type { AnyModuleDefinition } from '@core/module-engine'
-import { parseModuleProps } from '@core/module-engine'
+import { parseModuleProps, validateModulePublishInput } from '@core/module-engine'
 import { resolveProps } from '@core/page-tree'
 import { resolveDynamicProps, effectiveNodeBindings } from '@core/templates/dynamicBindings'
 import { sanitizeModuleCSS } from './cssCollector'
@@ -304,6 +304,7 @@ export function renderNode(
   const resolvedProps = resolvePageRefProps(dynamicProps, config.site.pages)
   const path = 'pages.' + config.page.id + '.nodes.' + node.id
   const props = parseModuleProps(def, resolvedProps, path)
+  validateModulePublishInput(def, props, config.site.settings, path)
   const materializedNode = { ...node, props }
 
   const specialRenderer = resolveSpecialRenderer(def)

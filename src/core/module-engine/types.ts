@@ -380,6 +380,15 @@ export interface ModuleDefinition<
    */
   propsSchema?: TSchema
 
+  /**
+   * Hard publish boundary for the complete `{ props, settings }` input.
+   * Props have already passed normal module coercion. This schema declares
+   * cross-field requirements and authored site settings required by a module.
+   * Props are resolved (including dynamic bindings) before this check.
+   * Validation never supplies defaults or repairs a failing value.
+   */
+  publishSchema?: TSchema
+
   /** Default property values matching the schema */
   defaults: TProps
 

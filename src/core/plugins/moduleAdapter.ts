@@ -163,6 +163,7 @@ export function pluginModuleToHostModule(
     // Pass propsSchema through verbatim — parseModuleProps handles absence
     // as a no-op, so plugins without a schema are unaffected.
     ...(definition.propsSchema ? { propsSchema: definition.propsSchema } : {}),
+    ...(definition.publishSchema ? { publishSchema: definition.publishSchema } : {}),
     component: componentFactory(definition),
     htmlTag: typeof definition.htmlTag === 'string' ? definition.htmlTag : undefined,
     // Dependencies declared by the plugin module flow into the site's
