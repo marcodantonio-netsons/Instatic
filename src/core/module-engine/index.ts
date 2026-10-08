@@ -50,6 +50,6 @@ export {
 
 export { registry } from './registry'
 
-export { validateNodeProps } from './validateNodeProps'
+export { parseModuleProps, ModulePropsValidationError } from './parseModuleProps'
 
 export { resolveHtmlTagBadge } from './htmlTagBadge'
