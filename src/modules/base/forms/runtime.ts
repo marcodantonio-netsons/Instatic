@@ -7,6 +7,7 @@ import { checkCondition, checkTransport, checkControl, checkChallenge, checkJson
 const FORM_SELECTOR = 'form[data-instatic-form-id][data-instatic-form-mode="cms"], form[data-instatic-form-id][data-instatic-form-mode="request"], form[data-instatic-form-id][data-instatic-form-mode="custom"][data-instatic-form-enhanced="true"]'
 const CONTROL_SELECTOR = '[data-instatic-form-control]'
 type Control = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+type ControlValue = { value: string; checked?: boolean; options?: boolean[]; queryError: boolean }
 type State = 'idle' | 'pending' | 'success' | 'error' | 'invalid' | 'captcha' | 'unavailable'
 class SubmissionError extends Error {
   readonly state: State
@@ -18,7 +19,7 @@ type FormState = {
   busy: boolean; buttons: Map<HTMLButtonElement | HTMLInputElement, boolean>; widgets: Map<HTMLElement, string>
   widgetRequest?: Promise<void>
   queryErrors: Set<Control>
-  queryLocks: Map<Control, { readOnly?: boolean; options?: Map<HTMLOptionElement, boolean> }>
+  initialValues: Map<Control, ControlValue>
 }
 
 /** The only browser behavior for native forms. All user-visible copy is authored HTML. */
@@ -28,6 +29,7 @@ export function installFormRuntime(browser: Window & typeof globalThis) {
   document.documentElement.setAttribute('data-instatic-form-runtime', '')
   const attached = new WeakMap<HTMLFormElement, FormState>()
   const htmlSubmitReady = new WeakSet<HTMLFormElement>()
+  const managedResets = new WeakSet<HTMLFormElement>()
   let providerRequest: Promise<TurnstileApi> | undefined
 
   function controls(form: HTMLFormElement): Control[] {
@@ -121,11 +123,6 @@ export function installFormRuntime(browser: Window & typeof globalThis) {
     const current = attached.get(form)
     if (!current) return false
     current.queryErrors.clear()
-    for (const [control, original] of current.queryLocks) {
-      if (!(control instanceof browser.HTMLSelectElement) && original.readOnly !== undefined) control.readOnly = original.readOnly
-      for (const [option, disabled] of original.options ?? []) option.disabled = disabled
-    }
-    current.queryLocks.clear()
     const query = new URL(browser.location.href).searchParams
     const initialized = new Set<Control>()
     for (const control of controls(form)) {
@@ -152,11 +149,8 @@ export function installFormRuntime(browser: Window & typeof globalThis) {
       if (!control.validity.valid) { current.queryErrors.add(control); continue }
       if (data(control, 'query-lock') === 'true') {
         if (control instanceof browser.HTMLSelectElement) {
-          const options = new Map(Array.from(control.options, (option) => [option, option.disabled] as const))
-          current.queryLocks.set(control, { options })
           for (const option of control.options) option.disabled = option.value !== control.value || option.disabled
         } else {
-          current.queryLocks.set(control, { readOnly: control.readOnly })
           control.readOnly = true
         }
       }
@@ -167,6 +161,30 @@ export function installFormRuntime(browser: Window & typeof globalThis) {
   function refresh(form: HTMLFormElement) {
     try { update(form); return true }
     catch { state(form, 'unavailable'); return false }
+  }
+  function captureValue(control: Control, current: FormState): ControlValue {
+    return { value: control.value, queryError: current.queryErrors.has(control),
+      ...(control instanceof browser.HTMLInputElement && ['checkbox', 'radio'].includes(control.type) ? { checked: control.checked } : {}),
+      ...(control instanceof browser.HTMLSelectElement ? { options: Array.from(control.options, (option) => option.selected) } : {}),
+    }
+  }
+  function restoreValue(control: Control, value: ControlValue) {
+    if (control instanceof browser.HTMLSelectElement && value.options) {
+      for (const [index, option] of Array.from(control.options).entries()) option.selected = value.options[index] ?? false
+      if (!value.options.some(Boolean)) control.selectedIndex = -1
+    } else if (control instanceof browser.HTMLInputElement && ['checkbox', 'radio'].includes(control.type) && value.checked !== undefined) control.checked = value.checked
+    else if (!(control instanceof browser.HTMLInputElement && control.type === 'file')) control.value = value.value
+  }
+  function resetValues(form: HTMLFormElement, current: FormState, preserved: Map<Control, ControlValue>) {
+    current.queryErrors.clear()
+    for (const control of controls(form)) {
+      const behavior = data(control, 'reset-behavior')
+      const value = behavior === 'preserve' ? preserved.get(control) : behavior === 'clear' ? { value: '', checked: false, options: [], queryError: false } : current.initialValues.get(control)
+      if (value) { restoreValue(control, value); if (value.queryError) current.queryErrors.add(control) }
+      control.setCustomValidity('')
+    }
+    // Initial values and locks are captured once; a changed URL never changes reset semantics.
+    update(form)
   }
   function labels(form: HTMLFormElement) {
     const ordered = Array.from(form.querySelectorAll<HTMLElement>('label[data-instatic-label-target="auto"], input:not([type="hidden"]):not([data-instatic-honeypot]), textarea, select'))
@@ -275,14 +293,16 @@ export function installFormRuntime(browser: Window & typeof globalThis) {
     if (!checkTransport(transport)) { state(form, 'unavailable'); return }
     try {
       for (const control of controls(form)) {
-        const configuration = { required: data(control, 'required') === 'true', disabled: data(control, 'disabled') === 'true', requiredWhen: condition(control, 'required-when'), queryParameter: data(control, 'query-parameter'), lockQueryValue: data(control, 'query-lock') === 'true', valueSourceField: data(control, 'value-source'), requiredMessage: data(control, 'required-message'), invalidMessage: data(control, 'invalid-message') }
+        const configuration = { required: data(control, 'required') === 'true', disabled: data(control, 'disabled') === 'true', requiredWhen: condition(control, 'required-when'), queryParameter: data(control, 'query-parameter'), lockQueryValue: data(control, 'query-lock') === 'true', resetBehavior: data(control, 'reset-behavior'), valueSourceField: data(control, 'value-source'), requiredMessage: data(control, 'required-message'), invalidMessage: data(control, 'invalid-message') }
         if (!checkControl(configuration)) throw new Error('Invalid native control configuration')
       }
-      attached.set(form, { transport, busy: false, buttons: new Map(), widgets: new Map(), queryErrors: new Set(), queryLocks: new Map() })
+      attached.set(form, { transport, busy: false, buttons: new Map(), widgets: new Map(), queryErrors: new Set(), initialValues: new Map() })
       // Delegated submission owns validation so state copy is shown even when
       // native requestSubmit would otherwise stop before the submit event.
       form.noValidate = true
       labels(form); state(form, initialize(form) ? 'idle' : 'invalid'); prefetch(form)
+      const current = attached.get(form)!
+      for (const control of controls(form)) current.initialValues.set(control, captureValue(control, current))
       void widgets(form).catch(() => { state(form, 'captcha') })
     } catch {
       attached.delete(form)
@@ -339,7 +359,15 @@ export function installFormRuntime(browser: Window & typeof globalThis) {
       }
       const redirect = data(form, 'success-redirect')
       if (redirect) { browser.location.assign(redirect); return }
-      if (current.transport.resetOnSuccess) { form.reset(); initialize(form) }
+      if (current.transport.resetOnSuccess) {
+        const preserved = new Map(controls(form).map((control) => [control, captureValue(control, current)]))
+        let resetEvent: Event | undefined
+        const capture = (event: Event) => { resetEvent = event }
+        form.addEventListener('reset', capture, { once: true })
+        managedResets.add(form)
+        try { form.reset() } finally { managedResets.delete(form); form.removeEventListener('reset', capture) }
+        if (!resetEvent?.defaultPrevented) resetValues(form, current, preserved)
+      }
       state(form, 'success', responseMessage)
     } catch (error) {
       if (error instanceof SubmissionError && error.errors) {
@@ -372,10 +400,17 @@ export function installFormRuntime(browser: Window & typeof globalThis) {
     const form = event.target instanceof browser.Element ? event.target.closest(FORM_SELECTOR) : null
     if (isForm(form)) { attach(form); if (event.target instanceof browser.HTMLInputElement || event.target instanceof browser.HTMLSelectElement || event.target instanceof browser.HTMLTextAreaElement) attached.get(form)?.queryErrors.delete(event.target); if (attached.has(form) && refresh(form)) state(form, 'idle') }
   })
-  document.addEventListener('reset', (event) => { if (isForm(event.target)) queueMicrotask(() => {
-    if (!isForm(event.target)) return
-    try { if (!initialize(event.target)) state(event.target, 'invalid') } catch { state(event.target, 'unavailable') }
-  }) })
+  document.addEventListener('reset', (event) => {
+    if (!isForm(event.target) || managedResets.has(event.target)) return
+    const form = event.target, current = attached.get(form)
+    if (!current) return
+    const preserved = new Map(controls(form).map((control) => [control, captureValue(control, current)]))
+    queueMicrotask(() => {
+      if (event.defaultPrevented) return
+      try { resetValues(form, current, preserved); state(form, current.queryErrors.size ? 'invalid' : 'idle') }
+      catch { state(form, 'unavailable') }
+    })
+  })
   document.addEventListener('submit', (event) => {
     if (!isForm(event.target)) return
     if (htmlSubmitReady.delete(event.target)) return

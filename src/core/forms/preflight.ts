@@ -91,7 +91,11 @@ function assertPageForms(page: Page) {
           }
         }
         if (child.props.queryParameter && (['base.radio', 'base.checkbox'].includes(child.moduleId) || child.props.multiple || child.props.inputType === 'file')) fail(child, 'Query initialization requires a single text or select value')
-        if (child.props.lockQueryValue && (!child.props.queryParameter || (child.moduleId === 'base.input' && ['hidden', 'file'].includes(String(child.props.inputType))))) fail(child, 'Query locking requires a declared query parameter on a visible text or select control')
+        if (child.props.lockQueryValue && (!child.props.queryParameter || (child.moduleId === 'base.input' && ['hidden', 'file', 'range'].includes(String(child.props.inputType))))) fail(child, 'Query locking requires a declared query parameter on a text or select control supporting readonly semantics')
+        if (child.props.lockQueryValue && behavior.resetBehavior === 'clear') fail(child, 'A locked query value cannot be cleared by reset')
+        if (child.props.valueSourceField && behavior.resetBehavior !== 'initial') fail(child, 'Synchronized values reset through their source control')
+        if (child.props.inputType === 'file' && behavior.resetBehavior === 'preserve') fail(child, 'File inputs cannot preserve selected files after reset')
+        if (behavior.resetBehavior !== 'initial') hasBehavior = true
       }
       if (child.moduleId === 'base.turnstile') {
         hasBehavior = true; captchaCount++

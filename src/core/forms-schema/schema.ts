@@ -8,6 +8,7 @@ export const FormControlBehaviorProperties = {
   requiredWhen: OptionalFormConditionSchema,
   queryParameter: Type.String({ default: '' }),
   lockQueryValue: Type.Boolean({ default: false }),
+  resetBehavior: Type.Union([Type.Literal('initial'), Type.Literal('clear'), Type.Literal('preserve')], { default: 'initial' }),
   valueSourceField: Type.String({ default: '' }),
   requiredMessage: Type.String({ default: '' }),
   invalidMessage: Type.String({ default: '' }),

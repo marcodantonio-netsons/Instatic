@@ -19,6 +19,8 @@ function message(kind: 'status' | 'success' | 'error', source: 'state' | 'author
   return FormMessageModule.render(escapeProps({ ...FormMessageModule.defaults, kind, source, text }, FormMessageModule.schema) as typeof FormMessageModule.defaults, []).html
 }
 async function flush() { await new Promise((resolve) => setTimeout(resolve, 0)); await new Promise((resolve) => setTimeout(resolve, 0)) }
+// Happy DOM dispatches reset after changing values; HTML dispatches its cancellable event before the default action.
+function resetEvent(browser: Window & typeof globalThis, form: HTMLFormElement) { form.dispatchEvent(new browser.Event('reset', { bubbles: true, cancelable: true })) }
 function setup(children: string[], props: Record<string, unknown> = {}, url = 'https://site.example/contact') {
   const realm = new Window({ url, settings: { disableJavaScriptFileLoading: true } })
   realm.document.body.innerHTML = FormModule.render({ ...FormModule.defaults, mode: 'request', action: 'https://recipient.example/form', pendingMessage: 'Attendi', successMessage: 'Ricevuto', errorMessage: 'Errore invio', invalidMessage: 'Controlla i campi', captchaMessage: 'Completa la verifica', unavailableMessage: 'Modulo non disponibile', ...props }, children).html
@@ -34,6 +36,57 @@ function setup(children: string[], props: Record<string, unknown> = {}, url = 'h
 }
 
 describe('native form browser model', () => {
+  it('captures initial query values once and resets declared initial, clear and preserved controls', async () => {
+    const selection = SelectModule.render({ ...SelectModule.defaults, name: 'category', queryParameter: 'category', resetBehavior: 'clear', required: true }, [
+      OptionModule.render({ ...OptionModule.defaults, value: '', label: 'Choose', disabled: true, selected: true }, []).html,
+      OptionModule.render({ ...OptionModule.defaults, value: 'offered', label: 'Offered' }, []).html,
+    ]).html
+    const view = setup([input('initial', { queryParameter: 'initial' }), input('context', { queryParameter: 'context', resetBehavior: 'preserve' }), selection, message('success')], {}, 'https://site.example/contact?initial=seed&context=known&category=offered')
+    try {
+      view.browser.fetch = async () => new Response('{"ok":true}')
+      view.browser.eval(FORM_RUNTIME_JS)
+      view.change('initial', 'edited'); view.change('context', 'kept')
+      view.browser.history.replaceState({}, '', '?initial=changed&context=changed&category=offered')
+      view.send(); await flush()
+      expect((view.form.elements.namedItem('initial') as HTMLInputElement).value).toBe('seed')
+      expect((view.form.elements.namedItem('context') as HTMLInputElement).value).toBe('kept')
+      expect((view.form.elements.namedItem('category') as HTMLSelectElement).selectedIndex).toBe(-1)
+      expect((view.form.elements.namedItem('category') as HTMLSelectElement).value).toBe('')
+      expect(view.form.getAttribute('data-instatic-form-state')).toBe('success')
+      expect(view.form.querySelector<HTMLElement>('[data-instatic-form-message]')!.hidden).toBe(false)
+    } finally { await view.realm.happyDOM.close() }
+  })
+
+  it('preserves repaired invalid query values and respects a cancelled reset', async () => {
+    const view = setup([input('topic', { value: 'seed', queryParameter: 'topic', maxLength: 5, resetBehavior: 'preserve' })], {}, 'https://site.example/contact?topic=too-long')
+    try {
+      installFormRuntime(view.browser)
+      expect(view.form.getAttribute('data-instatic-form-state')).toBe('invalid')
+      view.change('topic', 'fixed')
+      resetEvent(view.browser, view.form); await flush()
+      expect((view.form.elements.namedItem('topic') as HTMLInputElement).value).toBe('fixed')
+      expect(view.form.checkValidity()).toBe(true)
+      view.form.addEventListener('reset', (event) => event.preventDefault(), { once: true })
+      view.change('topic', 'again'); resetEvent(view.browser, view.form); await flush()
+      expect((view.form.elements.namedItem('topic') as HTMLInputElement).value).toBe('again')
+    } finally { await view.realm.happyDOM.close() }
+  })
+
+  it('clears or preserves choice state and recalculates mirrors, conditions and outputs on manual reset', async () => {
+    const preservedSelect = select().replace('data-instatic-reset-behavior="initial"', 'data-instatic-reset-behavior="preserve"')
+    const group = FormConditionalModule.render({ condition: { field: 'purpose', eq: 'advanced' } }, [input('detail', { resetBehavior: 'clear' })]).html
+    const view = setup([preservedSelect, group, input('mirror', { inputType: 'hidden', valueSourceField: 'purpose' }), FormOutputModule.render({ fieldName: 'purpose', text: '' }, []).html])
+    try {
+      installFormRuntime(view.browser); view.change('purpose', 'advanced'); view.change('detail', 'clear me')
+      resetEvent(view.browser, view.form); await flush()
+      expect((view.form.elements.namedItem('purpose') as HTMLSelectElement).value).toBe('advanced')
+      expect((view.form.elements.namedItem('detail') as HTMLInputElement).value).toBe('')
+      expect((view.form.elements.namedItem('mirror') as HTMLInputElement).value).toBe('advanced')
+      expect(view.form.querySelector('output')!.textContent).toBe('advanced')
+      expect(view.form.querySelector<HTMLElement>('[data-instatic-form-condition]')!.hidden).toBe(false)
+    } finally { await view.realm.happyDOM.close() }
+  })
+
   it('initializes an offered query choice, conditions, requiredness, mirrors and plain-text outputs', async () => {
     const group = FormConditionalModule.render({ condition: { field: 'purpose', eq: 'advanced' } }, [input('details', { requiredWhen: { field: 'purpose', eq: 'advanced' } })]).html
     const view = setup([select(), group, input('mirror', { inputType: 'hidden', valueSourceField: 'purpose' }), FormOutputModule.render({ fieldName: 'purpose', text: '' }, []).html], {}, 'https://site.example/contact?kind=advanced')
