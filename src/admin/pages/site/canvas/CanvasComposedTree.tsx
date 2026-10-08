@@ -35,7 +35,7 @@ import { normalizeHtmlAttributes } from '@core/htmlAttributes'
 import { useResponsiveBackgroundStyle } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
 import { NodeRenderer } from './NodeRenderer'
 import { resolveEditorWrapperTemplates } from './canvasComposition'
-import { CanvasDocumentContext, CanvasTemplateContext } from './CanvasContexts'
+import { CanvasDocumentContext, CanvasTemplateContext, CanvasNodeTreeContext } from './CanvasContexts'
 import { applyIframeBodyPresentation } from './iframeBodyPresentation'
 
 const NO_WRAPPERS: Page[] = []
@@ -59,7 +59,7 @@ export function CanvasComposedTree({ page }: CanvasComposedTreeProps) {
   // No wrapping templates → render the document exactly as before; its own
   // base.body claims the iframe <body>.
   if (wrappers.length === 0) {
-    return <NodeRenderer nodeId={page.rootNodeId} />
+    return <CanvasNodeTreeContext.Provider value={page.nodes}><NodeRenderer nodeId={page.rootNodeId} /></CanvasNodeTreeContext.Provider>
   }
 
   // Editable content = the active document's body children, rendered editable.
@@ -72,7 +72,7 @@ export function CanvasComposedTree({ page }: CanvasComposedTreeProps) {
 
   // Nest the read-only wrappers from innermost outward; each wrapper's outlet
   // hosts the next inner layer, the innermost hosting the editable content.
-  let composed: ReactNode = <>{editableContent}</>
+  let composed: ReactNode = <CanvasNodeTreeContext.Provider value={page.nodes}>{editableContent}</CanvasNodeTreeContext.Provider>
   for (let i = wrappers.length - 1; i >= 0; i--) {
     const wrapper = wrappers[i]
     composed = (

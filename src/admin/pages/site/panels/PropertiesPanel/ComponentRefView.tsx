@@ -105,6 +105,7 @@ export function ComponentRefView({ nodeId, componentId, propOverrides }: Compone
                   paramId={param.id}
                   value={effectiveValue}
                   isOverridden={isOverridden}
+                  required={param.required}
                   enumOptions={param.enumOptions}
                   onValueChange={(val) => handleParamChange(param.id, val)}
                   onReset={() => handleParamReset(param.id)}
