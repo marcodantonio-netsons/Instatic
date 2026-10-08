@@ -478,12 +478,18 @@ Two modes are available via the loop node's `pagination` prop:
 
 **`pagination: 'none'` (default)** — renders up to `limit` items at publish time. No load-more affordance.
 
-**`pagination: 'infinite'`** — renders the first `pageSize` items and appends a **"Load more"** button. Each click fetches the next page from `/_instatic/loop/<loopId>?page=N&pagePath=<path>` and appends the returned HTML before the button. When `hasMore` is false the button is removed automatically.
+**`pagination: 'infinite'`** — renders the first `pageSize` items and appends a **"Load more"** button. Each click fetches the next page from `/_instatic/loop/<loopId>?page=N&pagePath=<path-and-query>&v=<publishVersion>` and appends the validated HTML before the button. When `hasMore` is false the button is removed automatically.
 
 To enable infinite loading:
 1. Set `props.pagination = 'infinite'` on the loop node.
 2. Set `props.pageSize` (items per click; defaults to 10).
-3. The publisher auto-injects `<script type="module" src="/_instatic/assets/loop-runtime.js">` when at least one infinite loop exists on the page (see `server/publish/loopRuntime.ts`). The runtime is < 2 KB and ships only when needed.
+3. The publisher auto-injects `<script type="module" src="/_instatic/assets/loop-runtime.js">` when at least one infinite loop exists on the page (see `server/publish/loopRuntime.ts`). The runtime has no visitor dependencies and ships only when needed.
+
+The Loop settings expose `loadMoreLabel`, `loadingLabel`, and `retryLabel`. These are native text properties in `src/modules/base/loop/index.ts`; use ordinary language-file tokens such as `{site.translations.loop.more}`. `src/core/publisher/renderLoop.ts` resolves and escapes the labels into runtime attributes. `server/publish/loopRuntime.ts` reads those exact labels for the idle, busy and failed states, toggles `aria-busy`, and validates the wire response using the compiled `LoopPageResponseSchema` from `src/core/loops-schema/index.ts`. It never downloads dictionaries.
+
+`server/publish/loopFragmentContext.ts` resolves the originating published route through `publicRouteResolution.ts`, then prepares the same template composition and native frames as the full renderer through `publishedRenderContext.ts`. Shared component IDs across page routes do not select another page's language or values. Effective component parameters, filled slots, published file references, request query and an entry route's parent entry survive in the fragment. Wrapping layouts retain the terminal page's native frame.
+
+The endpoint requires a local originating URL and the rendered publish version. Invalid input returns a 400 error envelope; a missing published route or loop returns 404; changed publications, moved routes, ambiguous repeated component instances and loops inside another loop return 409. An inner loop requires its outer iteration's entry stack and cannot be loaded as an independent fragment. Published translation/file validation errors return 422. There is no global loop-ID lookup or guessed empty entry context. Behavior is covered by `src/__tests__/server/loopRouteHandler.test.ts`.
 
 For static multi-page navigation (no JS required):
 - Set `pagination: 'infinite'` and link the pages with the query parameter below — the server renders each page. See "Deep-link to a loop page".

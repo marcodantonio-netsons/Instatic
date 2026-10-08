@@ -32,6 +32,8 @@ The file has `type: 'config'` and a `.json` path, for example `locales/en.json`.
 
 A shared Visual Component can contain a token directly, or bind text to a native parameter whose default/instance value is a token. Its structure is authored once; localized copies of the component are unnecessary. Slots continue to host editorial content as ordinary CMS nodes.
 
+Infinite-loop controls use the same native text bindings: `loadMoreLabel`, `loadingLabel`, and `retryLabel` in `src/modules/base/loop/index.ts` accept language-file tokens. `src/core/publisher/renderLoop.ts` emits resolved text attributes for the single loop runtime. Additional fragments preserve the originating published route's language, component parameters and slots through `server/publish/publishedRenderContext.ts` and `loopFragmentContext.ts`. No visitor dictionary or separate translation runtime is needed.
+
 Plain translation text passes through the publisher's normal escaping. Rich-text destinations continue to use the existing markdown/sanitization boundary. Language dictionaries are text data, not executable scripts, page trees or rendered HTML caches.
 
 ## Editing and publication
