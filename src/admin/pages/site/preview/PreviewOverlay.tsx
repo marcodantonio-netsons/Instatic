@@ -101,7 +101,7 @@ export function PreviewOverlay() {
   const closePreview = useEditorStore((s) => s.closePreview)
   const site = useEditorStore((s) => s.site)
   const activePage = useEditorStore(selectActivePage)
-  const { context: templatePreviewContext } = useTemplatePreviewContext(activePage)
+  const { context: templatePreviewContext, loading: contextLoading, error: contextError, refresh: refreshContext } = useTemplatePreviewContext(activePage)
 
   const closeBtnRef = useRef<HTMLButtonElement>(null)
   const triggerRef = useRef<HTMLElement | null>(null)
@@ -171,11 +171,13 @@ export function PreviewOverlay() {
 
           {/* ── Sandboxed server-built preview ─────────────────────────── */}
           <div className={styles.previewContent}>
-            <PreviewDocument
+            {contextError ? <EmptyState title="Preview unavailable" description={contextError.message}
+              action={<Button variant="secondary" onClick={refreshContext}>Retry preview</Button>} role="alert" />
+              : contextLoading ? <EmptyState title="Resolving preview content…" role="status" /> : <PreviewDocument
               site={site}
               page={activePage}
               templatePreviewContext={templatePreviewContext}
-            />
+            />}
           </div>
         </div>
       </div>

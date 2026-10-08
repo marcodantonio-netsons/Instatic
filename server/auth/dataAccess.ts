@@ -29,16 +29,17 @@
  *     data.import          — bundle import (replace mode also needs
  *                            `content.manage` AND step-up)
  */
-import type { CoreCapability } from '../../../auth/capabilities'
+import type { CoreCapability } from './capabilities'
 import {
   requireAnyCapability,
   requireCapability,
   userHasAnyCapability,
   userHasCapability,
-} from '../../../auth/authz'
-import type { DbClient } from '../../../db/client'
-import { jsonResponse } from '../../../http'
-import type { AuthUser } from '../../../repositories/users'
+} from './authz'
+import type { DbClient } from '../db/client'
+import { jsonResponse } from '../http'
+import type { AuthUser } from '../repositories/users'
+export type DataAccessUser = Pick<AuthUser, 'id' | 'capabilities'>
 import type { DataTable } from '@core/data/schemas'
 
 const DATA_ACCESS_CAPABILITIES = [
@@ -121,7 +122,7 @@ export async function requireCustomTablesManager(req: Request, db: DbClient): Pr
  * cap; custom tables need a custom read cap. Used to filter the table list and
  * gate single-table reads at the boundary.
  */
-export function canReadTable(user: AuthUser, table: Pick<DataTable, 'system'>): boolean {
+export function canReadTable(user: DataAccessUser, table: Pick<DataTable, 'system'>): boolean {
   return table.system
     ? userHasAnyCapability(user, ['data.system.tables.read', 'data.system.tables.manage'])
     : userHasAnyCapability(user, ['data.custom.tables.read', 'data.custom.tables.manage'])
@@ -132,7 +133,7 @@ export function canReadTable(user: AuthUser, table: Pick<DataTable, 'system'>): 
  * only governs custom fields + primary-field selection — identity and built-in
  * fields are immutable for everyone (`assertSystemTableUpdateAllowed`).
  */
-export function canManageTable(user: AuthUser, table: Pick<DataTable, 'system'>): boolean {
+export function canManageTable(user: DataAccessUser, table: Pick<DataTable, 'system'>): boolean {
   return userHasCapability(user, table.system ? 'data.system.tables.manage' : 'data.custom.tables.manage')
 }
 
@@ -141,7 +142,7 @@ export function canManageTable(user: AuthUser, table: Pick<DataTable, 'system'>)
  * caller sees the full table list even without data-table read caps, because
  * picking a loop source needs to know what tables exist.
  */
-export function hasContentRowAccess(user: AuthUser): boolean {
+export function hasContentRowAccess(user: DataAccessUser): boolean {
   return userHasAnyCapability(user, DATA_ACCESS_CAPABILITIES)
 }
 
@@ -171,25 +172,25 @@ export async function requireDataPublisher(req: Request, db: DbClient): Promise<
   return requireAnyCapability(req, db, DATA_PUBLISH_CAPABILITIES)
 }
 
-export function canSeeAllDataRows(user: AuthUser): boolean {
+export function canSeeAllDataRows(user: DataAccessUser): boolean {
   return userHasAnyCapability(user, DATA_ANY_VISIBILITY_CAPABILITIES)
 }
 
-function ownsDataRow(user: AuthUser, row: OwnedDataRow): boolean {
+function ownsDataRow(user: DataAccessUser, row: OwnedDataRow): boolean {
   return row.authorUserId === user.id || (!row.authorUserId && row.createdByUserId === user.id)
 }
 
-export function canReadDataRow(user: AuthUser, row: OwnedDataRow): boolean {
+export function canReadDataRow(user: DataAccessUser, row: OwnedDataRow): boolean {
   return canSeeAllDataRows(user) ||
     (ownsDataRow(user, row) && userHasAnyCapability(user, DATA_OWN_READ_CAPABILITIES))
 }
 
-export function canEditDataRow(user: AuthUser, row: OwnedDataRow): boolean {
+export function canEditDataRow(user: DataAccessUser, row: OwnedDataRow): boolean {
   return userHasAnyCapability(user, ['content.edit.any', 'content.manage']) ||
     (ownsDataRow(user, row) && userHasCapability(user, 'content.edit.own'))
 }
 
-export function canPublishDataRow(user: AuthUser, row: OwnedDataRow): boolean {
+export function canPublishDataRow(user: DataAccessUser, row: OwnedDataRow): boolean {
   return userHasCapability(user, 'content.publish.any') ||
     (ownsDataRow(user, row) && userHasCapability(user, 'content.publish.own'))
 }

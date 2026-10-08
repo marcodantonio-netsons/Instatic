@@ -28,6 +28,7 @@ export {
   updateCmsDataTable,
   listCmsDataRowVersions,
   restoreCmsDataRowVersion,
+  readCmsDataLocalization,
 } from './cmsData'
 
 export {

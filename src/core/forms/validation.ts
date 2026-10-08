@@ -161,6 +161,7 @@ function coerceFieldValue(field: DataField, value: unknown): CoerceResult {
     case 'pageTree':
     case 'fieldSchema':
     case 'repeater':
+    case 'localizedText':
       return { ok: false, code: 'unsupported_field', message: 'This field cannot be submitted by a form.' }
   }
 }

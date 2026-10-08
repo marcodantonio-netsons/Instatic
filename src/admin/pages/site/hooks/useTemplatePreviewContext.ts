@@ -1,106 +1,70 @@
+import { useEffect } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import type { Page } from '@core/page-tree'
-import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
-import { dataTablePreviewToLoopItem } from '@core/templates/templatePreviewData'
+import type { DataTable } from '@core/data/schemas'
+import type { LoopItem } from '@core/loops'
 import { getCmsDataTableBySlug, previewCmsDataLoopItems } from '@core/persistence/cmsData'
-import { buildTemplateRenderContext, primaryTemplateTableSlug } from '@core/templates'
+import { buildTemplateRenderContext, primaryTemplateTableSlug, type TemplateRenderDataContext } from '@core/templates'
 import { useEditorStore } from '@site/store/store'
-const EMPTY_FILE_REFERENCES = {}
+import { pushToast } from '@ui/components/Toast'
 
-/**
- * Build the canvas-side render context used by `resolveDynamicProps`.
- *
- * Returns the context plus its post-type entry loading state so bindings
- * resolve live in the editor and Agent evidence can wait for real preview
- * data before capturing:
- *   - `page`, `site`, `route` — built from the in-memory site document
- *     and the currently active page. Match the values the publisher
- *     will compute at render time.
- *   - `entryStack` — populated only for template pages, with a single
- *     synthetic preview row from the table's schema. Loop iterations
- *     push/pop on top of this stack via `NodeRenderer`'s loop branch.
- */
+const EMPTY_FILE_REFERENCES = {}
+const EMPTY_ROWS: LoopItem[] = []
+
+export class TemplatePreviewDataError extends Error {
+  readonly path: string
+  constructor(path: string, message: string, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause })
+    this.name = 'TemplatePreviewDataError'
+    this.path = path
+  }
+}
+
 interface TemplatePreviewContextState {
   context: TemplateRenderDataContext | undefined
-  /** True while a post-type template's real preview row is still loading. */
+  /** The same authorized, projected rows used by the source selector and live link. */
+  rows: LoopItem[]
+  table: DataTable | null
   loading: boolean
   error?: Error
   refresh: () => void
 }
 
+/** Real entry previews use the canonical page language; an empty table has no current entry. */
 export function useTemplatePreviewContext(page: Page | null): TemplatePreviewContextState {
-  // Read site once; the page argument is already reactive via the caller.
   const site = useEditorStore((s) => s.site)
-
-  // ── Template-page entry-stack seed ───────────────────────────────────
-  // A `postTypes` template previews against the FIRST REAL published row of
-  // its first targeted table — live data, consistent with how `everywhere`
-  // templates preview the first real page. Only when the table has no
-  // published rows yet do we fall back to a synthetic sample row so the layout
-  // is still visible. An `everywhere` layout has no current entry (null
-  // tableSlug → empty entry stack); its outlet previews a page instead.
   const tableSlug = page ? primaryTemplateTableSlug(page) : null
-  // The post the author picked to preview (TemplateModeControl), or null → the
-  // first published row. Session-only; keyed by the template page id.
   const selectedRowId = useEditorStore((s) => (page ? s.templatePreviewSelection[page.id] ?? null : null))
-  // Fetch a window of published rows once per table; the chosen row is picked
-  // from it below so changing the preview selection never refetches. A failed
-  // load resolves to an empty window so bindings stay empty rather than throw.
-  const { data: previewState, loading, refresh: refreshEntry } = useAsyncResource<{
-    tableSlug: string
-    items: TemplateRenderDataContext['entryStack']
-    synthetic: TemplateRenderDataContext['entryStack'][number] | null
-  } | null>(
-    () =>
-      tableSlug
-        ? getCmsDataTableBySlug(tableSlug)
-            .then(async (table) => {
-              if (!table) return { tableSlug, items: [], synthetic: null }
-              const synthetic = dataTablePreviewToLoopItem(table)
-              try {
-                const { items } = await previewCmsDataLoopItems(table.id, {
-                  orderBy: 'publishedAt',
-                  direction: 'desc',
-                  limit: 50,
-                })
-                return { tableSlug, items, synthetic }
-              } catch {
-                return { tableSlug, items: [], synthetic }
-              }
-            })
-            .catch(() => ({ tableSlug, items: [], synthetic: null }))
-        : Promise.resolve(null),
-    [tableSlug],
-  )
-
-  // ── Compose the full context ─────────────────────────────────────────
-  // The template entry stack is only valid for the currently-loaded
-  // tableSlug; outside that, the stack stays empty so bindings against
-  // currentEntry stay empty until the loop interceptor pushes a real
-  // iteration on top.
-  const previewEntryLoading = Boolean(tableSlug) && loading
-  if (!page || !site) return { context: undefined, loading: previewEntryLoading, refresh: refreshEntry }
-  let entryStack: TemplateRenderDataContext['entryStack'] = []
-  if (tableSlug && previewState?.tableSlug === tableSlug) {
-    // Selected row → first published row → synthetic sample (empty table).
-    const chosen =
-      (selectedRowId ? previewState.items.find((item) => item.id === selectedRowId) : undefined)
-      ?? previewState.items[0]
-      ?? previewState.synthetic
-    entryStack = chosen ? [chosen] : []
-  }
+  let baseContext: TemplateRenderDataContext | undefined
+  let contextError: Error | undefined
   try {
-    return {
-      loading: previewEntryLoading,
-      refresh: refreshEntry,
-      // The consuming surface supplies its file authority: canvas owns a
-      // private build; server previews generate their frame during publishing.
-      context: buildTemplateRenderContext(page, site, { entryStack, files: EMPTY_FILE_REFERENCES }),
-    }
-  } catch (error) {
-    // Keep authoring available while a required render context is invalid.
-    return { context: undefined, loading: previewEntryLoading, refresh: refreshEntry,
-      error: error instanceof Error ? error : new Error('Invalid render context', { cause: error }),
-    }
+    if (page && site) baseContext = buildTemplateRenderContext(page, site, { entryStack: [], files: EMPTY_FILE_REFERENCES })
+  } catch (cause) {
+    contextError = cause instanceof Error ? cause : new TemplatePreviewDataError('template.context', 'Invalid render context', cause)
   }
+  const language = baseContext?.site?.language
+  const requestKey = JSON.stringify([tableSlug, language])
+  const { data, loading, error: loadError, refresh } = useAsyncResource(async () => {
+    if (!tableSlug || !language) return null
+    const table = await getCmsDataTableBySlug(tableSlug)
+    if (!table) throw new TemplatePreviewDataError(`tables.${tableSlug}`, 'The template data table was not found')
+    const result = await previewCmsDataLoopItems(table.id, { orderBy: 'publishedAt', direction: 'desc', limit: 50, language })
+    return { key: requestKey, table, rows: result.items }
+  }, [requestKey])
+  useEffect(() => {
+    if (loadError) pushToast({ kind: 'error', title: 'Could not preview template content', body: loadError,
+      action: { label: 'Retry', onSelect: refresh } })
+  }, [loadError, refresh])
+
+  const current = data?.key === requestKey && !loadError ? data : null
+  const rows = current?.rows ?? EMPTY_ROWS
+  const state = { rows, table: current?.table ?? null, loading: Boolean(tableSlug && language) && loading, refresh }
+  if (contextError) return { ...state, context: undefined, error: contextError }
+  if (tableSlug && loadError) return { ...state, context: undefined,
+    error: new TemplatePreviewDataError(`tables.${tableSlug}`, loadError) }
+  if (!baseContext || (tableSlug && !current)) return { ...state, context: undefined }
+  const chosen = selectedRowId ? rows.find(row => row.id === selectedRowId) : rows[0]
+  if (tableSlug && selectedRowId && !chosen) return { ...state, context: undefined,
+    error: new TemplatePreviewDataError('template.previewSelection', 'The selected entry is not available in this preview') }
+  return { ...state, context: { ...baseContext, entryStack: chosen ? [chosen] : [] } }
 }

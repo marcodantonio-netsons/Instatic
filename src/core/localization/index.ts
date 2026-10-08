@@ -69,7 +69,7 @@ const catalogueCache = new WeakMap<object, {
 }>()
 
 /** Pure, shared by canvas and publication. Config files never ship as a runtime. */
-export function resolveSiteLanguage(site: SiteDocument, pageLanguage?: string): {
+export function resolveSiteLanguage(site: Pick<SiteDocument, 'settings' | 'files'>, pageLanguage?: string): {
   language: string
   translations?: TranslationMessages
 } {

@@ -74,6 +74,7 @@ export async function handleLoopRequest(req: Request, url: URL, ctx: LoopHandler
     const offset = props.offset + (pageNumber - 1) * props.pageSize
     const result = await source.fetch({
       db: ctx.db, site, filters: props.filters,
+      localization: templateContext.site?.language ? { language: templateContext.site.language, translations: templateContext.site.translations } : undefined,
       orderBy: props.orderBy || (source.orderByOptions[0]?.id ?? ''),
       direction: props.direction, limit: props.pageSize, offset,
       request: {
@@ -84,7 +85,7 @@ export async function handleLoopRequest(req: Request, url: URL, ctx: LoopHandler
     const hasMore = offset + result.items.length < result.totalItems
     const loopData = new Map<string, ResolvedLoopRenderData>()
     for (const variantId of loopNode.children) {
-      const nested = await prefetchLoopData(page, site, ctx.db, target.pageUrl, { rootNodeId: variantId })
+      const nested = await prefetchLoopData(page, site, ctx.db, target.pageUrl, { rootNodeId: variantId, templateContext })
       for (const [id, data] of nested) loopData.set(id, data)
     }
     loopData.set(loopId, { ...result, pageNumber, hasMore })

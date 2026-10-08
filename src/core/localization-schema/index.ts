@@ -1,5 +1,15 @@
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 
+/** A stored reference addresses one text leaf in the configured language files. */
+export const TranslationKeySchema = Type.String({
+  pattern: '^[A-Za-z][A-Za-z0-9_-]*(\\.[A-Za-z][A-Za-z0-9_-]*)*$',
+})
+
+export const LocalizedTextReferenceSchema = Type.Object({
+  key: TranslationKeySchema,
+}, { additionalProperties: false })
+export type LocalizedTextReference = Static<typeof LocalizedTextReferenceSchema>
+
 /** Language dictionaries contain text, not component trees or executable code. */
 export const TranslationMessagesSchema = Type.Recursive((Self) =>
   Type.Record(Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_-]*$' }),

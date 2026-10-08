@@ -34,6 +34,7 @@ import type { NodeWrapperProps as NodeWrapperPropsType } from '@core/module-engi
 import { resolveDynamicProps, effectiveNodeBindings, type TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import type { PageNode } from '@core/page-tree'
 import { WarningDiamondSolidIcon } from 'pixel-art-icons/icons/warning-diamond-solid'
+import { Button } from '@ui/components/Button'
 import { ErrorBoundary } from '@ui/components/ErrorBoundary'
 import { ModuleSandboxFrame } from './ModuleSandboxFrame'
 import { CanvasBreakpointContext, CanvasSelectionContext, CanvasTemplateContext } from './CanvasContexts'
@@ -491,7 +492,8 @@ interface LoopIterationsPreviewProps {
  * arrives the component re-renders with real iterations.
  */
 function LoopIterationsPreview({ node, baseTemplateContext }: LoopIterationsPreviewProps) {
-  const items = useLoopPreviewItems(node, baseTemplateContext)
+  const { items, error, refresh } = useLoopPreviewItems(node, baseTemplateContext)
+  if (error) return <div className={styles.loopPreviewError} data-canvas-interactive="true"><span>{error}</span><Button variant="secondary" size="sm" onClick={refresh}>Retry loop data</Button></div>
   if (items.length === 0) return null
 
   const baseStack = baseTemplateContext?.entryStack ?? []
