@@ -1,4 +1,5 @@
 /** Serialize incoming work and stop producing replies while Bun buffers a send. */
+import { collabFramePackets } from '@core/collab'
 interface FlowSocket {
   send(frame: Uint8Array): number
   close(code: number, reason: string): void
@@ -25,16 +26,18 @@ export function createSocketFlow(socket: FlowSocket) {
       return next
     },
     async send(frame: Uint8Array): Promise<void> {
-      if (closed) return
-      const result = socket.send(frame)
-      if (result === 0) {
-        // The frame was dropped: force the provider's state-vector recovery.
-        closed = true
-        drain()
-        socket.close(1011, 'Collaboration delivery failed')
-      } else if (result === -1) {
-        // Bun already queued this frame. Sending it again would duplicate it.
-        await new Promise<void>((resolve) => { resume = resolve })
+      for (const packet of collabFramePackets(frame)) {
+        if (closed) return
+        const result = socket.send(packet)
+        if (result === 0) {
+          // The frame was dropped: force the provider's state-vector recovery.
+          closed = true
+          drain()
+          socket.close(1011, 'Collaboration delivery failed')
+        } else if (result === -1) {
+          // Bun already queued this frame. Sending it again would duplicate it.
+          await new Promise<void>((resolve) => { resume = resolve })
+        }
       }
     },
     drain,

@@ -56,6 +56,7 @@ import { jsonResponse } from '../http'
 import { BranchGoneError } from './relayBranches'
 import type { CollabRelay, RelayDoc } from './relay'
 import { createSocketFlow } from './socketFlow'
+import { collabFramePackets } from '@core/collab'
 
 export { SITE_SOCKET_PATH }
 
@@ -261,10 +262,8 @@ export function createCollabSocketLayer(relay: CollabRelay) {
     if (!publisher) return
     const encoder = encoding.createEncoder()
     syncProtocol.writeUpdate(encoder, update)
-    publisher.publish(
-      docTopic(docId),
-      encodeCollabFrame(docId, generation, FRAME_SYNC, encoding.toUint8Array(encoder)),
-    )
+    const frame = encodeCollabFrame(docId, generation, FRAME_SYNC, encoding.toUint8Array(encoder))
+    for (const packet of collabFramePackets(frame)) publisher.publish(docTopic(docId), packet)
   })
   relay.onReset((docId) => {
     // The lineage this frame refers to is already gone, so it carries none.
