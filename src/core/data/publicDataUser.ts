@@ -12,11 +12,14 @@
  * binding used to be serialised wholesale into the page.
  */
 
-interface PublicDataUserReference {
-  displayName: string
-  roleSlug: string | null
-  roleName: string | null
-}
+import { Type, type Static } from '@core/utils/typeboxHelpers'
+
+export const PublicDataUserReferenceSchema = Type.Object({
+  displayName: Type.String(),
+  roleSlug: Type.Union([Type.String(), Type.Null()]),
+  roleName: Type.Union([Type.String(), Type.Null()]),
+}, { additionalProperties: false })
+export type PublicDataUserReference = Static<typeof PublicDataUserReferenceSchema>
 
 interface DataUserLike {
   displayName: string | null

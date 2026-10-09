@@ -1,9 +1,8 @@
 /**
  * Field-shape helpers for the data module.
  *
- *   normalizeDataTableFields   — coerces an unknown JSON blob into a valid
- *                                `DataField[]`, dropping anything malformed.
- *                                Used on read from `data_tables.fields_json`.
+ *   parseDataTableFields       — validates the complete persisted schema;
+ *                                malformed fields never disappear from reads.
  *   buildPostTypeDefaultFields — the canonical built-in field set for a new
  *                                `kind: 'postType'` table. Title + slug are
  *                                mandatory; body / featured media / SEO are
@@ -12,7 +11,7 @@
  *   isPostTypeBuiltInFieldId   — predicate for the reserved field-id check.
  */
 
-import { filterArray } from '@core/utils/typeboxHelpers'
+import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
 import {
   DataFieldSchema,
   POST_TYPE_FIELD_BODY,
@@ -31,8 +30,37 @@ import {
   type RepeaterItemField,
 } from './schemas'
 
-export function normalizeDataTableFields(value: unknown): DataField[] {
-  return filterArray(DataFieldSchema, value)
+export class DataFieldValidationError extends Error {
+  readonly path: string
+  constructor(path: string, message: string, options?: ErrorOptions) {
+    super(`${path}: ${message}`, options)
+    this.name = 'DataFieldValidationError'
+    this.path = path
+  }
+}
+
+const TableFieldsSchema = Type.Array(DataFieldSchema)
+
+export function parseDataTableFields(value: unknown, path = 'fields'): DataField[] {
+  const parsed = safeParseValue(TableFieldsSchema, value)
+  if (!parsed.ok) {
+    const error = parsed.errors[0]
+    throw new DataFieldValidationError(path + (error?.path ?? ''), error?.message ?? 'Invalid data-field schema')
+  }
+  const assertIdentities = (fields: readonly { id: string }[], fieldPath: string) => {
+    const ids = new Set<string>()
+    for (const [index, field] of fields.entries()) {
+      if (!field.id.trim() || ids.has(field.id)) {
+        throw new DataFieldValidationError(`${fieldPath}.${index}.id`, 'Fields require distinct nonempty identities')
+      }
+      ids.add(field.id)
+    }
+  }
+  assertIdentities(parsed.value, path)
+  for (const field of parsed.value) {
+    if (field.type === 'repeater') assertIdentities(field.fields, `${path}.${field.id}.fields`)
+  }
+  return parsed.value
 }
 
 function findField(table: Pick<DataTable, 'fields'>, fieldId: string): DataField | null {

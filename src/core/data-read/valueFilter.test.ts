@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { matchesStorageFilterValue } from './storageFilter'
+import { matchesStorageFilterValue } from './valueFilter'
 
 describe('projected storage filter operators', () => {
   it('applies equality, inequality, ranges and membership as conjunctions', () => {

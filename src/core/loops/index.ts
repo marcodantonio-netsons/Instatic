@@ -9,9 +9,12 @@
  * them to guarantee canvas previews and published output never diverge.
  */
 
-export { LoopItemSchema } from '@core/loops-schema'
+export { LoopItemSchema, LoopFetchResultSchema } from '@core/loops-schema'
 export { LOOP_LOADING_LABEL_DEFAULTS } from './loadingLabels'
+export { dataEntryToLoopItem, loopReadKey } from './dataEntry'
 export type { LoopItem } from '@core/loops-schema'
+export type { LoopFetchResult, SourceFetchContext, SourceRequestContext, PrefetchedLoopEntitySource } from './types'
+export { loopSourceRegistry } from './registry'
 export { pageToLoopItem, filterPagesForLoop } from './sources/sitePages'
 export {
   ENTRY_FIELD_FILTER_KEY,
@@ -19,3 +22,5 @@ export {
   resolveEntryFieldItems,
   type EntryFieldMedia,
 } from './sources/entryField'
+
+export { loopPageQueryKey } from './pagination'

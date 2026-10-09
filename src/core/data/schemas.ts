@@ -371,7 +371,7 @@ export type DataTableListItem = Static<typeof DataTableListItemSchema>
 // DataRowCells
 // ---------------------------------------------------------------------------
 
-const DataRowCellsSchema = Type.Record(Type.String(), Type.Unknown())
+export const DataRowCellsSchema = Type.Record(Type.String(), Type.Unknown())
 
 export type DataRowCells = Static<typeof DataRowCellsSchema>
 

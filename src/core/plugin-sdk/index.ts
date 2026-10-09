@@ -1,6 +1,6 @@
 export * from './types'
 export * from './storageSchemas'
-export * from './storageFilter'
+export { matchesStorageFilterValue } from '@core/data-read'
 export * from './contentSchemas'
 export * from './capabilities'
 export * from './guards'

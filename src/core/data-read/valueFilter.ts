@@ -1,4 +1,4 @@
-import type { StorageFilterValue } from './storageSchemas'
+import type { StorageFilterValue } from '@core/plugin-sdk'
 
 function equalValue(value: unknown, operand: unknown): boolean {
   // SQL comparisons with a missing/null operand do not satisfy a WHERE clause.
