@@ -52,7 +52,13 @@ export function installVisitorPreferences(
     const dark = window.matchMedia('(prefers-color-scheme: dark)')
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
     const listeners = new Set<() => void>()
-    const managedVideos = new Map<HTMLVideoElement, { source: string | null; preload: HTMLVideoElement['preload']; autoplay: boolean }>()
+    const managedVideos = new Map<HTMLVideoElement, {
+      source: string | null
+      preload: HTMLVideoElement['preload']
+      autoplay: boolean
+      ready: string | null
+      onMediaState: (event: Event) => void
+    }>()
     const storageKey = 'instatic.site-preferences'
     const controlSelector = '[data-instatic-preference-control]'
     const ElementClass = window.Element
@@ -85,10 +91,20 @@ export function installVisitorPreferences(
     function updateDecorativeVideos() {
       const state = getState()
       for (const video of document.querySelectorAll<HTMLVideoElement>('video[data-instatic-decorative-src]')) {
-        if (!managedVideos.has(video)) managedVideos.set(video, { source: video.getAttribute('src'), preload: video.preload, autoplay: video.autoplay })
+        if (!managedVideos.has(video)) {
+          const onMediaState = (event: Event) => {
+            if (video.ownerDocument !== document || !video.isConnected || !video.hasAttribute('data-instatic-decorative-src')) return
+            const preference = getState()
+            const ready = event.type !== 'emptied' && event.type !== 'error' && video.error === null && !preference.reducedMedia && !preference.reducedMotion && video.readyState >= window.HTMLMediaElement.HAVE_CURRENT_DATA
+            video.setAttribute('data-instatic-decorative-ready', String(ready))
+          }
+          managedVideos.set(video, { source: video.getAttribute('src'), preload: video.preload, autoplay: video.autoplay, ready: video.getAttribute('data-instatic-decorative-ready'), onMediaState })
+          for (const name of ['loadeddata', 'emptied', 'error']) video.addEventListener(name, onMediaState)
+        }
         const source = video.getAttribute('data-instatic-decorative-src')
         if (!source) throw new Error('Native decorative video is missing its source')
         if (state.reducedMedia || state.reducedMotion) {
+          video.setAttribute('data-instatic-decorative-ready', 'false')
           video.autoplay = false
           video.preload = 'none'
           if (video.hasAttribute('src')) {
@@ -100,14 +116,19 @@ export function installVisitorPreferences(
           video.setAttribute('preload', video.getAttribute('data-instatic-decorative-preload') ?? 'none')
           video.autoplay = video.getAttribute('data-instatic-decorative-autoplay') === 'true'
           if (video.getAttribute('src') !== source) {
+            video.setAttribute('data-instatic-decorative-ready', 'false')
             video.setAttribute('src', source)
             video.load()
+          } else {
+            video.setAttribute('data-instatic-decorative-ready', String(video.error === null && video.readyState >= window.HTMLMediaElement.HAVE_CURRENT_DATA))
           }
         }
       }
-      for (const video of managedVideos.keys()) {
+      for (const [video, previous] of managedVideos) {
         if (video.ownerDocument !== document || !video.hasAttribute('data-instatic-decorative-src')) {
           // A content-role transition or another document owns the element now.
+          for (const name of ['loadeddata', 'emptied', 'error']) video.removeEventListener(name, previous.onMediaState)
+          if (video.ownerDocument === document) video.removeAttribute('data-instatic-decorative-ready')
           managedVideos.delete(video)
         } else if (!video.isConnected) {
           // Removing a media element does not itself stop its playback/download.
@@ -116,6 +137,8 @@ export function installVisitorPreferences(
           video.preload = 'none'
           video.removeAttribute('src')
           video.load()
+          for (const name of ['loadeddata', 'emptied', 'error']) video.removeEventListener(name, previous.onMediaState)
+          video.removeAttribute('data-instatic-decorative-ready')
           managedVideos.delete(video)
         }
       }
@@ -231,7 +254,14 @@ export function installVisitorPreferences(
         window.removeEventListener('storage', onStorage)
         listeners.clear()
         for (const [video, originalVideo] of managedVideos) {
-          if (video.ownerDocument !== document || !video.hasAttribute('data-instatic-decorative-src')) continue
+          for (const name of ['loadeddata', 'emptied', 'error']) video.removeEventListener(name, originalVideo.onMediaState)
+          if (video.ownerDocument !== document) continue
+          if (!video.hasAttribute('data-instatic-decorative-src')) {
+            video.removeAttribute('data-instatic-decorative-ready')
+            continue
+          }
+          if (originalVideo.ready === null) video.removeAttribute('data-instatic-decorative-ready')
+          else video.setAttribute('data-instatic-decorative-ready', originalVideo.ready)
           video.pause()
           if (originalVideo.source === null) video.removeAttribute('src')
           else video.setAttribute('src', originalVideo.source)

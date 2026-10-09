@@ -86,11 +86,13 @@ describe('native visitor preferences publishing', () => {
     document.body.innerHTML = html.slice(html.indexOf('<body>'))
     const background = document.querySelector('video[data-instatic-decorative-src]')!
     expect(background.getAttribute('data-instatic-decorative-src')).toBe('/intro.webm')
+    expect(background.getAttribute('data-instatic-decorative-ready')).toBe('false')
     expect(background.hasAttribute('src')).toBe(false)
     expect(background.hasAttribute('autoplay')).toBe(false)
     expect(background.getAttribute('preload')).toBe('none')
     expect(background.getAttribute('poster')).toBe('/poster.jpg')
     const content = document.querySelector('video[src="/content.webm"]')!
+    expect(content.hasAttribute('data-instatic-decorative-ready')).toBe(false)
     expect(content.hasAttribute('controls')).toBe(true)
     expect(content.getAttribute('preload')).toBe('metadata')
     document.body.replaceChildren()

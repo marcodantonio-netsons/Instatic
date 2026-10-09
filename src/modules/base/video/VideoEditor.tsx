@@ -133,6 +133,7 @@ export const VideoEditor: React.FC<ModuleComponentProps<VideoStoredProps>> = ({ 
       data-instatic-decorative-src={decorative ? props.videoUrl : undefined}
       data-instatic-decorative-preload={decorative ? props.preload : undefined}
       data-instatic-decorative-autoplay={decorative ? String(props.autoplay) : undefined}
+      data-instatic-decorative-ready={decorative ? 'false' : undefined}
       aria-hidden={decorative ? true : undefined}
       poster={posterUrl ?? undefined}
       width={intrinsic?.width}

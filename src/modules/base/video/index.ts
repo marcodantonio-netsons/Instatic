@@ -159,7 +159,7 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
     // Only the document preference owner attaches decorative source/loading/
     // autoplay. Parser-time markup cannot start a download before its policy.
     const attrs: string[] = decorative
-      ? [`data-instatic-decorative-src="${videoSrc}"`, `data-instatic-decorative-preload="${preload}"`, `data-instatic-decorative-autoplay="${Boolean(props.autoplay)}"`, 'aria-hidden="true"', 'preload="none"']
+      ? [`data-instatic-decorative-src="${videoSrc}"`, `data-instatic-decorative-preload="${preload}"`, `data-instatic-decorative-autoplay="${Boolean(props.autoplay)}"`, 'data-instatic-decorative-ready="false"', 'aria-hidden="true"', 'preload="none"']
       : [`src="${videoSrc}"`, `preload="${preload}"`]
     if (posterSrc) attrs.push(`poster="${posterSrc}"`)
     if (width !== null) attrs.push(`width="${width}"`)

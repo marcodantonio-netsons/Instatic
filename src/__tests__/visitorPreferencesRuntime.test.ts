@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'bun:test'
 import { GlobalWindow } from 'happy-dom'
 import { PreferenceModule } from '@modules/base/preference'
 import {
@@ -15,6 +15,15 @@ afterEach(() => {
 })
 
 describe('native preference document owner', () => {
+  const mediaConstant = Object.getOwnPropertyDescriptor(window.HTMLMediaElement, 'HAVE_CURRENT_DATA')
+  beforeAll(() => {
+    // Happy DOM omits media ready-state constants; install the browser's value in this test realm.
+    Object.defineProperty(window.HTMLMediaElement, 'HAVE_CURRENT_DATA', { value: 2, configurable: true })
+  })
+  afterAll(() => {
+    if (mediaConstant) Object.defineProperty(window.HTMLMediaElement, 'HAVE_CURRENT_DATA', mediaConstant)
+    else Reflect.deleteProperty(window.HTMLMediaElement, 'HAVE_CURRENT_DATA')
+  })
   function attach() {
     const lease = installVisitorPreferences(document, { defaults: DEFAULT_SITE_VISITOR_PREFERENCES, storage: 'memory' }, visitorPreferencesValidators, resolveVisitorPreferences)
     releases.push(lease.release)
@@ -109,6 +118,55 @@ describe('native preference document owner', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
     owner.set('media', 'reduced')
     expect(video.getAttribute('src')).toBe('/ordinary-content.webm')
+  })
+
+  it('exposes frame readiness without enabling media against visitor policy', () => {
+    document.body.innerHTML = '<video data-instatic-decorative-src="/intro.webm" data-instatic-decorative-ready="false"></video><video src="/content.webm"></video>'
+    const [video, content] = document.querySelectorAll<HTMLVideoElement>('video')
+    let readyState = 0
+    Object.defineProperty(video!, 'readyState', { get: () => readyState })
+    const owner = attach()
+    expect(video!.getAttribute('data-instatic-decorative-ready')).toBe('false')
+    readyState = window.HTMLMediaElement.HAVE_CURRENT_DATA
+    video!.dispatchEvent(new Event('loadeddata'))
+    expect(video!.getAttribute('data-instatic-decorative-ready')).toBe('true')
+    expect(content!.hasAttribute('data-instatic-decorative-ready')).toBe(false)
+    video!.dispatchEvent(new Event('error'))
+    expect(video!.getAttribute('data-instatic-decorative-ready')).toBe('false')
+    video!.dispatchEvent(new Event('loadeddata'))
+    expect(video!.getAttribute('data-instatic-decorative-ready')).toBe('true')
+    owner.set('media', 'reduced')
+    video!.dispatchEvent(new Event('loadeddata'))
+    expect(video!.getAttribute('data-instatic-decorative-ready')).toBe('false')
+    expect(video!.hasAttribute('src')).toBe(false)
+    owner.set('media', 'full')
+    expect(video!.getAttribute('data-instatic-decorative-ready')).toBe('false')
+    video!.dispatchEvent(new Event('loadeddata'))
+    expect(video!.getAttribute('data-instatic-decorative-ready')).toBe('true')
+    video!.dispatchEvent(new Event('emptied'))
+    expect(video!.getAttribute('data-instatic-decorative-ready')).toBe('false')
+    releases.pop()!()
+    expect(video!.getAttribute('data-instatic-decorative-ready')).toBe('false')
+    video!.dispatchEvent(new Event('loadeddata'))
+    expect(video!.getAttribute('data-instatic-decorative-ready')).toBe('false')
+  })
+
+  it('clears frame readiness on source replacement and relinquishes event ownership', async () => {
+    document.body.innerHTML = '<video data-instatic-decorative-src="/intro.webm"></video>'
+    const video = document.querySelector('video')!
+    Object.defineProperty(video, 'readyState', { value: window.HTMLMediaElement.HAVE_CURRENT_DATA })
+    attach()
+    video.dispatchEvent(new Event('loadeddata'))
+    expect(video.getAttribute('data-instatic-decorative-ready')).toBe('true')
+    video.setAttribute('data-instatic-decorative-src', '/replacement.webm')
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(video.getAttribute('src')).toBe('/replacement.webm')
+    expect(video.getAttribute('data-instatic-decorative-ready')).toBe('false')
+    video.removeAttribute('data-instatic-decorative-src')
+    releases.pop()!()
+    expect(video.hasAttribute('data-instatic-decorative-ready')).toBe(false)
+    video.dispatchEvent(new Event('loadeddata'))
+    expect(video.hasAttribute('data-instatic-decorative-ready')).toBe(false)
   })
 
   it('preserves a content-role transition even when cleanup precedes the mutation observer', () => {
