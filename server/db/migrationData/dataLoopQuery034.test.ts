@@ -89,12 +89,12 @@ describe('migration 034 native data loop query carriers', () => {
     expect(query(result.value).where).toEqual({ kind: 'field', fieldId, operator: 'eq', value: expected })
   })
 
-  test('condition text containing token syntax remains an exact literal operand', () => {
+  test.each(['{translations.example}', '{route.value}'])('condition token syntax remains an exact literal operand: %s', value => {
     const result = migrate(tree([loop('loop', { filters: {
-      tableId: 'catalog', cellField: 'name', cellOperator: 'is', cellValue: '{translations.example}',
+      tableId: 'catalog', cellField: 'name', cellOperator: 'is', cellValue: value,
     } })]))
     expect(result.issues).toEqual([])
-    expect(query(result.value).where).toEqual({ kind: 'field', fieldId: 'name', operator: 'eq', value: '{translations.example}' })
+    expect(query(result.value).where).toEqual({ kind: 'field', fieldId: 'name', operator: 'eq', value })
   })
 
   test('isNot retains missing rows through an explicit empty OR inequality', () => {
@@ -222,7 +222,6 @@ describe('migration 034 native data loop query carriers', () => {
     { filters: '{currentEntry.query}' },
     { orderBy: '{currentEntry.order}' },
     { filters: { tableId: '{currentEntry.table}' } },
-    { filters: { tableId: 'catalog', cellField: 'name', cellOperator: 'is', cellValue: '{route.value}' } },
   ])('inline configuration bindings are reported without changing raw values: %j', extra => {
     const source = tree([loop('loop', extra)])
     const result = migrate(source)
