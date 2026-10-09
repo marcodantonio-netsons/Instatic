@@ -23,7 +23,6 @@ export function DisclosureEditor({ props, children, mcClassName, nodeWrapperProp
       data-instatic-close-on-outside-pointer={String(props.closeOnOutsidePointer)}
       data-instatic-close-on-focus-leave={String(props.closeOnFocusLeave)}
     >
-      <summary>{props.label}</summary>
       {children}
     </details>
   )

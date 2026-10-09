@@ -164,11 +164,13 @@ Constraint #179: **`render()` is pure** — no DOM, no React, no side effects. I
 
 ## Native disclosures
 
-`base.disclosure` emits a semantic `<details>` with exactly one generated first
-`<summary>` containing its `label`, followed by the authored child nodes. Bind
-the label to language-file content like any text prop. Style the details node
-with user classes and its direct summary with an ambient selector. The module
-adds no default visual CSS, ARIA menu roles, focus trap, or arrow-key navigation.
+`base.disclosure` emits a semantic `<details>` around its authored child nodes.
+Author its first child as `base.container` with `tag: 'custom'` and
+`customTag: 'summary'`. Its text, icons and images are ordinary nested nodes;
+they use the same classes, attributes, language-file bindings and editing as
+the rest of the document. The summary itself can have its own classes and
+attributes. The module generates no implicit summary or label and adds no
+default visual CSS, ARIA menu roles, focus trap, or arrow-key navigation.
 
 `initiallyOpen` controls authored initial state. A nonempty `group` maps to the
 native HTML `name` attribute, so one related disclosure is open at a time. Keep

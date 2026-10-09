@@ -12,15 +12,19 @@ import { DISCLOSURE_RUNTIME_JS } from '@modules/base/disclosure/disclosureRuntim
 afterEach(cleanup)
 
 describe('native disclosure authoring and publishing', () => {
-  it('renders exactly one summary before authored children, with native grouping and state', () => {
-    const props = { ...DisclosureModule.defaults, label: 'Products & services', group: 'navigation', initiallyOpen: true }
+  it('preserves an authored summary with independently styled content, grouping and state', () => {
+    const props = { ...DisclosureModule.defaults, group: 'navigation', initiallyOpen: true }
     expect(Value.Check(DisclosurePropsSchema, props)).toBe(true)
-    const result = DisclosureModule.render(escapeProps(props, DisclosureModule.schema), ['<a href="/products">Products</a>'])
+    const result = DisclosureModule.render(escapeProps(props, DisclosureModule.schema), ['<summary class="trigger" aria-label="Products"><i class="icon" aria-hidden="true">+</i><span>Products &amp; services</span><i class="chevron" aria-hidden="true">⌄</i></summary>', '<a href="/products">Products</a>'])
     const host = document.createElement('div')
     host.innerHTML = result.html
     const details = host.querySelector('details')!
     expect(details.firstElementChild?.tagName).toBe('SUMMARY')
-    expect(details.querySelector('summary')?.textContent).toBe('Products & services')
+    const summary = details.querySelector('summary')!
+    expect(summary.className).toBe('trigger')
+    expect(summary.getAttribute('aria-label')).toBe('Products')
+    expect(summary.children).toHaveLength(3)
+    expect(summary.children[1].textContent).toBe('Products & services')
     expect(details.children).toHaveLength(2)
     expect(details.getAttribute('name')).toBe('navigation')
     expect(details.open).toBe(true)
@@ -29,8 +33,8 @@ describe('native disclosure authoring and publishing', () => {
     expect(result.js).toBe(DISCLOSURE_RUNTIME_JS)
   })
 
-  it('escapes labels/group names and rejects runtime attribute overrides', () => {
-    const props = { ...DisclosureModule.defaults, label: '<script>alert(1)</script>', group: '" onclick="alert(1)', htmlAttributes: { open: '', name: 'override', 'data-instatic-close-on-escape': 'false', onclick: 'alert(1)' } }
+  it('escapes group names, rejects runtime attribute overrides and generates no implicit summary', () => {
+    const props = { ...DisclosureModule.defaults, group: '" onclick="alert(1)', htmlAttributes: { open: '', name: 'override', 'data-instatic-close-on-escape': 'false', onclick: 'alert(1)' } }
     const result = DisclosureModule.render(escapeProps(props, DisclosureModule.schema), [])
     const host = document.createElement('div')
     host.innerHTML = result.html
@@ -40,14 +44,18 @@ describe('native disclosure authoring and publishing', () => {
     expect(details.open).toBe(false)
     expect(details.getAttribute('name')).toBe(props.group)
     expect(details.getAttribute('data-instatic-close-on-escape')).toBe('true')
-    expect(details.querySelector('summary')?.textContent).toBe(props.label)
+    expect(details.querySelector('summary')).toBeNull()
+    expect(DisclosureModule.schema).not.toHaveProperty('label')
+    expect(DisclosureModule.defaults).not.toHaveProperty('label')
   })
 
   it('canvas preserves wrapper/class attributes and uses the same Escape/focus behavior', () => {
-    const view = render(<DisclosureEditor props={{ ...DisclosureModule.defaults, initiallyOpen: true, label: 'Products' }} nodeId="disclosure" isSelected={false} mcClassName="navigation-panel" nodeWrapperProps={{ 'data-node-id': 'disclosure' }}><a href="/products">Products</a></DisclosureEditor>)
+    const view = render(<DisclosureEditor props={{ ...DisclosureModule.defaults, initiallyOpen: true }} nodeId="disclosure" isSelected={false} mcClassName="navigation-panel" nodeWrapperProps={{ 'data-node-id': 'disclosure' }}><summary className="trigger" data-node-id="summary"><span>Products</span><i aria-hidden="true">⌄</i></summary><a href="/products">Products</a></DisclosureEditor>)
     const details = view.container.querySelector('details')!
     expect(details.className).toBe('navigation-panel')
     expect(details.getAttribute('data-node-id')).toBe('disclosure')
+    expect(details.querySelectorAll('summary')).toHaveLength(1)
+    expect(details.querySelector('summary')?.getAttribute('data-node-id')).toBe('summary')
     const link = details.querySelector('a')!
     link.focus()
     fireEvent.keyDown(link, { key: 'Escape' })
@@ -62,7 +70,7 @@ describe('delegated disclosure behavior', () => {
 
   function fixture(options: Partial<typeof DisclosureModule.defaults> = {}) {
     const host = document.createElement('div')
-    host.innerHTML = DisclosureModule.render({ ...DisclosureModule.defaults, ...options }, ['<a href="/item">Item</a><button>Action</button>']).html + '<button id="outside">Outside</button>'
+    host.innerHTML = DisclosureModule.render({ ...DisclosureModule.defaults, ...options }, ['<summary>Menu</summary>', '<a href="/item">Item</a><button>Action</button>']).html + '<button id="outside">Outside</button>'
     document.body.append(host)
     const details = host.querySelector('details')!
     return { host, details, trigger: details.querySelector('summary')!, link: details.querySelector('a')!, outside: host.querySelector<HTMLButtonElement>('#outside')! }
