@@ -1,91 +1,24 @@
+import type { FormProps, LabelProps, InputProps, TextareaProps, SelectProps, OptionProps, OptionGroupProps, ChoiceProps, SubmitProps, FormMessageProps } from './primitiveSchemas'
+import type { Static } from '@sinclair/typebox'
+import type { CSSProperties } from 'react'
+import { Children, createElement } from 'react'
+import type { TurnstileConfigurationSchema } from '@core/forms-schema'
+import type { ConditionalPropsSchema, OutputPropsSchema, FormLinkPropsSchema, FormStepPropsSchema } from './behaviorSchemas'
 import type { ModuleComponentProps } from '@core/module-engine'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
+import { submitUsesChildren } from './content'
+import { htmlAttributesForReact, MODULE_GENERATED_ATTRIBUTE_NAMES, resolveHtmlTag } from '@core/htmlAttributes'
 
-type FormProps = Record<string, unknown> & {
-  formId: string
-  editorPreviewState?: FormPreviewState
-}
-
-type LabelProps = Record<string, unknown> & {
-  text: string
-  targetMode: 'auto' | 'explicit'
-  targetId: string
-}
-
-type InputProps = Record<string, unknown> & {
-  inputType: string
-  name: string
-  id: string
-  placeholder: string
-  value: string
-  required: boolean
-  disabled: boolean
-  readOnly: boolean
-  autocomplete: string
-}
-
-type TextareaProps = Record<string, unknown> & {
-  name: string
-  id: string
-  placeholder: string
-  value: string
-  required: boolean
-  disabled: boolean
-  readOnly: boolean
-  rows: number
-}
-
-type SelectProps = Record<string, unknown> & {
-  name: string
-  id: string
-  required: boolean
-  disabled: boolean
-  multiple: boolean
-}
-
-type OptionProps = Record<string, unknown> & {
-  value: string
-  label: string
-  selected: boolean
-  disabled: boolean
-}
-
-type OptionGroupProps = Record<string, unknown> & {
-  label: string
-  disabled: boolean
-}
-
-type ChoiceProps = Record<string, unknown> & {
-  name: string
-  id: string
-  value: string
-  checked: boolean
-  required: boolean
-  disabled: boolean
-}
-
-type SubmitProps = Record<string, unknown> & {
-  label: string
-  disabled: boolean
-  formId: string
-}
-
-type FormMessageProps = Record<string, unknown> & {
-  formId: string
-  kind: 'status' | 'success' | 'error'
-  text: string
-  editorPreviewState?: FormPreviewState
-  editorPreviewSuccessMessage?: string
-}
-
+type EditorFormPreviewProps = { editorPreviewState?: FormPreviewState; editorPreviewMessage?: string }
 type FormPreviewState = 'default' | 'submitting' | 'success' | 'error'
 
-export function FormEditor({ children, mcClassName, nodeWrapperProps, props }: ModuleComponentProps<FormProps>) {
+export function FormEditor({ children, mcClassName, nodeWrapperProps, props }: ModuleComponentProps<FormProps & EditorFormPreviewProps>) {
   const previewState = normalizePreviewState(props.editorPreviewState)
   const runtimeState = previewState === 'submitting' ? 'pending' : previewState
   const formId = normalizeIdentifierValue(props.formId, 'form')
   return (
     <form
+      {...htmlAttributesForReact(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.form'])}
       {...nodeWrapperProps}
       className={mcClassName}
       data-instatic-form-id={formId}
@@ -110,10 +43,11 @@ export function LabelEditor({ mcClassName, nodeWrapperProps, props }: ModuleComp
 export function InputEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<InputProps>) {
   return (
     <input
+      {...htmlAttributesForReact(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.input'])}
       {...nodeWrapperProps}
       className={mcClassName}
       type={props.inputType}
-      name={props.name}
+      name={props.name || props.fieldId}
       id={props.id || undefined}
       placeholder={props.placeholder || undefined}
       defaultValue={props.value || undefined}
@@ -121,6 +55,12 @@ export function InputEditor({ mcClassName, nodeWrapperProps, props }: ModuleComp
       disabled={props.disabled}
       readOnly={props.readOnly}
       autoComplete={props.autocomplete || undefined}
+      min={props.min !== '' ? props.min : undefined}
+      max={props.max !== '' ? props.max : undefined}
+      step={props.step !== '' ? props.step : undefined}
+      minLength={props.minLength > 0 ? props.minLength : undefined}
+      maxLength={props.maxLength > 0 ? props.maxLength : undefined}
+      pattern={props.pattern || undefined}
     />
   )
 }
@@ -128,9 +68,10 @@ export function InputEditor({ mcClassName, nodeWrapperProps, props }: ModuleComp
 export function TextareaEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<TextareaProps>) {
   return (
     <textarea
+      {...htmlAttributesForReact(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.textarea'])}
       {...nodeWrapperProps}
       className={mcClassName}
-      name={props.name}
+      name={props.name || props.fieldId}
       id={props.id || undefined}
       placeholder={props.placeholder || undefined}
       defaultValue={props.value || undefined}
@@ -138,20 +79,24 @@ export function TextareaEditor({ mcClassName, nodeWrapperProps, props }: ModuleC
       disabled={props.disabled}
       readOnly={props.readOnly}
       rows={props.rows}
+      minLength={props.minLength > 0 ? props.minLength : undefined}
+      maxLength={props.maxLength > 0 ? props.maxLength : undefined}
     />
   )
 }
 
-export function SelectEditor({ children, mcClassName, nodeWrapperProps, props }: ModuleComponentProps<SelectProps>) {
+export function SelectEditor({ children, mcClassName, nodeWrapperProps, props }: ModuleComponentProps<SelectProps & { _formInitialValue?: string | string[] }>) {
   return (
     <select
+      {...htmlAttributesForReact(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.select'])}
       {...nodeWrapperProps}
       className={mcClassName}
-      name={props.name}
+      name={props.name || props.fieldId}
       id={props.id || undefined}
       required={props.required}
       disabled={props.disabled}
       multiple={props.multiple}
+      defaultValue={props._formInitialValue}
     >
       {children}
     </select>
@@ -177,10 +122,11 @@ export function OptionGroupEditor({ children, nodeWrapperProps, props }: ModuleC
 export function CheckboxEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<ChoiceProps>) {
   return (
     <input
+      {...htmlAttributesForReact(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.checkbox'])}
       {...nodeWrapperProps}
       className={mcClassName}
       type="checkbox"
-      name={props.name}
+      name={props.name || props.fieldId}
       id={props.id || undefined}
       value={props.value}
       defaultChecked={props.checked}
@@ -193,10 +139,11 @@ export function CheckboxEditor({ mcClassName, nodeWrapperProps, props }: ModuleC
 export function RadioEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<ChoiceProps>) {
   return (
     <input
+      {...htmlAttributesForReact(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.radio'])}
       {...nodeWrapperProps}
       className={mcClassName}
       type="radio"
-      name={props.name}
+      name={props.name || props.fieldId}
       id={props.id || undefined}
       value={props.value}
       defaultChecked={props.checked}
@@ -206,41 +153,36 @@ export function RadioEditor({ mcClassName, nodeWrapperProps, props }: ModuleComp
   )
 }
 
-export function SubmitEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<SubmitProps>) {
+export function SubmitEditor({ mcClassName, nodeWrapperProps, props, children }: ModuleComponentProps<SubmitProps>) {
   const formId = normalizeIdentifierValue(props.formId)
   return (
     <button
+      {...htmlAttributesForReact(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.submit'])}
       {...nodeWrapperProps}
       className={mcClassName}
       type="button"
       disabled={props.disabled}
       form={formId || undefined}
     >
-      {props.label}
+      {submitUsesChildren(Children.count(children)) ? children : props.label}
     </button>
   )
 }
 
-export function FormMessageEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<FormMessageProps>) {
+export function FormMessageEditor({ children, mcClassName, nodeWrapperProps, props }: ModuleComponentProps<FormMessageProps & EditorFormPreviewProps>) {
   const previewState = normalizePreviewState(props.editorPreviewState)
   const previewKind = messageKindForPreview(previewState)
   const previewActive = previewKind !== null && props.kind === previewKind
-  const text = previewActive
-    ? previewTextForMessage(props.kind, props.text, props.editorPreviewSuccessMessage)
-    : props.text
-  return (
-    <div
-      {...nodeWrapperProps}
-      className={mcClassName}
-      data-instatic-form-message={props.kind}
-      data-instatic-form-id={normalizeIdentifierValue(props.formId)}
-      data-instatic-form-preview-active={previewActive ? 'true' : undefined}
-      hidden={previewKind !== null && props.kind !== previewKind ? true : undefined}
-      role={props.kind === 'error' ? 'alert' : 'status'}
-    >
-      {text}
-    </div>
-  )
+  const text = previewActive && ['state', 'responseOrState'].includes(props.source) ? props.editorPreviewMessage ?? '' : props.text
+  return createElement(resolveHtmlTag(props.tag, props.customTag), {
+    ...htmlAttributesForReact(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.form-message']),
+    ...nodeWrapperProps, className: mcClassName,
+    'data-instatic-form-message': props.kind,
+    'data-instatic-form-id': normalizeIdentifierValue(props.formId),
+    'data-instatic-form-preview-active': previewActive ? 'true' : undefined,
+    hidden: previewKind !== null && props.kind !== previewKind ? true : undefined,
+    role: props.kind === 'error' ? 'alert' : 'status',
+  }, Children.count(children) ? children : text)
 }
 
 function normalizePreviewState(value: unknown): FormPreviewState {
@@ -254,13 +196,22 @@ function messageKindForPreview(previewState: FormPreviewState): FormMessageProps
   return null
 }
 
-function previewTextForMessage(
-  kind: FormMessageProps['kind'],
-  text: string,
-  successMessage: string | undefined,
-): string {
-  if (text) return text
-  if (kind === 'status') return 'Sending...'
-  if (kind === 'success') return successMessage || 'Thanks. Your submission was received.'
-  return 'Please check the form and try again.'
+export function ConditionalEditor({ children, mcClassName, nodeWrapperProps }: ModuleComponentProps<Static<typeof ConditionalPropsSchema>>) {
+  return <div {...nodeWrapperProps} className={mcClassName}>{children}</div>
+}
+
+export function OutputEditor({ children, mcClassName, nodeWrapperProps, props }: ModuleComponentProps<Static<typeof OutputPropsSchema>>) {
+  return createElement(resolveHtmlTag(props.tag, props.customTag), { ...htmlAttributesForReact(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.form-output']), ...nodeWrapperProps, className: mcClassName, style: props.cssVariable ? { [props.cssVariable]: Number(props.text) } as CSSProperties : undefined }, Children.count(children) ? children : props.cssVariable ? undefined : props.text)
+}
+
+export function FormStepEditor({ children, mcClassName, nodeWrapperProps, props }: ModuleComponentProps<Static<typeof FormStepPropsSchema>>) {
+  return <button {...htmlAttributesForReact(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.form-step'])} {...nodeWrapperProps} className={mcClassName} type="button">{Children.count(children) ? children : props.label}</button>
+}
+
+export function FormLinkEditor({ children, mcClassName, nodeWrapperProps, props }: ModuleComponentProps<Static<typeof FormLinkPropsSchema>>) {
+  return <a {...htmlAttributesForReact(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.form-link'])} {...nodeWrapperProps} className={mcClassName} href={props.href} target={props.target} rel={props.target === '_blank' ? 'noopener noreferrer' : undefined}>{Children.count(children) ? children : props.text}</a>
+}
+
+export function TurnstileEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<Static<typeof TurnstileConfigurationSchema>>) {
+  return <div {...nodeWrapperProps} className={mcClassName} role="img" aria-label="Turnstile verification">{props.siteKey ? 'Turnstile' : 'Configure Turnstile site key'}</div>
 }

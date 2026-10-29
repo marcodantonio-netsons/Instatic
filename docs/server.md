@@ -58,6 +58,13 @@ Boot is sequential and fail-fast. If migrations fail, the process exits. If a pl
 
 ---
 
+The HTTP server accepts request bodies up to 1 GiB, matching Site Import's
+archive input limit. CMS archive imports stream media entries to disk; their
+manifest has a separate 256 MiB limit. JSON bodies retain a 128 MiB default
+limit in `readValidatedBody`, enforced while streaming even without a
+`Content-Length` header; endpoints can set a smaller limit. Oversized JSON
+requests receive HTTP 413.
+
 ## Routing
 
 `server/router.ts` exposes one function:
@@ -306,6 +313,8 @@ Use `binaryResponse` whenever a route handler returns binary content (runtime as
 | `sessions.ts`     | Session lookup, MFA gate, step-up timer                                    |
 | `authz.ts`        | `requireAuthenticatedUser`, `requireCapability`, `requireAnyCapability`    |
 | `capabilities.ts` | `CoreCapability` enum and per-capability membership rules                  |
+| `dataAccess.ts`   | Pure table-family and row-ownership rules (`canReadTable`, `canReadDataRow`, `rowVisibilityFor`), shared by HTTP, AI, MCP and localized-data validation |
+| `rowAccess.ts` | Resolves stored rows through those shared predicates, enforcing table visibility before the requested row operation |
 | `lockout.ts`      | Failed-login lockout policy                                                |
 | `mfa.ts`          | TOTP enrollment, verification                                              |
 | `rateLimit.ts`    | Token-bucket rate limiters                                                 |
@@ -496,7 +505,7 @@ Three-layer model: **static-by-default, dynamic-by-auto-detection**.
 
 - **Layer A — static-to-disk.** **Every** page is baked at publish time. A fully-static page (no dynamic modules, no request-dependent bindings/loop sources, no VC refs to dynamic VCs) bakes a complete document; a page with dynamic nodes bakes its static **shell** with `<instatic-hole>` placeholders (the dynamic nodes are Layer C holes). HTML is written to `uploads/published/current/<route>.html`, and the CSS bundles (`/_instatic/css/…`) and runtime JS (`/_instatic/assets/…`) are baked into the same slot. The visitor router reads all of these directly off disk (`readArtefact` / `readStaticAsset`) — **a published page never touches the DB for HTML, CSS, or JS.** TTFB ≤ 1.5 ms.
 - **Layer B — in-memory LRU.** Requests with real loop-pagination query params (`loop_<nodeId>_page`) bypass the disk fast-path and render live, memoised by `(urlPath, canonicalQuery)`. Junk params collapse to the empty canonical query and still hit Layer A. Single-flight. Every publish bumps `publishVersion` so the entire cache evicts lazily. The version is captured at render start — if a publish lands before the factory resolves, the result is returned to the caller but not stored; the next request re-renders against the fresh snapshot.
-- **Layer C — server islands ("holes").** When `findDynamicNodeIds(...)` classifies a node as dynamic (module flagged `dynamic: true`, or its bindings/loop source declare `requestDependent: true` / `perVisitor: true`, or it's a VC ref to a dynamic VC), the publisher emits a `<instatic-hole>` placeholder with an optional `staticPlaceholder(props)` skeleton. A ~1.1 KB `IntersectionObserver` runtime fetches `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>` lazily as the placeholder enters the viewport, forwarding the originating page path/query into the fragment render. **The hole fragment is the only request that reads the DB for an otherwise-static page.** Shared hole responses are cached via Layer B's LRU; per-visitor holes bypass it with `Cache-Control: no-store`.
+- **Layer C — server islands ("holes").** When `findDynamicNodeIds(...)` classifies a node as dynamic (module flagged `dynamic: true`, or its bindings/loop source declare `requestDependent: true` / `perVisitor: true`, or it's a VC ref to a dynamic VC), the publisher emits a `<instatic-hole>` placeholder with an optional `staticPlaceholder(props)` skeleton. A ~1.1 KB `IntersectionObserver` runtime fetches `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>` lazily as the placeholder enters the viewport, forwarding the originating page path/query into the fragment render. **The hole fragment is the only request that reads the DB for an otherwise-static page.** Shared hole responses are cached via Layer B's LRU; per-visitor holes bypass it with `Cache-Control: no-store`.
 
 Authors don't toggle anything. `src/core/publisher/dynamicDetection.ts:findDynamicNodeIds` is backed by the single walker that powers Layer A's shell-vs-complete bake and Layer C's placeholder emission. The rules live in exactly one file.
 
@@ -544,10 +553,11 @@ Server-side publishing helpers live in `server/publish/`:
 | `renderCache.ts`                  | Layer B. Bounded LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. Single-flight on cache miss. `bumpPublishVersion()` invalidates lazily; version captured at render start so mid-flight publishes discard without caching stale HTML. |
 | `holeRuntime.ts`                  | Layer C client-side runtime (~1.1 KB). Exports `runInstaticHoleRuntime` (TS source) and `HOLE_RUNTIME_JS` (IIFE-serialized for browser delivery). |
 | `publishSite.ts`                  | Full-site publish orchestrator (`publishDraftSite`): phase-1 builds, the short `persistSitePublish` transaction, Layer A bake + slot swap, Layer B bump. |
-| `publishRow.ts`                   | Per-row publish orchestrator (`publishDataRow`) + `removeDataRowArtefact`: persist via the data repository, in-place artefact update, Layer B bump. |
+| `publishRow.ts`                   | Per-row publish orchestrator (`publishDataRow`) + `removeDataRowArtefact`: page rows use the site pipeline with published shared resources and just the selected draft; other rows use an in-place artefact update and Layer B bump. |
 | `publicRenderer.ts`               | `renderPublishedSnapshot`, `renderPublishedDataRowTemplate` — snapshot-aware wrappers around `publishPage`. |
 | `publishedHtmlPipeline.ts`        | Plugin frontend-asset injection + `publish.html` filter chain. Runs at publish time for every baked page (complete doc or hole shell); also runs in the Layer B factory for query-string / live renders (cached). |
-| `siteCssBundle.ts`                | Per-site reset / framework / style CSS bundles (hashed filenames).  |
+| `siteCssBundle.ts`                | Hashed CSS bundles: site-wide reset/framework and page-scoped style/userStyles. |
+| `siteCssAssets.ts`                | Disk-first CSS serving and versioned hash fallback across raw/composed page bundles. |
 | `republish.ts`                    | Bulk re-publish (after a settings change touches all pages).        |
 | `publishScheduler.ts`             | Scheduled publish jobs.                                             |
 | `frontendInjections.ts`           | Plugin-contributed frontend scripts injected into published HTML.   |

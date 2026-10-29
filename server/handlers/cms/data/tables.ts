@@ -1,3 +1,4 @@
+import { assertLocalizedDataTableWrite } from '../../../repositories/data/localization'
 /**
  * Data-table endpoints.
  *
@@ -35,12 +36,15 @@ import {
   createDataRow,
   getDataRowBySlug,
   listDataRows,
+  readDataLocalization,
 } from '../../../repositories/data'
 import { normalizeDataTableFields } from '@core/data/fields'
 import { slugForTable } from '@core/data/cells'
 import { slugFromTitle } from '@core/utils/slug'
 import { fetchPublishedDataRowItems } from '@core/loops/sources/dataRows'
 import { parseCellFilter } from '@core/loops/cellFilter'
+import { safeParseJson } from '@core/utils/jsonValidate'
+import { Type } from '@core/utils/typeboxHelpers'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../../http'
 import { CMS_API_PREFIX, requestAuditContext } from '../shared'
 import {
@@ -50,16 +54,19 @@ import {
   type TablePatchBody,
 } from './schemas'
 import {
-  canManageTable,
-  canReadTable,
-  canSeeAllDataRows,
   forbidden,
-  hasContentRowAccess,
   requireCustomTablesManager,
   requireDataAccess,
   requireDataCreator,
   requireDataTablesRead,
 } from './access'
+import {
+  canManageTable,
+  canReadTable,
+  canSeeAllDataRows,
+  hasContentRowAccess,
+  rowVisibilityFor,
+} from '../../../auth/dataAccess'
 import {
   assertSystemTableUpdateAllowed,
   protectedBuiltInCreateCellKey,
@@ -278,6 +285,11 @@ async function handleTableItem(
     const frozenError = assertSystemTableUpdateAllowed(table, update)
     if (frozenError) return badRequest(frozenError)
 
+    if (update.fields) {
+      // Changing an ordinary field into a localized reference cannot create
+      // an oracle for a schema manager who lacks Site catalogue access.
+      await assertLocalizedDataTableWrite(db, scope, tableId, update.fields, user)
+    }
     const updated = await updateDataTable(db, scope, tableId, update)
     if (!updated) return jsonResponse({ error: 'Table not found' }, { status: 404 })
     await recordTableAuditEvent(db, user, req, 'data.table.update', updated)
@@ -312,8 +324,7 @@ async function handleTableRows(
     // A broad content.* capability satisfies requireDataAccess, but reading a
     // system table's rows still needs data.system.tables.read (GHSA-x69h).
     if (!canReadTable(user, table)) return jsonResponse({ error: 'Table not found' }, { status: 404 })
-    const visibility = canSeeAllDataRows(user) ? {} : { ownerUserId: user.id }
-    return jsonResponse({ rows: await listDataRows(db, scope, tableId, visibility) })
+    return jsonResponse({ rows: await listDataRows(db, scope, tableId, rowVisibilityFor(user)) })
   }
 
   if (req.method === 'POST') {
@@ -370,9 +381,8 @@ async function handleTableRows(
 
 // Editor canvas preview: real published rows projected as LoopItems via the
 // same code path the publisher uses (`fetchPublishedDataRowItems`). The
-// canvas hook `useLoopPreviewItems` falls back to synthetic preview items
-// when this returns an empty list, so the loop body stays visible even when
-// no rows are published yet.
+// canvas hook `useLoopPreviewItems` keeps an empty result empty. Schemas
+// remain available for authoring bindings independently of preview values.
 async function handleTableLoopPreview(
   req: Request,
   db: DbClient,
@@ -385,7 +395,7 @@ async function handleTableLoopPreview(
   if (user instanceof Response) return user
 
   const table = await getDataTable(db, scope, tableId)
-  if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
+  if (!table || !canReadTable(user, table)) return jsonResponse({ error: 'Table not found' }, { status: 404 })
 
   const url = new URL(req.url)
   const orderBy = url.searchParams.get('orderBy') ?? 'publishedAt'
@@ -403,6 +413,13 @@ async function handleTableLoopPreview(
     cellValue: url.searchParams.get('cellValue') ?? '',
   })
 
+  const rowIds = url.searchParams.get('rowIds')
+  const selected = rowIds === null ? undefined : safeParseJson(rowIds, Type.Array(Type.String({ maxLength: 256 }), { maxItems: 1000 }))
+  if (selected && !selected.ok) return badRequest('Selected row identities must be an array of strings')
+  const language = url.searchParams.get('language') ?? undefined
+  const localization = table.fields.some(field => field.type === 'localizedText' || (field.type === 'repeater' && field.fields.some(item => item.type === 'localizedText')))
+    ? await readDataLocalization(db, scope, user, [table], language) : undefined
+  const readableRowIds = canSeeAllDataRows(user) ? undefined : new Set((await listDataRows(db, scope, table.id, { ownerUserId: user.id })).map(row => row.id))
   const result = await fetchPublishedDataRowItems(db, {
     // The loop source binds PHYSICAL table ids; on a branch the rows are
     // drafts (publishing is main-only).
@@ -413,6 +430,9 @@ async function handleTableLoopPreview(
     limit,
     offset,
     cellFilter,
+    localization: localization?.language ? { language: localization.language, translations: localization.translations } : undefined,
+    readableRowIds,
+    selectedRowIds: selected?.ok ? new Set(selected.value) : undefined,
   })
   return jsonResponse(result)
 }

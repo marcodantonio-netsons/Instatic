@@ -1,7 +1,6 @@
 /**
- * styleRule slice — pure, side-effect-free helpers shared by the action
- * factories. Each is a plain function over its arguments; none touch the store
- * directly (callers pass in the live draft / registry).
+ * styleRule slice helpers shared by the action factories. Registry mutations
+ * receive the live draft; none access the store directly.
  */
 
 import type { Draft } from 'mutative'
@@ -21,6 +20,50 @@ export function nextRuleOrder(classes: Record<string, StyleRule>): number {
     if (typeof cls.order === 'number' && cls.order > max) max = cls.order
   }
   return max + 1
+}
+
+/**
+ * Allocate immediately after a source in a mutable registry. Renumber only
+ * when an existing tie or exhausted numeric interval prevents a strict order;
+ * stable sorting preserves the currently emitted source sequence.
+ */
+export function ruleOrderAfter(classes: Record<string, StyleRule>, rule: StyleRule): number {
+  const ordered = Object.values(classes).sort((a, b) => a.order - b.order)
+  const index = ordered.findIndex((candidate) => candidate.id === rule.id)
+  if (index < 0) throw new Error('[styleRuleSlice] Insertion anchor is not in the registry')
+  const after = () => {
+    const current = ordered[index].order
+    const next = ordered[index + 1]?.order
+    return next === undefined ? current + 1 : current + (next - current) / 2
+  }
+  const candidate = after()
+  if (
+    ordered.some((entry, i) => i > 0 && ordered[i - 1].order >= entry.order) ||
+    !Number.isFinite(candidate) || candidate <= ordered[index].order ||
+    (ordered[index + 1] && candidate >= ordered[index + 1].order)
+  ) {
+    ordered.forEach((entry, i) => { entry.order = i * 2 })
+  }
+  return after()
+}
+
+/** Clear tree assignments and editor selections after registry entries are deleted. */
+export function removeStyleRuleReferences(
+  state: Draft<EditorStore>,
+  site: SiteDocument,
+  ids: ReadonlySet<string>,
+): void {
+  if (ids.size === 0) return
+  for (const tree of [...site.pages, ...site.visualComponents.map((component) => component.tree)]) {
+    for (const node of Object.values(tree.nodes)) {
+      node.classIds = node.classIds.filter((id) => !ids.has(id))
+    }
+  }
+  if (state.activeClassId && ids.has(state.activeClassId)) state.activeClassId = null
+  if (state.selectedSelectorClassId && ids.has(state.selectedSelectorClassId)) {
+    state.selectedSelectorClassId = null
+  }
+  state.selectedSelectorClassIds = state.selectedSelectorClassIds.filter((id) => !ids.has(id))
 }
 
 export function hasStylePatchChanges(
@@ -52,17 +95,6 @@ export function shallowEqualStyles(
   return true
 }
 
-export function cloneContextStyles(
-  contextStyles: StyleRule['contextStyles'],
-): StyleRule['contextStyles'] {
-  return Object.fromEntries(
-    Object.entries(contextStyles).map(([contextId, styles]) => [
-      contextId,
-      { ...styles },
-    ]),
-  )
-}
-
 /**
  * Find a node by id anywhere in the site — pages **and** Visual Component
  * trees. Returns null when the node doesn't exist anywhere.
@@ -75,10 +107,7 @@ export function cloneContextStyles(
  * VCNode = BaseNode (structurally identical), so a single `BaseNode`-shaped
  * helper covers both tree kinds.
  */
-export function findNodeWithClassIds(
-  site: SiteDocument | null,
-  nodeId: string,
-): BaseNode | null {
+export function findNodeWithClassIds(site: SiteDocument | null, nodeId: string): BaseNode | null {
   if (!site) return null
   for (const page of site.pages) {
     const node = page.nodes[nodeId]
@@ -126,7 +155,10 @@ export function mutateNodeClassIds(
   return false
 }
 
-export function uniqueClassCopyName(classes: Record<string, StyleRule>, originalName: string): string {
+export function uniqueClassCopyName(
+  classes: Record<string, StyleRule>,
+  originalName: string,
+): string {
   const existingNames = new Set(Object.values(classes).map((cls) => cls.name))
   const baseName = `${originalName}-copy`
   if (!existingNames.has(baseName)) return baseName

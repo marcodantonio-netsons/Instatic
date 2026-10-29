@@ -128,9 +128,10 @@ export default definePlugin({
     permissions.cmsContentWrite,
   ],
 
-  // Per-table allowlist for the cms.content.* surface. The install
-  // consent dialog renders this verbatim so the operator sees the exact
-  // set of tables your plugin can touch before approving the install.
+  // Per-table allowlist for the cms.content.* surface — the operator can
+  // review exactly which tables your plugin touches before installing.
+  // Declare concrete slugs, or '@own-created' to cover tables your plugin
+  // creates at runtime via api.cms.content.tables.create(...).
   contentAccess: [
     { table: 'pages', modes: ['read', 'write'] },
   ],
@@ -190,9 +191,9 @@ export default defineModule({
   schema: {
     message: control.text('Message'),
   },
+  assets: { css: \`.hello { padding: 12px; border: 1px dashed currentColor; border-radius: 6px; }\` },
   render: ({ props }) => ({
     html: html\`<div class="hello">\${props.message}</div>\`,
-    css: \`.hello { padding: 12px; border: 1px dashed currentColor; border-radius: 6px; }\`,
   }),
 })
 `

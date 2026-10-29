@@ -150,7 +150,7 @@ See [docs/features/spotlight.md](../features/spotlight.md).
 | `plugin-sandbox-invariants.test.ts`           | No `node:`, `bun:`, `require(`, `process.binding` in plugin bundles; network permission gate is centralized in `apiDispatch.ts` and driven by `TARGET_PERMISSIONS`. |
 | `plugin-boot-resilience.test.ts`              | One bad plugin doesn't bring the server down. Crashes are isolated.              |
 | `plugin-cms-content-surface.test.ts`          | All five `cms.content.*` permissions are wired across all sync-points (permission values, capability matrix, permission alias builder, SDK type surface, host-side dispatch). |
-| `plugin-content-access-enforced.test.ts`      | `cms.content.*` permission grant is enforced centrally in `apiDispatch.ts` (driven by `TARGET_PERMISSIONS`); per-table handlers additionally call `assertContentTableAccess` (manifest `contentAccess[]` allowlist). |
+| `plugin-content-access-enforced.test.ts`      | `cms.content.*` permission grant is enforced centrally in `apiDispatch.ts` (driven by `TARGET_PERMISSIONS`); per-table handlers additionally call `assertContentTableAccess` (manifest `contentAccess[]` allowlist — slug entries + the `@own-created` marker); `tables.create` records `createdByPluginId`, which the marker resolves against. |
 | `plugin-content-tree-via-engine.test.ts`      | Plugin content handlers reach page-tree mutations through `applyTreeOperation` from `@core/page-tree`, not by deep-importing `mutations.ts` directly. |
 | `plugin-host-import-boundaries.test.ts`       | Worker transport (`server/plugins/host/`) does not import `apiDispatch` — prevents circular dependency between the pool and the dispatch layer. |
 | `plugin-host-ui-runtime-parity.test.ts`       | Plugin host UI surfaces match the SDK's declared shape.                          |
@@ -210,7 +210,10 @@ The following test lives in `src/__tests__/server/` (not `architecture/`) but en
 
 | Test (server/)                                | What it enforces                                                                 |
 |-----------------------------------------------|----------------------------------------------------------------------------------|
-| `siteCssBundleMemo.test.ts`                   | `buildPublishedSiteCssBundle` memoises the three page-invariant CSS bundles (reset/framework/style) by `publishVersion + site object`: the O(all-pages) walk runs once per publish snapshot, not once per render; `bumpPublishVersion()` invalidates the memo; memoized output is byte-identical to `buildSiteCssBundle`; `userStyles` is rebuilt per call (page-scoped, never memoized). |
+| `siteCssBundleMemo.test.ts`                   | `buildPublishedSiteCssBundle` memoises reset/framework by `publishVersion`: the O(all-pages) module walk runs once per version; publish invalidates the memo; output matches `buildSiteCssBundle`; style/userStyles rebuild per page. |
+| `pageScopedClassCss.test.ts`                  | Disjoint pages, reachable nested Visual Components and slot fills/defaults, cycle guards, enabled/scoped emitted scripts and imported helpers, conservative selectors, inline/external parity, and media/version isolation. |
+| `classStyleInjectorScope.test.tsx`            | Mounted canvas CSS follows the active page or VC, immediately updates new assignments/previews and respects canvas script flags/scopes/imported helpers without injecting other documents' classes. |
+| `pageCssAssets.test.ts`                       | Every page and composed template's CSS hash is served with its own runtime manifest; publish clears positive/negative results and old in-flight requests cannot poison the new cache. |
 
 See [docs/features/publisher.md](../features/publisher.md).
 

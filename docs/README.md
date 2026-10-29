@@ -42,6 +42,7 @@ docs/
 │   ├── site-import.md              ← Super Import (static sites → CMS)
 │   ├── html-import.md              ← paste / import HTML into the page tree
 │   ├── editor-preferences.md       ← catalog-driven editor prefs
+│   ├── visitor-preferences.md      ← native public appearance, motion and media controls
 │   └── canvas-iframe-per-frame.md  ← per-breakpoint iframe rendering
 │
 ├── reference/                  ← short cookbook pages for primitives + patterns
@@ -145,6 +146,7 @@ Three categories, three voices:
 | [features/data-workspace.md](features/data-workspace.md)         | Data workspace UI: DataInspector, field management, DataGrid        |
 | [features/auth-and-access.md](features/auth-and-access.md)       | Sessions, MFA, step-up, lockout, CSRF, capabilities                  |
 | [features/site-shell.md](features/site-shell.md)                 | The persisted site config (breakpoints, classes, files, deps)        |
+| [features/localization.md](features/localization.md)             | Language-file bindings, native localized canvas and static HTML     |
 | [features/branches.md](features/branches.md)                     | Site branches: fork, edit in isolation, preview links, three-way merge, version restore |
 | [features/dependencies.md](features/dependencies.md)             | Dependencies panel: npm registry proxy, browse, install, remove, lock |
 | [features/modules.md](features/modules.md)                       | Module engine, defining first-party blocks                          |

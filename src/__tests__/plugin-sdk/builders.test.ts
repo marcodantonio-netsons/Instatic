@@ -3,6 +3,7 @@
  * exercised end-to-end: input → output → host runtime shape.
  */
 import { describe, expect, it } from 'bun:test'
+import { generateClassCSS, treeShakeStyleRules } from '@core/publisher'
 import {
   control,
   createNamespace,
@@ -238,7 +239,17 @@ describe('definePack', () => {
     expect(heroClass?.name).toBe('hero')
     // The CSS engine expands shorthands to longhands.
     expect(heroClass?.styles.paddingTop).toBe('96px')
-    expect(heroClass?.styles.textAlign).toBe('center')
+    // The following declaration keeps its own ordered ambient fragment.
+    expect(Object.values(layout.classes)).toHaveLength(2)
+    const alignment = layout.classes['acme.ui-kit/hero-section/ambient-0']
+    expect(alignment).toMatchObject({
+      kind: 'ambient', selector: '.hero', order: 1, styles: { textAlign: 'center' },
+    })
+    const usedClasses = treeShakeStyleRules(layout.classes, new Set(root.classIds))
+    expect(Object.keys(usedClasses)).toHaveLength(2)
+    const css = generateClassCSS(usedClasses, [])
+    expect(css).toContain('padding: 96px;')
+    expect(css).toContain('text-align: center;')
 
     // The heading made it into the subtree.
     const allNodes = Object.values(layout.nodes)

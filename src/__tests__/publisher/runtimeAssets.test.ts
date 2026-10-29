@@ -74,7 +74,7 @@ describe('publishPage runtime assets', () => {
     expect(html.indexOf('/_instatic/assets/runtime/a.js')).toBeLessThan(html.indexOf('/_instatic/assets/runtime/b.js'))
   })
 
-  it('emits classic runtime scripts without type=module', () => {
+  it('defers dom-ready classic scripts without changing their execution format', () => {
     const runtimeAssets: PublishedPageRuntimeAssets = {
       scripts: [
         {
@@ -91,11 +91,30 @@ describe('publishPage runtime assets', () => {
     const { html } = publishPage(page, site, registry, { runtimeAssets })
 
     expect(html).toContain(
-      '<script src="/_instatic/assets/runtime/jquery.js" data-instatic-runtime-script="classic"></script>',
+      '<script defer src="/_instatic/assets/runtime/jquery.js" data-instatic-runtime-script="classic"></script>',
     )
     expect(html).not.toContain(
       '<script type="module" src="/_instatic/assets/runtime/jquery.js"',
     )
+  })
+
+  it('preserves immediate classic scripts and ordered deferred head scripts', () => {
+    const runtimeAssets: PublishedPageRuntimeAssets = {
+      scripts: [
+        { fileId: 'dependent', src: '/dependent.js', format: 'classic', placement: 'head', timing: 'dom-ready', priority: 20 },
+        { fileId: 'immediate', src: '/immediate.js', format: 'classic', placement: 'head', timing: 'immediate', priority: 1 },
+        { fileId: 'dependency', src: '/dependency.js', format: 'classic', placement: 'head', timing: 'dom-ready', priority: 10, integrity: 'sha384-test' },
+      ],
+    }
+
+    const { html } = publishPage(page, site, registry, { runtimeAssets })
+
+    expect(html).toContain('<script src="/immediate.js" data-instatic-runtime-script="immediate"></script>')
+    expect(html).toContain('<script defer src="/dependency.js" data-instatic-runtime-script="dependency" integrity="sha384-test" crossorigin="anonymous"></script>')
+    expect(html).toContain('<script defer src="/dependent.js" data-instatic-runtime-script="dependent"></script>')
+    expect(html.indexOf('src="/dependency.js"')).toBeLessThan(html.indexOf('src="/dependent.js"'))
+    expect(html.indexOf('src="/dependent.js"')).toBeLessThan(html.indexOf('</head>'))
+    expect(html).not.toContain('<script async')
   })
 
   it('does not inject external or unsafe runtime asset URLs', () => {

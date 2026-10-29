@@ -1,11 +1,60 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it, spyOn } from 'bun:test'
 import { existsSync, readFileSync } from 'node:fs'
+import type { IncomingMessage, ServerResponse } from 'node:http'
+import type { Connect, Plugin } from 'vite'
 import { bunCommand, bunRunCommand, viteCommand } from '../../scripts/lib/bunCommand'
+import viteConfig from '../../vite.config'
 
 const root = new URL('../../', import.meta.url)
 
 function readSiteFile(path: string) {
   return readFileSync(new URL(path, root), 'utf-8')
+}
+
+async function publicSiteMiddleware(): Promise<Connect.NextHandleFunction> {
+  const plugin = viteConfig.plugins?.find((candidate): candidate is Plugin => (
+    !!candidate && typeof candidate === 'object' &&
+    'name' in candidate && candidate.name === 'instatic-public-site-dev-proxy'
+  ))
+  if (!plugin || typeof plugin.configureServer !== 'function') {
+    throw new Error('Public-site proxy must register its development middleware')
+  }
+
+  let middleware: Connect.NextHandleFunction | undefined
+  // Exercise the actual Vite hook without starting a server or opening a port.
+  await Reflect.apply(plugin.configureServer, {}, [{
+    middlewares: {
+      use(handler: Connect.NextHandleFunction) {
+        middleware = handler
+      },
+    },
+  }])
+  if (!middleware) throw new Error('Public-site proxy did not install middleware')
+  return middleware
+}
+
+function runPublicSiteRequest(
+  middleware: Connect.NextHandleFunction,
+  method: string,
+  url: string,
+): Promise<{ passedThrough: boolean; status?: number; body?: string }> {
+  return new Promise((resolve, reject) => {
+    let status: number | undefined
+    // These are the Node HTTP members the middleware consumes; no network is used.
+    const req = { method, url, headers: {} } as IncomingMessage
+    const res = {
+      writeHead(code: number) {
+        status = code
+      },
+      end(body?: Uint8Array) {
+        resolve({ passedThrough: false, status, body: body?.toString() })
+      },
+    } as unknown as ServerResponse
+    middleware(req, res, (err?: unknown) => {
+      if (err) reject(err)
+      else resolve({ passedThrough: true })
+    })
+  })
 }
 
 describe('development workflow', () => {
@@ -106,21 +155,79 @@ describe('development workflow', () => {
     expect(devScript).toContain('env: { PORT: String(CMS_PORT) }')
   })
 
-  it('Vite forwards public page routes to the CMS server instead of the admin SPA', () => {
-    const viteConfig = readSiteFile('vite.config.ts')
+  it('Vite forwards GET and HEAD public pages, runtimes and PDFs to the CMS', async () => {
+    const middleware = await publicSiteMiddleware()
+    const upstream = spyOn(globalThis, 'fetch').mockImplementation(async () => (
+      new Response('published content', { status: 200 })
+    ))
+    const origin = `http://localhost:${process.env.PORT ?? '3001'}`
+    const routes = [
+      '/',
+      '/azienda',
+      '/en/cloud-server?plan=start',
+      '/_instatic/assets/site/classic/site.js',
+      '/_instatic/visitor-preferences.js',
+      '/media/legal/contratti/sla.pdf',
+    ]
 
-    expect(viteConfig).toContain('function publicSiteDevProxyPlugin')
-    expect(viteConfig).toContain('publicSiteDevProxyPlugin()')
-    expect(viteConfig).toContain("pathname === '/admin'")
-    expect(viteConfig).toContain("pathname.startsWith('/admin/')")
-    expect(viteConfig).toContain("pathname === '/'")
-    expect(viteConfig).toContain('proxyPublicSiteRequest')
+    try {
+      for (const method of ['GET', 'HEAD']) {
+        for (const route of routes) {
+          const result = await runPublicSiteRequest(middleware, method, route)
+
+          expect(result).toEqual({
+            passedThrough: false,
+            status: 200,
+            body: method === 'GET' ? 'published content' : undefined,
+          })
+          const [target, options] = upstream.mock.calls.at(-1) ?? []
+          expect(String(target)).toBe(`${origin}${route}`)
+          expect(options).toMatchObject({ method, redirect: 'manual' })
+        }
+      }
+      expect(upstream).toHaveBeenCalledTimes(routes.length * 2)
+    } finally {
+      upstream.mockRestore()
+    }
   })
 
-  it('Vite forwards published runtime assets to the CMS server in local dev', () => {
-    const viteConfig = readSiteFile('vite.config.ts')
+  it('Vite leaves editor assets and non-read requests to the remaining middleware', async () => {
+    const middleware = await publicSiteMiddleware()
+    const upstream = spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      throw new Error('Editor assets and non-read requests must not reach the CMS page proxy')
+    })
+    const editorRoutes = [
+      '/admin',
+      '/admin/site?page=401',
+      '/admin/api/cms/site-socket',
+      '/index.html',
+      '/@vite/client',
+      '/@fs/workspace/example.html',
+      '/__vite_ping',
+      '/src/main.tsx',
+      '/node_modules/vite/client.js',
+      '/assets/editor.js',
+      '/runtime/editor.js',
+      '/favicon.svg',
+      '/api/example',
+      '/uploads/example.pdf',
+    ]
 
-    expect(viteConfig).toContain("pathname.startsWith('/_instatic/assets/')")
+    try {
+      for (const method of ['GET', 'HEAD']) {
+        for (const route of editorRoutes) {
+          expect(await runPublicSiteRequest(middleware, method, route))
+            .toEqual({ passedThrough: true })
+        }
+      }
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']) {
+        expect(await runPublicSiteRequest(middleware, method, '/azienda'))
+          .toEqual({ passedThrough: true })
+      }
+      expect(upstream).not.toHaveBeenCalled()
+    } finally {
+      upstream.mockRestore()
+    }
   })
 
   it('Docker Postgres uses a non-default host port for local dev', () => {

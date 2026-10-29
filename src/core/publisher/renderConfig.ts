@@ -29,7 +29,8 @@
 
 import type { Page, SiteDocument } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
-import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
+import type { TemplateRenderDataContext } from '@core/templates'
+import type { FormRenderContext } from '@core/forms'
 import type { LoopFetchResult } from '@core/loops/types'
 
 /**
@@ -75,6 +76,8 @@ export interface RenderResolvedMedia {
  * passes that down.
  */
 export interface RenderConfig {
+  readonly formContext?: FormRenderContext
+  readonly formValuesById?: ReadonlyMap<string, Record<string, unknown>>
   readonly page: Page
   readonly site: SiteDocument
   readonly registry: IModuleRegistry
@@ -102,15 +105,11 @@ export interface RenderConfig {
    */
   readonly dynamicNodeIds?: ReadonlySet<string>
   /**
-   * Monotonic publish version stamped into every `<instatic-hole data-instatic-version>`
-   * attribute. The hole runtime sends this value back as `?v=` on each
-   * fetch; the hole endpoint returns a stale fragment when the version
-   * no longer matches the current `publishVersion` in `publishState.ts`.
-   * Defaults to `0` when not provided (holes will immediately receive
-   * a stale response on the first request after a publish, which is
-   * safe — the next page load picks up the new version).
+   * Fingerprint of the frozen published site, supplied by the server. Stamped
+   * into holes and loop continuations so cache invalidation cannot make unchanged pages
+   * stale. An omitted hash cannot hydrate from the public fragment endpoint.
    */
-  readonly publishVersion?: number
+  readonly snapshotHash?: string
   /**
    * Editor-only annotation flag. When true, each node's outermost emitted
    * element gets a `uid="<id>"` attribute so the rendered HTML can be

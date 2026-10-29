@@ -27,6 +27,7 @@ import type {
 } from '@core/siteImport'
 import type { FontEntry } from '@core/fonts'
 import type { ImportFragment } from '@core/htmlImport'
+import { generateClassCSS } from '@core/publisher'
 import { makeSampleFileMap, makeEmptySiteDocument, makeMockSiteDocument } from './mockSite'
 import { makeSinglePageFileMap } from './fixtures'
 import type { FileMap } from '@core/siteImport'
@@ -210,7 +211,9 @@ describe('buildImportPlan — structure', () => {
 
     expect(hero).toBeDefined()
     expect(hero!.styles.minHeight).toBe('640px')
-    expect(hero!.styles.backgroundImage).toContain(`url('css/img/hero.png')`)
+    const heroImage = p.styleRules.find((r) => r.selector === '.hero' && r.styles.backgroundImage)
+    expect(heroImage?.styles.backgroundImage).toContain(`url('css/img/hero.png')`)
+    expect(p.styleRuleSources[p.styleRules.indexOf(heroImage!)]).toBe('css/components/hero.css')
     expect(p.styleRuleSources[p.styleRules.indexOf(hero!)]).toBe('css/components/hero.css')
     expect(p.assets.some((asset) => asset.sourcePath === 'css/img/hero.png')).toBe(true)
     expect(p.unusedCss).not.toContain('css/components/hero.css')
@@ -422,9 +425,12 @@ describe('buildImportPlan — structure', () => {
       p.conflicts.crossSheetClasses,
     )
     const rowRules = resolved.styleRules.filter((rule) => rule.selector === '.row')
-    expect(rowRules).toHaveLength(2)
+    expect(rowRules).toHaveLength(3)
     expect(rowRules.filter((rule) => rule.kind === 'class')).toHaveLength(1)
-    expect(rowRules.filter((rule) => rule.kind === 'ambient')).toHaveLength(1)
+    expect(rowRules.filter((rule) => rule.kind === 'ambient')).toHaveLength(2)
+    expect(rowRules.map((rule) => rule.styles)).toEqual([
+      { display: 'flex' }, { flexWrap: 'wrap' }, { '--bs-gutter-x': '30px' },
+    ])
     expect(resolved.styleRules.find((rule) => rule.selector === '.row > *')?.kind).toBe('ambient')
     expect(resolved.styleRules.find((rule) => rule.selector === '.col-xl-3')?.kind).toBe('class')
     expect(resolved.styleRules.find((rule) => rule.selector === '.align-items-stretch')?.kind).toBe('class')
@@ -482,6 +488,43 @@ describe('buildImportPlan — structure', () => {
     expect(p.unusedCss).toContain('styles/unused.css')
   })
 
+  it('rewrites var() references to the slug a root colour token is emitted under (#615)', () => {
+    const html = `<!doctype html><html><head><link rel="stylesheet" href="style.css"></head><body>
+      <h1 class="title">Home</h1><a class="link" href="/">Link</a>
+      <p style="border-color: var(--brand---neutral--700, red)">Note</p>
+    </body></html>`
+    const css = `
+      :root {
+        --brand---neutral--700: #4f5459;
+        --brand-primary: #0575d6;
+        --alias: var(--brand---neutral--700);
+      }
+      .title { color: var(--brand---neutral--700); }
+      .link { color: var(--brand-primary); }
+      .dark { --brand---neutral--700: #000; }
+    `
+    const p = buildImportPlan({
+      fileMap: makeSinglePageFileMap(html, css),
+      currentSite: makeEmptySiteDocument(),
+    })
+
+    expect(p.colors).toEqual([
+      { slug: 'brand-neutral-700', value: '#4f5459' },
+      { slug: 'brand-primary', value: '#0575d6' },
+    ])
+    const rule = (selector: string) => p.styleRules.find((r) => r.selector === selector)
+    expect(rule('.title')?.styles.color).toBe('var(--brand-neutral-700)')
+    expect(rule('.link')?.styles.color).toBe('var(--brand-primary)')
+    expect(rule(':root')?.styles).toEqual({ '--alias': 'var(--brand-neutral-700)' })
+    // A non-root override follows the token to its new name.
+    expect(rule('.dark')?.styles).toEqual({ '--brand-neutral-700': '#000' })
+    const inline = Object.values(p.pages[0].nodeFragment.nodes)
+      .map((node) => node.inlineStyles)
+      .find((styles) => styles && 'borderColor' in styles)
+    expect(inline?.borderColor).toBe('var(--brand-neutral-700, red)')
+    expect(p.conflicts.tokens).toHaveLength(0)
+  })
+
   it('extracts root font variables into font tokens', () => {
     const html = `<!doctype html><html><head><link rel="stylesheet" href="style.css"></head><body><h1>Home</h1></body></html>`
     const css = `
@@ -507,6 +550,82 @@ describe('buildImportPlan — structure', () => {
     const root = p.styleRules.find((rule) => rule.selector === ':root')
     expect(root?.styles).toEqual({ '--font-size-base': '16px' })
     expect(p.styleRules.find((rule) => rule.selector === 'h1')?.styles.fontFamily).toBe('var(--font-display)')
+  })
+
+  it('rewrites var() references to the variable a root font token is emitted under (#619)', () => {
+    const html = `<!doctype html><html><head><link rel="stylesheet" href="style.css"></head><body>
+      <h1 class="title">Home</h1><p class="body">Body</p><p class="hero">Hero</p>
+    </body></html>`
+    const css = `
+      :root {
+        --font-Heading: "Acme Grotesk", serif;
+        --font-body--alt: "Inter", sans-serif;
+        --font-display: "Acme Grotesk", serif;
+      }
+      .title { font-family: var(--font-Heading); }
+      .body { font-family: var(--font-body--alt); }
+      .hero { font-family: var(--font-display); }
+      .dark { --font-Heading: Georgia, serif; }
+    `
+    const p = buildImportPlan({
+      fileMap: makeSinglePageFileMap(html, css),
+      currentSite: makeEmptySiteDocument(),
+    })
+
+    expect(p.fontTokens.map((t) => [t.name, t.variable])).toEqual([
+      ['Heading', 'font-heading'],
+      ['Body Alt', 'font-body-alt'],
+      ['Display', 'font-display'],
+    ])
+    const rule = (selector: string) => p.styleRules.find((r) => r.selector === selector)
+    expect(rule('.title')?.styles.fontFamily).toBe('var(--font-heading)')
+    expect(rule('.body')?.styles.fontFamily).toBe('var(--font-body-alt)')
+    expect(rule('.hero')?.styles.fontFamily).toBe('var(--font-display)')
+    // A non-root override follows the token to its new name.
+    expect(rule('.dark')?.styles).toEqual({ '--font-heading': 'Georgia, serif' })
+    expect(p.conflicts.tokens).toHaveLength(0)
+  })
+
+  it('keeps both font tokens when two names normalise to the same variable', () => {
+    const html = `<!doctype html><html><head><link rel="stylesheet" href="style.css"></head><body><h1>x</h1></body></html>`
+    const css = `
+      :root { --font-Heading: "Acme Grotesk", serif; --font-heading: "Inter", sans-serif; }
+      h1 { font-family: var(--font-Heading); }
+      h2 { font-family: var(--font-heading); }
+    `
+    const p = buildImportPlan({
+      fileMap: makeSinglePageFileMap(html, css),
+      currentSite: makeEmptySiteDocument(),
+    })
+
+    // The name already in emitted form keeps it; the other takes a suffix.
+    expect(p.fontTokens.map((t) => [t.name, t.variable, t.family])).toEqual([
+      ['Heading 2', 'font-heading-2', 'Acme Grotesk'],
+      ['Heading', 'font-heading', 'Inter'],
+    ])
+    expect(p.styleRules.find((r) => r.selector === 'h1')?.styles.fontFamily).toBe('var(--font-heading-2)')
+    expect(p.styleRules.find((r) => r.selector === 'h2')?.styles.fontFamily).toBe('var(--font-heading)')
+  })
+
+  it('does not give a font token the name of an imported colour token', () => {
+    const html = `<!doctype html><html><head><link rel="stylesheet" href="style.css"></head><body><h1>x</h1></body></html>`
+    const css = `
+      :root { --font-accent: #fc834b; --font-Accent: "Inter", sans-serif; }
+      h1 { color: var(--font-accent); font-family: var(--font-Accent); }
+    `
+    const p = buildImportPlan({
+      fileMap: makeSinglePageFileMap(html, css),
+      currentSite: makeEmptySiteDocument(),
+    })
+
+    expect(p.colors).toEqual([{ slug: 'font-accent', value: '#fc834b' }])
+    expect(p.fontTokens.map((t) => t.variable)).toEqual(['font-accent-2'])
+    const emittedCss = generateClassCSS(Object.fromEntries(p.styleRules.map((rule, index) => {
+      const id = String(index)
+      return [id, { ...rule, id, createdAt: 0, updatedAt: 0 }]
+    })), [], p.conditions)
+    expect(emittedCss).toContain('h1 {\n  color: var(--font-accent);\n}')
+    expect(emittedCss).toContain('h1 {\n  font-family: var(--font-accent-2);\n}')
   })
 
   it('plans Google Fonts @import as installed font requests', () => {
@@ -552,10 +671,11 @@ describe('buildImportPlan — structure', () => {
       },
     ])
     expect('fontImportUrl' in p).toBe(false)
-    expect(p.styleRules.find((rule) => rule.selector === ':root')?.styles).toMatchObject({
-      '--title-font': '"Plus Jakarta Sans", serif',
-      '--body-font': '"Manrope", sans-serif',
-    })
+    expect(p.styleRules.filter((rule) => rule.selector === ':root').map((rule) => rule.styles))
+      .toEqual(expect.arrayContaining([
+        { '--title-font': '"Plus Jakarta Sans", serif' },
+        { '--body-font': '"Manrope", sans-serif' },
+      ]))
   })
 })
 

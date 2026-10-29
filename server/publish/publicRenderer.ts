@@ -2,20 +2,21 @@ import '../../src/modules/base'
 import '@core/loops/sources'
 import { registry } from '@core/module-engine'
 import { publishPage } from '@core/publisher'
-import { buildRouteFrame } from '@core/templates/contextFrames'
 import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
-import { resolveTemplateChain, resolveNotFoundTemplate, composeTemplateChain } from '@core/templates'
+import { resolveNotFoundTemplate } from '@core/templates'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
-import { prefetchLoopData, publishedDataRowToLoopItem } from './loopPrefetch'
+import { prefetchLoopData } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { getPublishVersion } from './publishState'
+import { getPublishedSnapshotHash } from './publishedSnapshotCache'
 import type { Page } from '@core/page-tree'
 import type { DocumentMetaOverride, SiteCssBundle } from '@core/publisher'
 import type { PublishedDataRow } from '@core/data/schemas'
 import { readEntrySeoOverride } from '@core/data/cells'
 import type { DbClient } from '../db/client'
 import type { PublishedPageSnapshot } from '../repositories/publish'
+import { buildPublishedPageRenderContext, buildPublishedEntryRenderContext } from './publishedRenderContext'
 
 /**
  * URL prefix where the Bun server exposes the per-site CSS bundle. Mirrors
@@ -51,7 +52,7 @@ export interface RendererOutput {
   /**
    * Publish version this page was rendered at (the bake passes the NEXT
    * version, live renders the current one) — stamped into module-js `?v=`
-   * URLs so they cache-bust in lockstep with hole placeholders.
+   * URLs so they cache-bust when published content changes.
    */
   publishVersion: number
   /**
@@ -68,13 +69,7 @@ interface RenderPublishedSnapshotContext {
   db: DbClient
   /** Optional request URL — when present, drives per-loop pagination. */
   url?: URL
-  /**
-   * Publish version to stamp into `<instatic-hole data-instatic-version>` placeholders.
-   * Defaults to the live `getPublishVersion()`. The full/incremental publish
-   * bakes shells BEFORE bumping the version, so it passes the next version
-   * (`getPublishVersion() + 1`) here — otherwise every baked hole would carry
-   * a stale version and the hole endpoint would refuse to hydrate it.
-   */
+  /** Cache generation used for CSS bundles and module-JS URLs during the bake. */
   publishVersion?: number
 }
 
@@ -82,9 +77,8 @@ interface RenderPublishedSnapshotContext {
  * Shared render tail for both public paths. Given an already-resolved,
  * composed `merged` tree and its seed `templateContext`, this owns the
  * identical CSS-bundle build + loop/media prefetch + `publishPage` call +
- * publish-version stamping. The two public functions differ only in how they
- * resolve the chain and seed the context, plus which `pageId`/`slug` they
- * report — so any new `publishPage` option threads through here once.
+ * publish-version stamping. `publishedRenderContext.ts` supplies the same
+ * composed trees and native frames for these full renders and loop fragments.
  */
 async function renderMergedTemplate(
   merged: Page,
@@ -95,12 +89,12 @@ async function renderMergedTemplate(
 ): Promise<{ html: string; jsModuleIds: string[]; publishVersion: number; cssBundle: SiteCssBundle }> {
   const publishVersion = ctx.publishVersion ?? getPublishVersion()
   const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry)
-  const loopData = await prefetchLoopData(merged, snapshot.site, ctx.db, ctx.url)
+  const loopData = await prefetchLoopData(merged, snapshot.site, ctx.db, ctx.url, { templateContext })
   const mediaAssets = await prefetchMediaAssets(merged, snapshot.site, registry, ctx.db, {
     templateContext,
     loopData,
   })
-  const cssBundle = buildPublishedSiteCssBundle(snapshot.site, registry, merged, publishVersion, { mediaAssets })
+  const cssBundle = buildPublishedSiteCssBundle(snapshot.site, registry, merged, publishVersion, { mediaAssets, runtimeAssets: snapshot.runtimeAssets })
   const published = publishPage(merged, snapshot.site, registry, {
     templateContext,
     ...(documentMeta ? { documentMeta } : {}),
@@ -112,7 +106,8 @@ async function renderMergedTemplate(
     loopData,
     mediaAssets,
     loopEndpointBaseUrl: LOOP_ENDPOINT_BASE_URL,
-    publishVersion,
+    snapshotHash: getPublishedSnapshotHash(snapshot.site),
+    loopRuntimeAssetUrl: LOOP_RUNTIME_ASSET_URL,
   })
   // Per-page injection set = candidates from the render (emitted ∪ hole
   // subtrees) ∩ the site module-JS map — over-inclusive candidates from
@@ -128,18 +123,7 @@ export async function renderPublishedSnapshot(
   const page = snapshot.site.pages.find((candidate) => candidate.id === snapshot.pageRowId)
   if (!page) throw new Error(`Published page "${snapshot.pageRowId}" not found in snapshot`)
 
-  // Wrap the page in any matching layout templates (everywhere → …), producing
-  // one merged tree so the existing publish pipeline runs in a single pass.
-  const chain = resolveTemplateChain(snapshot.site, { kind: 'page' })
-  const merged = composeTemplateChain(chain, { kind: 'page', page })
-
-  // Seed route frame from the actual request URL (when available) so
-  // `{route.slug}` / `{route.path}` bindings resolve to live values.
-  // publishPage falls back to the page permalink if no templateContext
-  // is provided.
-  const templateContext: TemplateRenderDataContext | undefined = ctx.url
-    ? { entryStack: [], route: buildRouteFrame(ctx.url.toString()) }
-    : undefined
+  const { page: merged, templateContext } = buildPublishedPageRenderContext(snapshot, page, ctx.url)
 
   const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
   return { ...rendered, pageId: snapshot.pageRowId, slug: page.slug, siteId: snapshot.site.id }
@@ -159,12 +143,7 @@ export async function renderPublishedNotFound(
   const page = resolveNotFoundTemplate(snapshot.site)
   if (!page) return null
 
-  const chain = resolveTemplateChain(snapshot.site, { kind: 'page' })
-  const merged = composeTemplateChain(chain, { kind: 'page', page })
-
-  const templateContext: TemplateRenderDataContext | undefined = ctx.url
-    ? { entryStack: [], route: buildRouteFrame(ctx.url.toString()) }
-    : undefined
+  const { page: merged, templateContext } = buildPublishedPageRenderContext(snapshot, page, ctx.url)
 
   const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
   return { ...rendered, pageId: page.id, slug: page.slug, siteId: snapshot.site.id }
@@ -175,26 +154,9 @@ export async function renderPublishedDataRowTemplate(
   row: PublishedDataRow,
   ctx: RenderPublishedSnapshotContext,
 ): Promise<RendererOutput | null> {
-  // Build the full chain (everywhere layout + entry template) and merge it into
-  // one tree; the innermost outlet renders the current entry's body.
-  const chain = resolveTemplateChain(snapshot.site, { kind: 'entry', tableSlug: row.tableSlug })
-  if (chain.length === 0) return null // no entry template → 404 (unchanged behaviour)
-  const merged = composeTemplateChain(chain, { kind: 'entry' })
-  // The template chain has no Page for the entry, so composeTemplateChain
-  // can't know its title — the entry's own title is the real page title.
-  // It stays the plain `title` cell: `page.title` feeds the `{page.title}`
-  // binding as well as `<title>`, so the SEO override travels separately
-  // through `documentMeta` and only reaches the `<head>`.
-  if (typeof row.cells.title === 'string') merged.title = row.cells.title
-
-  // Seed the entry stack with the published row + route frame from the request
-  // URL. Loop interceptors push/pop iteration items on top of this stack;
-  // nodes outside any loop resolve their `currentEntry` bindings against this
-  // seed. page/site/viewer frames are filled by `publishPage` from the document.
-  const templateContext: TemplateRenderDataContext = {
-    entryStack: [publishedDataRowToLoopItem(row)],
-    ...(ctx.url ? { route: buildRouteFrame(ctx.url.toString()) } : {}),
-  }
+  const context = await buildPublishedEntryRenderContext(ctx.db, snapshot, row, ctx.url)
+  if (!context) return null
+  const { page: merged, templateContext } = context
 
   const rendered = await renderMergedTemplate(
     merged,
@@ -205,3 +167,4 @@ export async function renderPublishedDataRowTemplate(
   )
   return { ...rendered, pageId: merged.id, slug: merged.slug, siteId: snapshot.site.id }
 }
+import { LOOP_RUNTIME_ASSET_URL } from './loopRuntime'

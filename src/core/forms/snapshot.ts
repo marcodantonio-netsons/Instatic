@@ -1,5 +1,9 @@
 import { flattenSubtree, getParent, type Page, type PageNode } from '@core/page-tree'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
+import { PropertyConditionSchema, type PropertyCondition } from '@core/module-engine-schema'
+import { compiledCheck } from '@core/utils/typeboxCompiler'
+import { FormCalculationsSchema } from '@core/forms-schema'
+import { resolveSelectInitialValue } from './selectInitialValue'
 import type {
   FormControlBinding,
   PublishedFormLabel,
@@ -34,9 +38,9 @@ function deriveFormSnapshot(
   page: Page,
   formNode: PageNode,
 ): PublishedFormSnapshot {
-  const fallbackFormId = normalizeIdentifierValue(formNode.id, 'form')
-  const formId = normalizeIdentifierValue(stringProp(formNode, 'formId', formNode.id), fallbackFormId)
+  const formId = normalizeIdentifierValue(stringProp(formNode, 'formId', 'form'), 'form')
   const descendantIds = flattenSubtree(page, formNode.id).filter((nodeId) => nodeId !== formNode.id)
+  const needsValueDefaults = Object.keys(formNode.props.calculations ?? {}).length > 0 || descendantIds.some((id) => page.nodes[id]?.props.minValueField || page.nodes[id]?.props.maxValueField)
   const controls: FormControlBinding[] = []
   const labels: PublishedFormLabel[] = []
   const submits: PublishedFormSubmit[] = []
@@ -47,7 +51,22 @@ function deriveFormSnapshot(
     if (!node) continue
 
     if (FORM_CONTROL_MODULES.has(node.moduleId)) {
-      const control = controlBindingFromNode(node)
+      const control = controlBindingFromNode(node, needsValueDefaults)
+      if (control) {
+        const conditions: PropertyCondition[] = []
+        let parent = getParent(page, node.id)
+        while (parent && parent.id !== formNode.id) {
+          if (parent.moduleId === 'base.form-conditional' && parent.props.disableWhenHidden !== false && compiledCheck(PropertyConditionSchema, parent.props.condition)) conditions.push(parent.props.condition)
+          parent = getParent(page, parent.id)
+        }
+        if (conditions.length) control.conditions = conditions
+        if (node.moduleId === 'base.select') {
+          control.options = flattenSubtree(page, node.id).map((id) => page.nodes[id])
+            .filter((entry) => entry?.moduleId === 'base.option' && !entry.props.disabled && !getParent(page, entry.id)?.props.disabled)
+            .map((entry) => stringProp(entry, 'value', ''))
+        }
+        if (node.moduleId === 'base.radio') control.options = [stringProp(node, 'value', 'on')]
+      }
       if (control) controls.push(control)
       continue
     }
@@ -87,6 +106,24 @@ function deriveFormSnapshot(
     }
   }
 
+  const checkboxGroups = new Map<string, FormControlBinding[]>()
+  for (const control of controls) if (page.nodes[control.nodeId].moduleId === 'base.checkbox') {
+    const name = control.name ?? control.fieldId, group = checkboxGroups.get(name) ?? []
+    group.push(control); checkboxGroups.set(name, group)
+  }
+  for (const group of checkboxGroups.values()) if (group.length > 1) {
+    const selected = group.filter((control) => page.nodes[control.nodeId].props.checked).map((control) => String(page.nodes[control.nodeId].props.value ?? 'on'))
+    for (const control of group) {
+      control.inputType = 'checkbox-group'; control.options = [String(page.nodes[control.nodeId].props.value ?? 'on')]
+      if (needsValueDefaults) control.initialValue = selected
+      control.minSelected = numberProp(page.nodes[control.nodeId], 'minSelected', 0)
+      control.maxSelected = numberProp(page.nodes[control.nodeId], 'maxSelected', 0)
+    }
+  }
+  for (const control of controls) {
+    const node = page.nodes[control.nodeId]
+    if (needsValueDefaults && node.moduleId === 'base.select') control.initialValue = resolveSelectInitialValue(node, (id) => page.nodes[id])
+  }
   return {
     pageId: page.id,
     nodeId: formNode.id,
@@ -98,10 +135,11 @@ function deriveFormSnapshot(
     labels,
     submits,
     messages,
+    ...(compiledCheck(FormCalculationsSchema, formNode.props.calculations) && Object.keys(formNode.props.calculations).length ? { calculations: formNode.props.calculations } : {}),
   }
 }
 
-function controlBindingFromNode(node: PageNode): FormControlBinding | null {
+function controlBindingFromNode(node: PageNode, includeInitialValue: boolean): FormControlBinding | null {
   const fieldId = stringProp(node, 'fieldId', '')
   if (!fieldId) return null
   const name = stringProp(node, 'name', fieldId) || fieldId
@@ -109,13 +147,23 @@ function controlBindingFromNode(node: PageNode): FormControlBinding | null {
     nodeId: node.id,
     fieldId,
     name,
-    ...(node.moduleId === 'base.input' ? { inputType: stringProp(node, 'inputType', 'text') } : {}),
+    ...(node.moduleId === 'base.input' ? { inputType: stringProp(node, 'inputType', 'text') } : node.moduleId === 'base.radio' ? { inputType: 'radio' } : {}),
     ...(booleanProp(node, 'required') ? { required: true } : {}),
     ...(positiveNumberProp(node, 'minLength') !== undefined ? { minLength: positiveNumberProp(node, 'minLength') } : {}),
     ...(positiveNumberProp(node, 'maxLength') !== undefined ? { maxLength: positiveNumberProp(node, 'maxLength') } : {}),
     ...(numberPropOrUndefined(node, 'min') !== undefined ? { min: numberPropOrUndefined(node, 'min') } : {}),
     ...(numberPropOrUndefined(node, 'max') !== undefined ? { max: numberPropOrUndefined(node, 'max') } : {}),
     ...(stringProp(node, 'pattern', '') ? { pattern: stringProp(node, 'pattern', '') } : {}),
+    ...(booleanProp(node, 'disabled') ? { disabled: true } : {}),
+    ...(compiledCheck(PropertyConditionSchema, node.props.requiredWhen) ? { requiredWhen: node.props.requiredWhen } : {}),
+    ...(compiledCheck(PropertyConditionSchema, node.props.disabledWhen) ? { disabledWhen: node.props.disabledWhen } : {}),
+    ...(stringProp(node, 'minValueField', '') ? { minValueField: stringProp(node, 'minValueField', '') } : {}),
+    ...(stringProp(node, 'maxValueField', '') ? { maxValueField: stringProp(node, 'maxValueField', '') } : {}),
+    ...(includeInitialValue && (!['base.checkbox','base.radio','base.select'].includes(node.moduleId) || node.props.checked) ? { initialValue: stringProp(node, 'value', '') } : {}),
+    ...(stringProp(node, 'valueSourceField', '') ? { valueSourceField: stringProp(node, 'valueSourceField', '') } : {}),
+    ...(stringProp(node, 'valueTargetField', '') ? { valueTargetField: stringProp(node, 'valueTargetField', '') } : {}),
+    ...(stringProp(node, 'syncGroup', '') ? { syncGroup: stringProp(node, 'syncGroup', '') } : {}),
+    ...(node.props.trimOnSubmit === true ? { trimOnSubmit: true } : {}),
   }
 }
 

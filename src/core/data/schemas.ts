@@ -24,6 +24,8 @@
  */
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
+import { DataTableKindSchema } from './tableKindSchema'
+export { DataLocalizationSchema, type DataLocalization } from './localizationSchema'
 
 // ---------------------------------------------------------------------------
 // DataRowStatus
@@ -48,15 +50,7 @@ export type DataRowStatus = Static<typeof DataRowStatusSchema>
 // DataTableKind
 // ---------------------------------------------------------------------------
 
-export const DataTableKindSchema = Type.Union([
-  Type.Literal('postType'),
-  Type.Literal('data'),
-  Type.Literal('page'),
-  Type.Literal('component'),
-  Type.Literal('layout'),
-])
-
-export type DataTableKind = Static<typeof DataTableKindSchema>
+export { DataTableKindSchema, type DataTableKind } from './tableKindSchema'
 
 // ---------------------------------------------------------------------------
 // DataField — discriminated union over `type`.
@@ -73,6 +67,7 @@ export type DataTableKind = Static<typeof DataTableKindSchema>
 // Cell value shapes (what `cells_json[fieldId]` holds):
 //
 //   text / longText / richText / url / email  → string | null
+//   localizedText                              → { key: string } | null
 //   number                                    → number | null
 //   boolean                                   → boolean | null
 //   date / dateTime                           → ISO string | null
@@ -99,6 +94,11 @@ const TextFieldSchema = Type.Object({
   defaultValue: Type.Optional(Type.String()),
   maxLength: Type.Optional(Type.Number()),
   placeholder: Type.Optional(Type.String()),
+})
+
+const LocalizedTextFieldSchema = Type.Object({
+  type: Type.Literal('localizedText'),
+  ...FieldCommonProps,
 })
 
 const LongTextFieldSchema = Type.Object({
@@ -212,6 +212,7 @@ const RelationFieldSchema = Type.Object({
  */
 export const RepeaterItemFieldSchema = Type.Union([
   TextFieldSchema,
+  LocalizedTextFieldSchema,
   LongTextFieldSchema,
   RichTextFieldSchema,
   NumberFieldSchema,
@@ -262,6 +263,7 @@ const FieldSchemaFieldSchema = Type.Object({
 
 export const DataFieldSchema = Type.Union([
   TextFieldSchema,
+  LocalizedTextFieldSchema,
   LongTextFieldSchema,
   RichTextFieldSchema,
   NumberFieldSchema,
@@ -291,6 +293,7 @@ export type DataField = Static<typeof DataFieldSchema>
  */
 export const DATA_FIELD_TYPES = [
   'text',
+  'localizedText',
   'longText',
   'richText',
   'number',
@@ -334,6 +337,14 @@ export const DataTableSchema = Type.Object({
    */
   system: Type.Boolean(),
   createdByUserId: Type.Union([Type.String(), Type.Null()]),
+  /**
+   * Plugin id when the table was created through the plugin surface
+   * (`cms.content.tables.create`); null for user/import-created tables. The
+   * plugin host's `@own-created` contentAccess marker matches against this.
+   * OPTIONAL because `DataTableSchema` also validates bundle archives exported
+   * before the column existed — server reads always populate it.
+   */
+  createdByPluginId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   updatedByUserId: Type.Union([Type.String(), Type.Null()]),
   /** ISO datetime string from DB */
   createdAt: Type.String(),
@@ -489,6 +500,7 @@ const PublishedDataRowSchema = Type.Object({
   tableId: Type.String(),
   tableSlug: Type.String(),
   tableKind: DataTableKindSchema,
+  tableFields: Type.Array(DataFieldSchema),
   tableRouteBase: Type.String(),
   versionNumber: Type.Number(),
   cells: DataRowCellsSchema,
@@ -593,81 +605,7 @@ const SaveDataRowDraftInputSchema = Type.Object({
 
 export type SaveDataRowDraftInput = Static<typeof SaveDataRowDraftInputSchema>
 
-// ---------------------------------------------------------------------------
-// DataMeta — lean binding catalog returned by GET /admin/api/cms/data/_meta.
-//
-// A stripped-down view of the data tables + fields, designed for use by
-// the instatic binding picker. Contains only what the picker needs to
-// build its UI: identifiers, labels, types, and a small set of per-type
-// extras (mediaKind, allowMultiple, targetTableSlug). Deep field settings
-// (options, validation rules, currency, format, …) are intentionally
-// omitted — keep the payload lean.
-// ---------------------------------------------------------------------------
-
-const DataMetaRepeaterItemFieldSchema = Type.Object({
-  id: Type.String(),
-  label: Type.String(),
-  type: Type.Union([
-    Type.Literal('text'), Type.Literal('longText'), Type.Literal('richText'),
-    Type.Literal('number'), Type.Literal('boolean'),
-    Type.Literal('date'), Type.Literal('dateTime'),
-    Type.Literal('select'), Type.Literal('multiSelect'),
-    Type.Literal('url'), Type.Literal('email'),
-    Type.Literal('media'), Type.Literal('relation'),
-  ]),
-  mediaKind: Type.Optional(Type.Union([
-    Type.Literal('image'), Type.Literal('video'), Type.Literal('any'),
-  ])),
-  allowMultiple: Type.Optional(Type.Boolean()),
-  targetTableSlug: Type.Optional(Type.String()),
-})
-
-const DataMetaFieldSchema = Type.Object({
-  id: Type.String(),
-  label: Type.String(),
-  // NOTE: pageTree and fieldSchema are intentionally excluded — they are
-  // document-level types not surfaced in the instatic binding catalog.
-  type: Type.Union([
-    Type.Literal('text'), Type.Literal('longText'), Type.Literal('richText'),
-    Type.Literal('number'), Type.Literal('boolean'),
-    Type.Literal('date'), Type.Literal('dateTime'),
-    Type.Literal('select'), Type.Literal('multiSelect'),
-    Type.Literal('url'), Type.Literal('email'),
-    Type.Literal('media'), Type.Literal('relation'),
-    Type.Literal('repeater'),
-  ]),
-  mediaKind: Type.Optional(Type.Union([
-    Type.Literal('image'), Type.Literal('video'), Type.Literal('any'),
-  ])),
-  allowMultiple: Type.Optional(Type.Boolean()),
-  /** Resolved slug of the target table. Relation fields only. */
-  targetTableSlug: Type.Optional(Type.String()),
-  /** Lean item schema for repeater fields. */
-  fields: Type.Optional(Type.Array(DataMetaRepeaterItemFieldSchema)),
-  itemLabelFieldId: Type.Optional(Type.String()),
-})
-
-const DataMetaTableSchema = Type.Object({
-  id: Type.String(),
-  slug: Type.String(),
-  name: Type.String(),
-  kind: DataTableKindSchema,
-  singularLabel: Type.String(),
-  pluralLabel: Type.String(),
-  primaryFieldId: Type.String(),
-  routable: Type.Boolean(),
-  versioned: Type.Boolean(),
-  fields: Type.Array(DataMetaFieldSchema),
-})
-
-export const DataMetaSchema = Type.Object({
-  tables: Type.Array(DataMetaTableSchema),
-})
-
-export type DataMetaField = Static<typeof DataMetaFieldSchema>
-export type DataMetaRepeaterItemField = Static<typeof DataMetaRepeaterItemFieldSchema>
-export type DataMetaTable = Static<typeof DataMetaTableSchema>
-export type DataMeta = Static<typeof DataMetaSchema>
+export { DataMetaSchema, type DataMetaField, type DataMetaRepeaterItemField, type DataMetaTable, type DataMeta } from './metaSchema'
 
 // ---------------------------------------------------------------------------
 // DataRowVersionSummary — one published version of a row, as listed by the

@@ -42,7 +42,7 @@ export function SiteExplorerHoverPreview({
 }: SiteExplorerHoverPreviewProps) {
   const previewRef = useRef<HTMLElement>(null)
   const site = useEditorStore((state) => state.site)
-  const { context: templatePreviewContext, loading: templateContextLoading } =
+  const { context: templatePreviewContext, loading: templateContextLoading, error: contextError, refresh: refreshContext } =
     useTemplatePreviewContext(preview.page)
 
   useEffect(() => {
@@ -94,7 +94,12 @@ export function SiteExplorerHoverPreview({
       onMouseLeave={onMouseLeave}
     >
       <div className={styles.hoverPreviewViewportFrame}>
-        {templateContextLoading ? (
+        {contextError ? (
+          <div className={styles.hoverPreviewStatus} role="alert">
+            <span>{contextError.message}</span>
+            <Button variant="secondary" size="sm" onClick={refreshContext}>Retry preview</Button>
+          </div>
+        ) : templateContextLoading ? (
           <HoverPreviewStatus label="Resolving preview data…" />
         ) : (
           <HoverPreviewDocument
@@ -121,7 +126,7 @@ function HoverPreviewDocument({
   templatePreviewContext,
 }: HoverPreviewDocumentProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
-  const { html, loading, error, refresh } = useRuntimePreviewDocument(
+  const { html, error, refresh } = useRuntimePreviewDocument(
     site,
     preview.page,
     templatePreviewContext,
@@ -138,7 +143,7 @@ function HoverPreviewDocument({
     )
   }
 
-  if (loading || !html) return <HoverPreviewStatus label="Building desktop preview…" />
+  if (!html) return <HoverPreviewStatus label="Building desktop preview…" />
 
   function handlePreviewWheel(event: WheelEvent<HTMLDivElement>) {
     const previewWindow = iframeRef.current?.contentWindow

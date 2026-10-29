@@ -28,6 +28,11 @@ import type { Breakpoint } from '@core/page-tree'
 import { registry } from '@core/module-engine'
 import { getNodeDisplayName } from '@core/page-tree'
 import { ErrorBoundary } from '@ui/components/ErrorBoundary'
+import { CanvasLocalizationGate } from './CanvasLocalizationGate'
+import { usePublicFilePreview } from '@site/hooks/usePublicFilePreview'
+import type { SiteFile } from '@core/files/schemas'
+import { EmptyState } from '@ui/components/EmptyState'
+import { Button } from '@ui/components/Button'
 import { SpotlightContext } from '@admin/spotlight/spotlightContext'
 import { getKeybindingForCommand } from '@admin/spotlight/keybindings'
 import { useCanvas } from '@site/hooks/useCanvas'
@@ -58,6 +63,7 @@ import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { useEditorPreference, readEditorSelectPreference } from '@site/preferences/editorPreferences'
 import { useTemplatePreviewContext } from '@site/hooks/useTemplatePreviewContext'
 import styles from './CanvasRoot.module.css'
+import { userDisplayLabel } from '@core/users/displayName'
 
 const VisualComponentModeControl = lazy(() =>
   import('./VisualComponentModeControl').then((module) => ({ default: module.default })),
@@ -75,6 +81,7 @@ const TemplateModeControl = lazy(() =>
  * selector — a new array literal has a new identity on every call.
  */
 const EMPTY_BREAKPOINTS: Breakpoint[] = []
+const EMPTY_SITE_FILES: SiteFile[] = []
 
 interface CanvasRootProps {
   editable?: boolean
@@ -92,7 +99,10 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
     currentUser
       ? {
           id: currentUser.id,
-          name: currentUser.displayName,
+          // Never empty: an admin without a display name would otherwise
+          // publish no presence at all (peers saw no cursor, and the
+          // "someone else is editing" guards never fired).
+          name: userDisplayLabel(currentUser),
           avatarUrl: currentUser.avatarUrl,
           gravatarHash: currentUser.gravatarHash,
         }
@@ -134,10 +144,18 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
   const setFocusedPanel = useEditorStore((s) => s.setFocusedPanel)
   const setActiveDocument = useEditorStore((s) => s.setActiveDocument)
   const activeDocument = useEditorStore((s) => s.activeDocument)
+  const siteFiles = useEditorStore((s) => s.site?.files ?? EMPTY_SITE_FILES)
+  const filePreview = usePublicFilePreview(siteFiles)
   const {
-    context: templatePreviewContext,
-    loading: templatePreviewContextLoading,
+    context: previewDataContext,
+    loading: previewDataLoading,
+    error: templatePreviewError,
+    refresh: refreshPreviewData,
   } = useTemplatePreviewContext(canvasPage)
+  const templatePreviewContext = previewDataContext ? { ...previewDataContext, files: filePreview.files } : undefined
+  const templatePreviewContextLoading = previewDataLoading || filePreview.loading
+  const templatePreviewContextError = filePreview.error
+  const refreshTemplatePreviewContext = () => { filePreview.refresh(); refreshPreviewData() }
   const agentSnapshotBreakpoint = agentSnapshotCaptureRequest
     ? breakpoints.find((breakpoint) => breakpoint.id === agentSnapshotCaptureRequest.breakpointId) ?? null
     : null
@@ -518,9 +536,15 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
         */}
           <ErrorBoundary
             location="canvas"
-            resetKeys={[canvasPage?.id ?? null, activeDocument?.kind ?? null, canvasView]}
+            resetKeys={[canvasPage, templatePreviewContext?.files, activeDocument?.kind ?? null, canvasView, templatePreviewError?.message ?? null, templatePreviewContext?.site?.translations]}
           >
-            {isLive ? (
+            <CanvasLocalizationGate error={templatePreviewError}>
+            {templatePreviewContextError ? (
+              <EmptyState variant="centered" title="Preview unavailable" description={templatePreviewContextError}
+                action={<Button variant="secondary" onClick={refreshTemplatePreviewContext}>Retry preview</Button>} role="alert" />
+            ) : templatePreviewContextLoading ? (
+              <EmptyState variant="centered" title="Loading preview…" description="Resolving content and private page assets." role="status" />
+            ) : isLive ? (
               <CanvasLiveSurface
                 page={canvasPage}
                 activeBreakpoint={activeBreakpoint}
@@ -540,6 +564,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
                 runtimeScripts={runtimeScripts}
               />
             )}
+            </CanvasLocalizationGate>
           </ErrorBoundary>
 
           {/*
@@ -583,7 +608,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
               page={canvasPage}
               breakpoint={agentSnapshotBreakpoint}
               templateContext={templatePreviewContext}
-              templateContextLoading={templatePreviewContextLoading}
+              templateContextLoading={templatePreviewContextLoading || Boolean(templatePreviewContextError) || Boolean(templatePreviewError)}
             />
           ) : null}
         </div>

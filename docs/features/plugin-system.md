@@ -604,7 +604,7 @@ See [docs/features/publisher.md](publisher.md) for the full three-layer pipeline
 
 ### Module JS on published pages — requires `frontend.assets`
 
-A plugin module's `render()` may return `js` (see `PluginRenderOutput`). It crosses the QuickJS boundary string-typed (non-strings are dropped by the VM normalizer) and is then gated host-side in `moduleAdapter.ts`: unless the plugin's **granted** permissions include `frontend.assets` — the same authority that already controls script tags via `frontend.assets[]` — the `js` is dropped with one `console.warn` per module. Enforcement always checks `grantedPermissions`, never the declared `permissions` array. With the grant, the JS is deduped per moduleId and served at `/_instatic/module-js/<moduleId>.js` on pages that use the module. Manifest format is unchanged.
+A plugin module declares invariant CSS and JS in `PluginModuleDefinition.assets`. The QuickJS metadata boundary validates those payloads with the shared TypeBox `ModuleAssetsSchema`; render/preview output validates HTML and optional boolean `assetUsage`, and render-time payload fields are rejected. `moduleAdapter.ts` keeps JS only when **granted** permissions contain `frontend.assets`, using the same authority as declarative frontend assets. Without the grant it drops JS with one warning at activation. CSS is shared with the editor canvas; published JS never executes in that canvas. Required render or output-validation failures propagate instead of becoming success-shaped HTML comments. See `server/plugins/modulePackVm.ts`, the typed bootstrap and `src/core/plugins/moduleAdapter.ts`.
 
 ### Frontend assets — requires `frontend.assets`
 
@@ -692,14 +692,17 @@ Plugins read and write CMS content (pages, posts, custom tables) through `api.cm
 | `cms.content.delete`          | High      | Soft-delete entries                                                          |
 | `cms.content.tables.manage`   | Dangerous | Create user-managed tables (never system tables)                            |
 
-The manifest's `contentAccess[]` lists every table whose entries the plugin can touch, with per-table modes. The host fails closed without both the permission and the allowlist entry for entry reads/writes/publishes/deletes. `content.tables.create(...)` is different: it requires `cms.content.tables.manage`, creates a new user-managed table, and does not require a pre-existing `contentAccess[]` row for that table.
+The manifest's `contentAccess[]` lists every table whose entries the plugin can touch, with per-table modes. The host fails closed without both the permission and a covering allowlist entry for entry reads/writes/publishes/deletes. `content.tables.create(...)` is different: it requires `cms.content.tables.manage`, creates a new user-managed table, and does not require a pre-existing `contentAccess[]` row for that table.
+
+An entry's `table` is a concrete slug, or the **`@own-created` marker** (`OWN_CREATED_TABLES_MARKER` in the SDK): it covers every table this plugin itself created through `content.tables.create(...)`. The create handler stamps the host-authenticated plugin id on the table row (`data_tables.created_by_plugin_id`), and the marker resolves against that stored creator — never against the slug — so it is durable across restarts and admin-side slug renames, and one plugin's marker never reaches another plugin's (or a user's) tables. This is the shape importer/migration plugins need: their table names are chosen by the operator at runtime and can't be pre-declared. Entries combine as a union — an operation is allowed when any matching entry declares the mode — and marker modes go through the same install-time modes↔permissions coherence check as slug entries.
 
 ```jsonc
 {
-  "permissions": ["cms.content.read", "cms.content.write"],
+  "permissions": ["cms.content.read", "cms.content.write", "cms.content.tables.manage"],
   "contentAccess": [
     { "table": "pages", "modes": ["read", "write"] },
-    { "table": "posts", "modes": ["read"] }
+    { "table": "posts", "modes": ["read"] },
+    { "table": "@own-created", "modes": ["read", "write"] }
   ]
 }
 ```
@@ -749,12 +752,29 @@ await bodyTree.mutate([
 await bodyTree.replace(currentTree)
 
 // Cross-table
-await api.cms.content.search('hello world', 25)
+const { results } = await api.cms.content.search('hello world', { limit: 25 })
 const snap = await api.cms.content.getPublishedSnapshot(entryId)
 const { count } = await api.cms.content.republishAll()
 ```
 
-`tables.create(input)` accepts the plugin-facing field projection, then maps it to the host's canonical `DataField` schema before storage. `richText` fields default to Markdown format, `select` / `multiSelect` option `value`s become stable option IDs, and `relation.targetTableSlug` must resolve to an existing table slug. `repeater` accepts a one-level `fields` schema made from ordinary authorable fields; nested relation slugs are resolved through the same gate, while recursive repeaters, `pageTree`, and `fieldSchema` item fields are rejected by the boundary schema.
+`tables.create(input)` accepts the plugin-facing field projection, then maps it to the host's canonical `DataField` schema before storage. The created table records the calling plugin as `createdByPluginId`, which the `@own-created` contentAccess marker resolves against for all subsequent entry access; the table slug is restricted to kebab-case (leading letter), reserving the `@` namespace for markers. `richText` fields default to Markdown format, `select` / `multiSelect` option `value`s become stable option IDs, and `relation.targetTableSlug` must resolve to an existing table slug. `repeater` accepts a one-level `fields` schema made from ordinary authorable fields; nested relation slugs are resolved through the same gate, while recursive repeaters, `pageTree`, and `fieldSchema` item fields are rejected by the boundary schema.
+
+`localizedText` fields store `{ key: "articles.security" }` references, including inside repeaters. An ordinary `text` field stays literal. Entry `get`/`list` results preserve those authoring cells. For localized comparisons and ordering, pass an explicit configured `language` to `list`:
+
+```js
+const articles = api.cms.content.table('articles')
+const page = await articles.list({
+  language: 'de',
+  filter: { heading: { like: '%Sicherheit%' } },
+  orderBy: { heading: 'asc' },
+  limit: 10,
+})
+const matches = await api.cms.content.search('Sicherheit', { language: 'de', limit: 25 })
+```
+
+`list` derives text before applying the existing `eq`/`ne`/range/`in`/case-insensitive SQL-`like` operators, count, order and pagination; its entries retain raw references. A localized field comparison or order without `language` fails with a typed localization error. The optional `localization` result contains language choices until one is supplied, then only translated keys referenced by the authorized target table. It never contains source files or unrelated catalogue text.
+
+`search(query, options?)` returns `{ results, localization? }`; `localization` is keyed by authorized table slug. It considers only tables with `contentAccess` read mode, before applying the global limit. Without a language, localized tables contribute slug metadata only. With a language, search includes derived scalar and repeater text, never raw reference keys. Missing or invalid translations fail rather than selecting another language. Plugins may write only references already present in their authorized target table.
 
 `republishAll` fires the full publish pipeline (`publish.before` → `publish.html` → `publish.after`), so other plugins' filters and listeners participate.
 
@@ -982,7 +1002,7 @@ Risk levels:
 | `loops.register`            | Editor / server / manifest | Medium | Register custom `base.loop` sources                                  |
 | `visualComponents.register` | Admin / manifest     | Medium    | Ship VCs / page templates / class / layout packs (via `pack/site.json`) |
 | `dashboard.widgets.register`| Admin                | Medium    | Register cards in the admin dashboard widget grid                       |
-| `frontend.assets`           | Frontend / manifest  | High      | Inject declarative tags into every published page; also gates module render() `js` |
+| `frontend.assets`           | Frontend / manifest  | High      | Inject declarative tags into every published page; also gates module `assets.js` |
 | `network.outbound`          | Server               | High      | Make outbound HTTP requests (with `networkAllowedHosts` allowlist)      |
 | `media.import`              | Server / CMS media   | High      | Upsert managed media from a remote URL or contained package asset       |
 | `media.storage.adapter`     | Server / CMS media   | Dangerous | Register an electable media storage backend                             |
@@ -1149,6 +1169,10 @@ export default definePlugin({
 | Calling host APIs from inside a constructor / module top-level           | Use lifecycle hooks (`activate(api)`) — host APIs are only bound there |
 
 ---
+
+## Module schemas
+
+Module definitions and `defineModule` accept `propsSchema` for normal prop defaulting and `publishSchema` for hard validation of resolved `{ props, settings }`. The browser adapter and QuickJS metadata preserve both; the sandbox transport restores declarative TypeBox symbols, and rejects executable transforms. A failed publish requirement raises `ModulePublishValidationError` before the module render thunk runs. See [module engine](../reference/module-engine.md) and [visitor preferences](visitor-preferences.md).
 
 ## Related
 

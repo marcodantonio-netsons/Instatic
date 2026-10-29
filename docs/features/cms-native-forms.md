@@ -8,9 +8,9 @@ CMS-native forms let the visual editor build semantic HTML forms from primitive 
 - Every form part is a node: `base.form`, `base.label`, `base.input`, `base.textarea`, `base.select`, `base.option`, `base.option-group`, `base.checkbox`, `base.radio`, `base.submit`, and `base.form-message`.
 - The module picker exposes the form primitives in its Forms category; preview wireframes live in `src/admin/pages/site/module-picker/moduleWireframes.ts`.
 - Paste HTML, agent HTML insert/replace, and Super Import all use `@core/htmlImport`, so semantic HTML form tags import as these same primitive modules.
-- CMS form snapshots are derived at publish/request time by `src/core/forms/snapshot.ts`.
+- CMS form snapshots are derived from native public render scopes, Visual Components, params and slot fills by `src/core/forms/publishedTree.ts`, then `snapshot.ts`.
 - Public submissions go through `POST /_instatic/form/challenge` and `POST /_instatic/form/submit`, implemented in `server/forms/handler.ts`.
-- The browser runtime ships through the module-JS channel: `base.form`'s render() emits it as `js` when `mode === 'cms'` (`src/modules/base/forms/formRuntimeJs.ts`), published pages load it from `/_instatic/module-js/base.form.js`, and `server/forms/formRuntime.ts`'s `stampFormPageTokens` stamps `data-instatic-page-token` + `data-instatic-page-id` onto every CMS form tag — on baked pages and on hole fragments.
+- The browser runtime ships through the module-JS channel: `base.form` declares it in `assets.js`; its real render activates it for CMS/request transports, local interactions and enhanced HTML actions (`src/modules/base/forms/formRuntimeJs.ts`), published pages load it from `/_instatic/module-js/base.form.js`, and `server/forms/formRuntime.ts`'s `stampFormPageTokens` stamps `data-instatic-page-token` + `data-instatic-page-id` onto every CMS form tag — on baked pages and on hole fragments.
 
 ## Editor Model
 
@@ -18,10 +18,12 @@ The editor exposes form primitives in the module picker.
 
 Primitives are the source of truth. A label is a `base.label` node, an input is a `base.input` node, and a submit button is a `base.submit` node. There is no hidden field-builder shape inside `base.form`; authors compose ordinary nodes, and every node remains directly editable after insertion.
 
-`base.form` has two modes:
+`base.form` has four declared modes:
 
+- `local` keeps interaction state in the browser, with normal validation and no recipient or navigation. An optional `submitTargetId` scrolls to and focuses a rendered node after valid submission, respecting reduced motion.
 - `cms` submits to a selected data table.
-- `custom` renders a semantic form shell with `action` / `method` for external adapters or traditional form targets.
+- `custom` renders an ordinary HTML `action` / `method` form. It ships no JavaScript unless the author enables `enhance` for native form behavior.
+- `request` sends a declared multipart or JSON POST directly to `action` and consumes a declared JSON response. It uses the same native behavior runtime as CMS forms.
 
 Form-related nodes get a contextual setup block rendered at the top of Module settings by `FormSettingsPanel` in `src/admin/pages/site/panels/PropertiesPanel/FormSettingsPanel.tsx`. The analysis that drives it lives in `src/admin/pages/site/panels/PropertiesPanel/formSettingsAnalysis.ts`. The block summarizes the nearest form, target table, bound field, inferred label/submit/message relationship, and warnings for missing tables, unbound controls, duplicate names, missing fields, controls outside forms, labels without targets, and submit buttons without forms.
 
@@ -32,6 +34,8 @@ The `Form ID` property is a machine identifier, not the author-facing table or f
 For a selected control inside a CMS-native form, the setup block exposes a field picker for compatible fields in the form's target table. Selecting a field patches the node's `fieldId`, `name`, `id`, input/control type, required state, and compatible validation defaults in one edit.
 
 The design canvas treats authored form controls as non-interactive editor content. Inputs, textareas, selects, and buttons render as real semantic elements, but pointer/focus activation is suppressed in canvas mode so browser autofill, native select menus, and typing do not appear while designing. Clicking the element still selects the corresponding canvas node. Live preview and published pages keep normal browser form behavior.
+
+Input, Textarea, Select, Checkbox and Radio expose the same native HTML attributes bag as other base modules. Safe ARIA, data and accessibility attributes survive import, canvas and publication through `src/core/htmlAttributes/`; for example an authored text honeypot uses its native `autocomplete: 'off'` prop and `htmlAttributes: { tabindex: '-1', 'aria-hidden': 'true' }`. Semantic user classes control visual hiding. The shared generated-name catalogue protects type, name, value, validation and form association from manual attribute overrides, even when their native props are empty or false. The attributes panel explains that those names belong in Module settings, and form preflight rejects persisted conflicting control attributes. Runtime/editor data, event handlers and React control props cannot be authored. The canvas reserves its own focus wiring; published pages retain the authored tab index. Native boolean attributes use HTML presence semantics in both render paths.
 
 The form setup block also exposes an editor-only preview state switch (`default`, `submitting`, `success`, `error`). It annotates the canvas form and message nodes with the same state shape the public runtime uses, without changing saved props or published HTML.
 
@@ -52,9 +56,9 @@ CMS-native submission is a two-step public flow:
 1. The runtime requests a short-lived challenge from `/_instatic/form/challenge` when the form attaches in the browser.
 2. The runtime posts values plus the challenge to `/_instatic/form/submit`.
 
-The submit handler reloads the latest published site snapshot, derives the form snapshot from the published page tree, requires the target `DataTable` to be a non-system `data` table, validates fields against that table, and creates a `data_rows` record with `createDataRow`. After persistence, `server/forms/handler.ts` calls `emitContentEntryCreated` from `server/publish/contentEvents.ts` with the `system` actor, so plugins can react to successful submissions through the standard `content.entry.created` channel.
+The submit handler reloads the latest published site snapshot, derives the form snapshot from the same native template/VC/slot composition and binding frame as the publisher, requires the target `DataTable` to be a non-system `data` table, validates fields against that table, and creates a `data_rows` record with `createDataRow`. After persistence, `server/forms/handler.ts` calls `emitContentEntryCreated` from `server/publish/contentEvents.ts` with the `system` actor, so plugins can react to successful submissions through the standard `content.entry.created` channel.
 
-Validation lives in `src/core/forms/validation.ts`. It rejects unknown fields, enforces required fields, coerces table field types, applies email/url/number/select checks, applies control min/max/pattern constraints, and caps payload size.
+Validation lives in `src/core/forms/validation.ts`. It rejects unknown fields, enforces required fields, coerces table field types, applies email/url/number/select checks, applies control min/max/pattern constraints, and caps payload size. A `select` or `multiSelect` submission may carry an option's `value` (what `base.option` nodes inserted from the table hold) or its `id`; the stored cell is always the option id.
 
 ## Security
 
@@ -71,6 +75,112 @@ The endpoint is public by necessity, so it is layered:
 
 No public form endpoint can be made unusable by a dedicated HTTP client that fetches the public page and behaves like a browser. The goal here is to prevent blind endpoint abuse, cross-site browser abuse, stale/forged form payloads, and high-volume spam.
 
+## Declarative behavior and localized copy
+
+Behavior is stored on editable native nodes; there is no opaque HTML form, per-site selector adapter, inline translation dictionary, or DOM translation pass.
+
+| Node / property | Contract |
+| --- | --- |
+| `base.form-conditional.condition` | Recursive `PropertyCondition`: `eq`, `notEq`, `in`, `notIn`, `and`, `or`. Compare named control values. Hidden groups disable their controls and remove requiredness. |
+| Control `requiredWhen` | Recompute requiredness from the same condition engine used by property controls, SSR and CMS validation. |
+| Control `queryParameter` | Initialize a text/select value or one radio-group choice from the browser URL, subject to authored limits and offered enabled options. Radio members share one parameter; an invalid query is corrected by selecting an offered radio. |
+| Control `trimOnSubmit` | Trim an explicitly opted-in text control before submission and derived-value validation. CMS validation applies the same normalization. Other controls retain their authored value. |
+| Control `queryOverflow` | Reject an overlong initial query by default, or explicitly truncate it to the authored field limit before validation. |
+| Local form `fragmentField` | Initialize an offered radio/select choice from the decoded URL fragment and follow `hashchange`; unknown values leave the selection intact. Matching rendered targets scroll after the conditions update and respect reduced motion. |
+| Form `stateQueryParameter` | Restore only `success` or `error` from a named URL parameter. Messages remain authored state copy; a `responseOrState` message can retain its authored initial caption. No response text comes from the URL. |
+| Control `lockQueryValue` | Lock a valid query value: readonly text controls or only the selected option enabled. The select remains enabled and submits its value. Missing query keeps the authored editable default; invalid query sets a visible invalid state and blocks submission until corrected. |
+| Control `resetBehavior` | `initial` restores the effective authored/query value captured once at attachment; `clear` empties text/select values and deselects choices; `preserve` keeps the current value, including a visitor's correction. Manual resets and successful submissions use the same policy. |
+| Control `valueSourceField` | Without a write target, a declared hidden input mirrors an enabled scalar input/textarea/select outside conditional groups. Checkbox/radio, multiple-select and file sources are rejected because they can be absent or non-scalar. CMS validation rejects forged synchronized values. |
+| Control `valueTargetField` | A projected scalar control reads `valueSourceField` (including a declared calculation) and writes visitor edits to this independent control. The write target remains enabled/editable and outside conditional groups; numeric edits respect its bounds. The projection cannot participate in `syncGroup`, query initialization, chains or cycles. Disabling the presentation leaves the independent remembered value intact. CMS validation recomputes the displayed value and rejects a forged presentation value. |
+| Control `syncGroup` | Controls in the same form with the same nonempty group share one value bidirectionally. Changing a radio updates its peers' values; changing a range/select updates checked radio choices without rewriting their authored values. Synchronization precedes conditions, requiredness and outputs. Empty or absent groups have no effect. |
+| `base.form-output.fieldName` | Show a named control's value as plain text. |
+| Form `calculations` | Named, closed expressions over control values and other derived values. The dependency graph also orders dynamic numeric bounds. |
+| Control `minValueField` / `maxValueField` | Read numeric bounds from derived values; clamp the resource before downstream calculations. |
+| Control `disabledWhen` | Disable a control when the native condition matches the normalized snapshot. |
+| Control `clearFieldsOnChange` | Clear the listed editable text controls, separated by commas, before recomputing values and notifying consumers. |
+| Control `submitOnChange` | Run the enclosing local form's declared `submitTargetId` action after a committed change, after clearing dependent fields and recomputing values. Requires local mode and a target. Text input events do not submit, and an unselected radio does not trigger the action. |
+| Checkbox `minSelected` / `maxSelected` / `selectionOverflow` | Bound a named checkbox collection; overflow can reject the new choice or remove its oldest selected member. Zero maximum is unlimited. |
+| `base.form-link` | Semantic anchor reading a named URL value or its own closed `expression`. An explicit `formId` associates links outside the form, including loop rows. |
+| `base.form-step` | Increment an editable numeric control by `step`, respecting its native minimum, maximum and disabled state. |
+| Control `requiredMessage` / `invalidMessage` | Authored field-local browser validation copy. |
+| Form state messages | Flat authored props: `pendingMessage`, `successMessage`, `errorMessage`, `invalidMessage`, `captchaMessage`, `unavailableMessage`. |
+| `base.form-message.source` | `state` shows resolved state copy; `authored` preserves authored children; `response` displays the recipient's plain-text message; `responseOrState` uses the response when present, otherwise the authored state copy. Messages support semantic tags and safe HTML attributes. An authored `tabindex: -1` opts into focus for a displayed result. |
+| `base.submit.pendingLabel` | Temporarily replace the submit caption while a request is pending, then restore the original child nodes and disabled state. Submit buttons preserve authored icons, child nodes and safe HTML attributes through import, canvas and publication. |
+
+State copy and labels use ordinary bindings such as `{site.translations.forms.contact.pending}`, resolved from native JSON language files. The resolved strings are emitted in HTML and reused by the native runtime; published pages do not download catalogues or run a translator. Editor state previews use that same binding context. New forms have ordinary English authoring defaults; these are not a missing-language fallback. Once localization is configured, catalogue validation rejects missing or empty keys before publication.
+
+Selectors must be enabled scalar controls outside conditional groups that disable their controls. Visibility-only groups (`disableWhenHidden: false`) preserve their values. Conditions cannot read a mirrored hidden control or a multiple select. Native preflight rejects unknown selectors, nested forms, duplicate rendered form IDs/control names, missing output sources and malformed rules. Radio groups share one name/field and validate the active published option set. Loops cannot contain form instances: their per-entry instance identity/submission authority is not modeled. CMS form definitions support stable page/site bindings and reject entry/request-dependent definitions explicitly.
+
+Shared value groups support plain text controls (text/search/tel/password/hidden inputs and textareas), or finite choices (radio groups, single selects and evenly stepped ranges). Finite peers must offer identical values, including every range step; unrestricted text cannot be mixed with finite choices. Each radio group declares one checked choice; only that choice contributes to the initial value. All peers declare the same initial value and one reset policy, `initial` or `preserve`. They remain enabled, editable and outside groups that disable controls when hidden. A group supports one query initializer and cannot combine with query locking or `valueSourceField`. Publication rejects conflicting authoring. CMS submission validates that every submitted peer agrees. Forms with the same group name remain independent.
+
+SSR renders the authored initial default, derives hidden/disabled/required groups, mirrors and outputs before JavaScript. Query initialization is browser enhancement of a static page; it is not server rendering by query, a query-specific cache key, or a server authority on a locked value. The CMS recipient always validates submitted options against the published model.
+
+The condition property control uses shared Input/Select/Button primitives and edits structured rules, including nested AND/OR. Invalid persisted rules are shown explicitly. Structured conditions do not masquerade as string VC params or accept text-token insertion. Authors can still share form components through ordinary typed params and slots.
+
+### Derived values and bound content
+
+The Derived values control edits JSON data validated by `FormCalculationsSchema`.
+Expressions can read fields, declare literals, perform finite arithmetic, select
+explicit lookup cases, concatenate text, inspect collection length/membership,
+format numbers with `Intl.NumberFormat`, and construct relative or HTTP(S) URLs
+with encoded query values. Expressions never execute JavaScript. Unknown fields,
+cycles, invalid bounds, unsafe navigation schemes and non-finite results fail
+validation. Localized literals use ordinary language-file tokens, including
+inside nested expression data.
+
+`@core/form-values` evaluates the same graph for initial HTML, browser changes
+and CMS recipient validation. A numeric resource is clamped before prices or
+summaries which depend on it. Decreasing its minimum preserves the visitor's
+larger resource value. Reset restores initial bounds before assigning range
+values. Named checkbox collections retain a selection order for FIFO overflow;
+different form instances and collection names keep independent state.
+
+Form outputs can also expose a derived finite number through an authored
+`cssVariable` beginning with `--`; component CSS supplies its units and visual
+meaning. The numeric output then carries no text. Form links use the same URL
+authority in preflight, initial rendering and browser updates. Native page
+render scopes prepare one `formValuesById` registry shared across Visual
+Components and loops, so external links can render their correct initial URL.
+
+The browser emits bubbling `instatic:form-values` events with
+`{ formId, values }` after query initialization, synchronization, bounds,
+conditions and reset. A late consumer sends `instatic:form-values-request`
+with `{ formId }` to receive the current snapshot. The generic
+`instatic:content` notification refreshes newly inserted bound content without
+emitting another values event. Thus loading a fragment does not itself restart
+a query.
+
+## Declared recipient requests
+
+For `mode: request`, configure `action`, `encoding: multipart | json`, `responseSuccessField` (default `ok`), `responseMessageField` (default `message`), and `resetOnSuccess`. The recipient must return a JSON object with a boolean success field and an optional string message field. HTTP failure, a false success field or malformed JSON produces the authored error state. Request timeout is 20 seconds and the accepted JSON response is bounded. Multipart retains native files; CMS/JSON file inputs are rejected before publication rather than losing uploaded bytes.
+
+Reset policies belong to controls, not a form-specific callback. Reset never rereads the URL. Conditions, requiredness, outputs and synchronized hidden values are recomputed after restoring controls. An invalid initial query remains invalid under `initial`; `preserve` retains a corrected value, and `clear` discards the invalid query. A cancelled reset remains cancelled. Locked query controls cannot use `clear`, mirrored controls reset through their scalar source, and file inputs cannot use `preserve` because browsers prohibit programmatically restoring a chosen file. File inputs always clear through their native reset action.
+
+Single-select initialization preserves an explicitly selected disabled empty placeholder. With no explicit selection it chooses the first enabled option; if multiple options are explicitly selected the last one wins, matching HTML. The canonical `resolveSelectInitialValue` helper provides that value to the publisher's form context and the canvas SelectEditor. Disabled choices remain excluded from server-side offered values, so a required empty placeholder cannot be submitted as a valid choice.
+
+Requests use `credentials: omit`; Instatic does not proxy them, inject a secret, reinterpret the recipient's business protocol, or bypass CORS. The recipient must explicitly permit the published origin and perform its own validation. Native CMS origin/HMAC/challenge/honeypot/rate limits remain unchanged. A UI lock does not replace recipient validation.
+
+The emitted instance declares its request origin in `connect-src` and its action origin in `form-action`. Only pages actually rendering that instance receive the additional origin; pages without it retain the normal self-only form policy. This is authored core form behavior; plugin network access still follows the plugin permission and allowed-host policy.
+
+## Explicit Turnstile module
+
+`base.turnstile` requires an explicit public `siteKey`, optional `action`, supported `language`, `theme` and `responseFieldName`. It has no demo key or secret default. An unconfigured key, unsupported language/action, duplicate widget or widget in a conditional group blocks publication. The widget's script/frame CSP origins are collected only where it renders.
+
+The runtime loads the official explicit widget script, renders once, blocks submission without a token, handles expiration/errors/timeouts and resets after an attempt. A failed loader can retry. `theme: auto` follows the published document's effective CSS `color-scheme`; the native visitor-preferences event rebuilds the widget when that scheme changes. There is one generic runtime emitted by the form root; controls, conditions, outputs and widgets do not emit duplicate runtimes.
+
+Turnstile is available on recipient/HTML-action forms whose server validates the token. CMS forms retain Instatic's native challenge and reject a vendor widget because CMS Siteverify/secret configuration is not implemented. The browser widget alone is not proof of server verification; the recipient must call Siteverify. Cloudflare documents a five-minute, single-use token. See [server validation](https://developers.cloudflare.com/turnstile/get-started/server-side-validation/), [widget configuration](https://developers.cloudflare.com/turnstile/get-started/client-side-rendering/widget-configurations/), [supported language codes](https://developers.cloudflare.com/turnstile/reference/supported-languages/) and [CSP](https://developers.cloudflare.com/turnstile/reference/content-security-policy/).
+
+## Engine, generation and publication preflight
+
+- Canonical TypeBox shapes: `src/core/forms-schema/`; recursive conditions are owned by the pure `value-conditions-schema` leaf and evaluated by `value-conditions`; primitive props are shared between module definitions and canvas components in `primitiveSchemas.ts`.
+- Composition and binding authority: `forms/publishedTree.ts` consumes the canonical `publishedRenderScopes` and materializes through `walkRenderTree` instance/parent frames, using the single `buildTemplateRenderContext` also used by the publisher. Consumer slot fills retain structured dynamic bindings; composed ordinary pages and 404s keep their terminal page frame.
+- Form checks resolve emitted form properties only; unrelated non-form bindings, overridden static values and raw unused templates remain outside this boundary. `resolveBoundProps` exposes the canonical whole-prop binding phase before token interpolation, so retained static values and tokens inside binding results remain part of the authority check. Winning page, 404 and entry scopes are checked. Form transport must stay stable across a page or template's render scopes. Stable CMS forms in entry templates retain their template authority; entry/request bindings and entry-dependent `page.title` require explicitly modeled per-entry submission authority. The server derives the same forms and rejects ambiguity between public scopes sharing a template identity. Coverage: `src/__tests__/forms/formPublishedScopes.test.ts` and `src/__tests__/publisher/renderTreeWalk.test.ts`.
+- Initial SSR context: `forms/renderContext.ts`; table/active-option validation: `forms/validation.ts`.
+- Browser source: `modules/base/forms/runtime.ts` and `runtimeEntry.ts`. Run `bun run forms:sync` after changing runtime source or its schemas; `forms:check` and the architecture freshness test compare the committed artifact. TypeBox generates static validators during tooling, so published JavaScript has neither a runtime schema compiler nor unsafe eval.
+- `assertSiteForms` runs before publication builds, snapshot/version writes and artefact swaps. `FormConfigurationError` returns an actionable HTTP 422 path. Failed preflight preserves the previous publication.
+
+Verification covers nine catalogue frames through native VC params/slots, editor state copy, SSR groups, CMS HMAC challenge/submit/replay, active/required/option validation, browser conditions/query locks, request encodings, plain-text response safety, CAPTCHA expiration/retry, publication atomicity and generated-runtime freshness. Recipient requests and provider calls use isolated mocks; these checks do not claim a live recipient or real CAPTCHA service submission.
+
 ## Related
 
 - [Content storage](content-storage.md) — `data_tables` and `data_rows`
@@ -83,3 +193,7 @@ No public form endpoint can be made unusable by a dedicated HTTP client that fet
 - Source of truth — naming utilities: `src/admin/pages/site/panels/PropertiesPanel/formSettingsNaming.ts`
 - Source of truth — target table restriction: `src/core/forms/targets.ts`
 - Source of truth — submission handler: `server/forms/handler.ts`
+
+Form value expressions also support `trim` for declared text normalization. `base.form-output` exposes the normal HTML tag controls; text outputs replace their text content, while numeric CSS-variable outputs preserve child nodes and update only the custom property on that element. Void elements and child content in text mode are rejected during publication.
+
+Conditional groups disable controls while hidden by default. Authors can set `disableWhenHidden: false` when visibility should preserve enabled values, such as a multistep local configurator. Those controls remain available to calculations, constraints and submission; the publisher, recipient snapshot and browser use the same setting.

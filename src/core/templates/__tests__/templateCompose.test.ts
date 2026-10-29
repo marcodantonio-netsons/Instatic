@@ -42,16 +42,16 @@ describe('composeTemplateChain', () => {
     expect(Object.values(merged.nodes).some((n) => n.moduleId === 'base.outlet')).toBe(false)
   })
 
-  it('migrates a styled page body onto a container instead of dropping its props', () => {
+  it('merges a styled page body into the document body without inventing a container', () => {
     const styled = aboutPage()
     styled.nodes.A_body = { ...styled.nodes.A_body, props: { background: 'navy' } } as never
     const merged = composeTemplateChain([layout()], { kind: 'page', page: styled })
     const root = merged.nodes[merged.rootNodeId]
     const middle = merged.nodes[root.children[1]]
-    // body props preserved on a wrapping container, NOT silently lost
-    expect(middle.moduleId).toBe('base.container')
-    expect(middle.props).toEqual({ background: 'navy' })
-    expect(merged.nodes[middle.children[0]].moduleId).toBe('base.text') // original heading underneath
+    expect(root.props).toEqual({ background: 'navy' })
+    expect(middle.moduleId).toBe('base.text')
+    expect(Object.values(merged.nodes).filter(node => node.moduleId === 'base.body')).toHaveLength(1)
+    expect(Object.values(merged.nodes).some(node => node.moduleId === 'base.container')).toBe(false)
   })
 
   it('skips an outlet-less template (page renders unwrapped, no throw)', () => {

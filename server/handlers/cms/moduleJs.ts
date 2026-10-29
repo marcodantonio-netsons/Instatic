@@ -1,13 +1,13 @@
 /**
  * `/_instatic/module-js/<moduleId>.js` — per-module published-JS assets.
  *
- * Modules may return `js` from `render()` (see `RenderOutput`); the publisher
+ * Modules declare invariant `assets.js` on their definition; the publisher
  * dedupes it per moduleId and pages reference it via
  * `<script src="/_instatic/module-js/<id>.js?v=<publishVersion>" defer>` tags
  * injected by `injectModuleScripts`. This endpoint serves the body from the
- * site-wide module-JS map, memoised per publish version through the same
- * versioned single-flight the hole endpoint uses (`?v=` is a pure
- * cache-buster — the content always reflects the LATEST published snapshot).
+ * active static generation. Sites with static artefacts disabled build the
+ * site-wide module-JS map through a versioned single-flight (`?v=` is a pure
+ * cache-buster — the content always reflects the LATEST published generation).
  *
  * The `<moduleId>` path segment is UNTRUSTED input: it is validated against
  * the namespaced-module-id grammar before any lookup, so traversal sequences
@@ -15,20 +15,13 @@
  * envelope).
  */
 import type { DbClient } from '../../db/client'
+import { createHash } from 'node:crypto'
 import { registry } from '@core/module-engine'
-import { getLatestPublishedSiteSnapshot } from '../../repositories/publish'
-import { buildPublishedSiteModuleJsMap } from '../../publish/moduleJsBundle'
+import { buildPublishedSiteModuleJsMap, MODULE_JS_PATH_PREFIX, moduleJsAssetPath, moduleJsIdFromAssetPath } from '../../publish/moduleJsBundle'
 import { createVersionedSingleFlight, getPublishVersion } from '../../publish/publishState'
-
-const MODULE_JS_PATH_PREFIX = '/_instatic/module-js/'
-
-/**
- * Namespaced module id grammar: `<namespace>.<name>[.<name>…]`, lowercase
- * alphanumerics and dashes per segment — matches the registry's id format
- * (`base.form`, `acme.hero-banner`) and the plugin namespace lock
- * (`SAFE_MODULE_NAME` in `moduleAdapter.ts`).
- */
-const MODULE_JS_ID_PATTERN = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/
+import { getLatestSnapshotForVersion } from '../../publish/publishedSnapshotCache'
+import { readStaticAsset } from '../../publish/staticArtefact'
+import { binaryResponse } from '../../binary'
 
 export function isModuleJsAssetPath(pathname: string): boolean {
   return pathname.startsWith(MODULE_JS_PATH_PREFIX)
@@ -36,9 +29,10 @@ export function isModuleJsAssetPath(pathname: string): boolean {
 
 interface ModuleJsHandlerContext {
   db: DbClient
+  uploadsDir?: string
 }
 
-// Version-keyed memo of the published module-JS map. Loading the snapshot +
+// Without static artefacts, memoize the published module-JS map. Snapshot +
 // walking every page per request would be the same per-request cost the hole
 // endpoint was flagged for — the single-flight runs the load once per publish
 // version and the shared test-reset hook clears it.
@@ -49,7 +43,7 @@ function loadModuleJsMapForVersion(
   version: number,
 ): Promise<ReadonlyMap<string, string> | null> {
   return moduleJsMapCache.get(version, async () => {
-    const snapshot = await getLatestPublishedSiteSnapshot(db)
+    const snapshot = await getLatestSnapshotForVersion(db, version)
     if (!snapshot) return null
     return buildPublishedSiteModuleJsMap(snapshot.site, registry)
   })
@@ -62,6 +56,21 @@ function plainResponse(body: string, status: number): Response {
   })
 }
 
+function scriptResponse(req: Request, body: string | Uint8Array): Response {
+  const etag = `"${createHash('sha256').update(body).digest('hex')}"`
+  const headers = {
+    'content-type': 'text/javascript; charset=utf-8',
+    // The process-local ?v= counter can repeat after a server restart.
+    'cache-control': 'public, no-cache',
+    'etag': etag,
+    'x-content-type-options': 'nosniff',
+  }
+  const unchanged = (req.headers.get('if-none-match') ?? '').split(',')
+    .some(value => value.trim() === '*' || value.trim().replace(/^W\//, '') === etag)
+  if (unchanged) return new Response(null, { status: 304, headers })
+  return typeof body === 'string' ? new Response(body, { headers }) : binaryResponse(body, { headers })
+}
+
 /** GET `/_instatic/module-js/<moduleId>.js?v=<publishVersion>` → JS body. */
 export async function handleModuleJsAssetRequest(
   req: Request,
@@ -70,21 +79,19 @@ export async function handleModuleJsAssetRequest(
 ): Promise<Response> {
   if (req.method !== 'GET') return plainResponse('Method not allowed', 405)
 
-  const fileName = decodeURIComponent(url.pathname.slice(MODULE_JS_PATH_PREFIX.length))
-  const moduleId = fileName.endsWith('.js') ? fileName.slice(0, -'.js'.length) : ''
-  if (!moduleId || !MODULE_JS_ID_PATTERN.test(moduleId)) {
+  const moduleId = moduleJsIdFromAssetPath(url.pathname)
+  if (!moduleId) {
     return plainResponse('Not found', 404)
+  }
+
+  if (ctx.uploadsDir) {
+    const bytes = await readStaticAsset(ctx.uploadsDir, moduleJsAssetPath(moduleId))
+    return bytes ? scriptResponse(req, bytes) : plainResponse('Not found', 404)
   }
 
   const jsMap = await loadModuleJsMapForVersion(ctx.db, getPublishVersion())
   const body = jsMap?.get(moduleId)
   if (body === undefined) return plainResponse('Not found', 404)
 
-  return new Response(body, {
-    headers: {
-      'content-type': 'text/javascript; charset=utf-8',
-      // 1 hour — `?v=<publishVersion>` on the referencing tag busts on publish.
-      'cache-control': 'public, max-age=3600',
-    },
-  })
+  return scriptResponse(req, body)
 }

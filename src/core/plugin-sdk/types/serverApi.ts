@@ -7,7 +7,8 @@ import type {
   ContentEntry,
   ContentListOptions,
   ContentListResult,
-  ContentSearchResult,
+  ContentSearchOptions,
+  ContentSearchResults,
   ContentTableSchema,
   ContentTableSummary,
   ContentTreeOperation,
@@ -142,8 +143,9 @@ export interface ServerPluginApi {
      * out the surface.
      *
      * Each method asserts both the granted permission (`cms.content.*`)
-     * AND the table allowlist entry in the manifest's `contentAccess[]`.
-     * Plugins fail closed on either gap.
+     * AND the table allowlist entry in the manifest's `contentAccess[]` —
+     * a slug entry, or the `@own-created` marker for tables this plugin
+     * created via `tables.create`. Plugins fail closed on either gap.
      */
     content: {
       tables: {
@@ -173,7 +175,7 @@ export interface ServerPluginApi {
         mutate: (operations: ReadonlyArray<ContentTreeOperation>) => Promise<TreeMutateResult>
         replace: (tree: unknown) => Promise<void>
       }
-      search: (query: string, limit?: number) => Promise<ReadonlyArray<ContentSearchResult>>
+      search: (query: string, options?: ContentSearchOptions) => Promise<ContentSearchResults>
       getPublishedSnapshot: (entryId: string) => Promise<PublishedSnapshot | null>
       republishAll: () => Promise<{ count: number }>
     }

@@ -129,15 +129,39 @@ describe('cssToStyleRules — selector classification', () => {
 // @media policy — matched breakpoint
 // ---------------------------------------------------------------------------
 
+describe('cssToStyleRules — custom property names (#616)', () => {
+  it('keeps custom properties with underscores or a leading --_ as authored', () => {
+    const css = `.card {
+      --card_bg: #0575d6;
+      --_accent: #fc834b;
+      --plain-ok: #161617;
+      background: var(--card_bg);
+      border-color: var(--_accent);
+      color: var(--plain-ok);
+    }`
+    const { rules, warnings } = cssToStyleRules(css)
+    expect(Object.assign({}, ...rules.map((rule) => rule.styles))).toMatchObject({
+      '--card_bg': '#0575d6',
+      '--_accent': '#fc834b',
+      '--plain-ok': '#161617',
+      background: 'var(--card_bg)',
+      borderColor: 'var(--_accent)',
+      color: 'var(--plain-ok)',
+    })
+    expect(warnings).toHaveLength(0)
+  })
+})
+
 describe('cssToStyleRules — @media → contextStyles (matched)', () => {
-  it('base + matched @media → 1 rule, base styles + contextStyles', () => {
+  it('base + matched @media keep separately ordered style fragments', () => {
     const css = '.foo { color: red }\n@media (max-width: 768px) { .foo { color: blue } }'
     const { rules, warnings } = cssToStyleRules(css, {
       breakpoints: [{ id: 'tablet', width: 768 }],
     })
-    expect(rules).toHaveLength(1)
+    expect(rules).toHaveLength(2)
     expect(rules[0].styles).toMatchObject({ color: 'red' })
-    expect(rules[0].contextStyles.tablet).toMatchObject({ color: 'blue' })
+    expect(rules[1].contextStyles.tablet).toMatchObject({ color: 'blue' })
+    expect(rules.map((rule) => rule.kind)).toEqual(['class', 'ambient'])
     expect(warnings).toHaveLength(0)
   })
 
@@ -147,8 +171,8 @@ describe('cssToStyleRules — @media → contextStyles (matched)', () => {
       breakpoints: [{ id: 'tablet', width: 780 }],
       mediaTolerance: 15,
     })
-    expect(rules).toHaveLength(1)
-    expect(rules[0].contextStyles.tablet).toMatchObject({ color: 'blue' })
+    expect(rules).toHaveLength(2)
+    expect(rules[1].contextStyles.tablet).toMatchObject({ color: 'blue' })
     expect(warnings).toHaveLength(0)
   })
 
@@ -157,8 +181,8 @@ describe('cssToStyleRules — @media → contextStyles (matched)', () => {
     const { rules, warnings, conditions } = cssToStyleRules(css, {
       breakpoints: [{ id: 'tablet', width: 768, mediaQuery: '(min-width: 768px)' }],
     })
-    expect(rules).toHaveLength(1)
-    expect(rules[0].contextStyles.tablet).toMatchObject({ color: 'blue' })
+    expect(rules).toHaveLength(2)
+    expect(rules[1].contextStyles.tablet).toMatchObject({ color: 'blue' })
     expect(conditions).toHaveLength(0)
     expect(warnings).toHaveLength(0)
   })
@@ -195,13 +219,13 @@ describe('cssToStyleRules — unmatched @media → faithful condition context', 
     const { rules, warnings, conditions } = cssToStyleRules(css, {
       breakpoints: [{ id: 'desktop', width: 1200 }],
     })
-    expect(rules).toHaveLength(1)
+    expect(rules).toHaveLength(2)
     // Base stays exactly as authored — the @media override no longer leaks in.
     expect(rules[0].styles).toMatchObject({ color: 'red' })
     expect(rules[0].styles).not.toHaveProperty('__media')
     // The override lives in contextStyles keyed by the deterministic condition id.
     const cid = conditionId({ kind: 'media', query: '(max-width: 768px)' })
-    expect(rules[0].contextStyles[cid]).toMatchObject({ color: 'blue' })
+    expect(rules[1].contextStyles[cid]).toMatchObject({ color: 'blue' })
     // The reusable condition is registered.
     expect(conditions.map((c) => c.condition)).toContainEqual({ kind: 'media', query: '(max-width: 768px)' })
     // No lossy "unmatched-media-query" warning anymore.
@@ -306,8 +330,7 @@ describe('cssToStyleRules — permissive property model (Phase 1a)', () => {
     // `flex-grow` was never in the old allowlist; under the permissive model
     // any valid CSS identifier round-trips with no unknown/blocked warning.
     const { rules, warnings } = cssToStyleRules('.foo { color: red; flex-grow: 2 }')
-    expect(rules).toHaveLength(1)
-    expect(rules[0].styles).toMatchObject({ color: 'red', flexGrow: '2' })
+    expect(rules.map((rule) => rule.styles)).toEqual([{ color: 'red' }, { flexGrow: '2' }])
     expect(warnings.filter((w) => w.kind === 'unknown-property' || w.kind === 'blocked-property')).toHaveLength(0)
   })
 
@@ -490,40 +513,82 @@ describe('cssToStyleRules — duplicate class names', () => {
       '.register, .source-rule { color: red } .source-rule { display: grid }',
     )
 
-    expect(rules).toHaveLength(2)
+    expect(rules).toHaveLength(3)
     expect(rules.find((rule) => rule.name === 'register')?.styles).toEqual({
       color: 'red',
     })
     expect(rules.find((rule) => rule.name === 'source-rule')?.styles).toEqual({
       color: 'red',
-      display: 'grid',
     })
+    expect(rules[2].styles).toEqual({ display: 'grid' })
+    expect(rules[2].kind).toBe('ambient')
   })
 
-  it('duplicate .foo → 1 rule with later value + 1 duplicate-class warning', () => {
+  it('duplicate .foo keeps both source occurrences + 1 duplicate-class warning', () => {
     const { rules, warnings } = cssToStyleRules('.foo { color: red } .foo { color: blue }')
-    expect(rules).toHaveLength(1)
-    // Later rule wins: color should be 'blue'
-    expect(rules[0].styles).toMatchObject({ color: 'blue' })
+    expect(rules).toHaveLength(2)
+    expect(rules[0].styles).toMatchObject({ color: 'red' })
+    expect(rules[1].styles).toMatchObject({ color: 'blue' })
+    expect(rules[1].kind).toBe('ambient')
     expect(warnings).toHaveLength(1)
     expect(warnings[0].kind).toBe('duplicate-class')
     expect(warnings[0].selector).toBe('.foo')
   })
 
-  it('an earlier important declaration resists a later normal declaration', () => {
+  it('each occurrence keeps its own important priorities', () => {
     const { rules } = cssToStyleRules(
       '.foo { color: red !important } .foo { color: blue }',
     )
     expect(rules[0].styles.color).toBe('red')
     expect(rules[0].stylePriorities).toEqual({ color: 'important' })
+    expect(rules[1].styles.color).toBe('blue')
+    expect(rules[1].stylePriorities).toBeUndefined()
   })
 
-  it('a later important declaration replaces an earlier normal declaration', () => {
+  it('a later duplicate sorts after a rule that sits between the two occurrences', () => {
+    // In a browser an element with class="x y" gets padding-left 0: the last
+    // equal-specificity rule wins. Merging the repeat into the first .x would
+    // move it ahead of .y and flip that result.
+    const { rules } = cssToStyleRules(
+      '.x { padding-left: 15px } .y { padding-left: 7px } .x { padding-left: 0 }',
+    )
+    const ordered = [...rules].sort((a, b) => a.order - b.order)
+    expect(ordered.map((rule) => [rule.selector, rule.styles.paddingLeft])).toEqual([
+      ['.x', '15px'],
+      ['.y', '7px'],
+      ['.x', '0px'],
+    ])
+  })
+
+  it('a base rule after the class\'s @media block keeps its later cascade position', () => {
+    const { rules, warnings } = cssToStyleRules(
+      '@media (max-width: 600px) { .x { color: pink } } .x { color: blue }',
+    )
+    expect(rules).toHaveLength(2)
+    expect(rules[0].kind).toBe('class')
+    expect(rules[0].styles).toEqual({})
+    expect(Object.values(rules[0].contextStyles)).toEqual([{ color: 'pink' }])
+    expect(rules[1].styles).toEqual({ color: 'blue' })
+    expect(rules[1].order).toBeGreaterThan(rules[0].order)
+    expect(warnings.filter((w) => w.kind === 'duplicate-class')).toHaveLength(0)
+  })
+
+  it('an authored empty rule is not filled: the repeat keeps its later position', () => {
+    const { rules } = cssToStyleRules('.x {} .y { color: green } .x { color: blue }')
+    expect(rules.map((rule) => [rule.selector, rule.order, rule.styles])).toEqual([
+      ['.x', 0, {}],
+      ['.y', 1, { color: 'green' }],
+      ['.x', 2, { color: 'blue' }],
+    ])
+  })
+
+  it('a later important declaration keeps its own source position and priority', () => {
     const { rules } = cssToStyleRules(
       '.foo { color: red } .foo { color: blue !important }',
     )
-    expect(rules[0].styles.color).toBe('blue')
-    expect(rules[0].stylePriorities).toEqual({ color: 'important' })
+    expect(rules[0].styles.color).toBe('red')
+    expect(rules[1].styles.color).toBe('blue')
+    expect(rules[1].stylePriorities).toEqual({ color: 'important' })
   })
 
   it('ambient h1 duplicates are allowed (no dedup for ambient)', () => {
@@ -567,13 +632,11 @@ describe('cssToStyleRules — integration', () => {
     const css = '.hero { background-color: #fff; padding: 20px } .title { font-size: 24px; color: #333 }'
     // Note: padding and background-color are in ALLOWED_PROPS; #fff/#333 hex values pass through
     const { rules, warnings } = cssToStyleRules(css)
-    expect(rules).toHaveLength(2)
-    expect(rules[0].name).toBe('hero')
-    expect(rules[1].name).toBe('title')
-    // Unknown-property warnings are OK; we just verify structure
-    const ruleNames = new Set(rules.map((r) => r.name))
-    expect(ruleNames.has('hero')).toBe(true)
-    expect(ruleNames.has('title')).toBe(true)
+    expect(rules).toHaveLength(4)
+    expect(rules.map((rule) => rule.selector)).toEqual(['.hero', '.hero', '.title', '.title'])
+    expect(rules.filter((rule) => rule.kind === 'class').map((rule) => rule.name))
+      .toEqual(['hero', 'title'])
+    expect(warnings).toEqual([])
   })
 
   it('uncurated but valid properties are KEPT under the permissive model', () => {
@@ -583,7 +646,7 @@ describe('cssToStyleRules — integration', () => {
     // dependent; we assert no spurious unknown/blocked warning, and that any
     // surfaced property round-trips camelCased.)
     const { rules, warnings } = cssToStyleRules('.foo { totally-made-up: 1; also-fake: 2 }')
-    expect(rules).toHaveLength(1)
+    expect(rules.map((rule) => rule.styles)).toEqual([{ totallyMadeUp: '1' }, { alsoFake: '2' }])
     expect(warnings.filter((w) => w.kind === 'unknown-property' || w.kind === 'blocked-property')).toHaveLength(0)
   })
 })
@@ -748,16 +811,17 @@ describe('cssToStyleRules — custom @media as conditional layers (no warnings)'
     }
   })
 
-  it('the same selector under the same query merges into one context bag', () => {
+  it('the same selector under the same query retains each source occurrence', () => {
     const css = [
       '@media (max-width: 860px) { .a { color: red } }',
       '@media (max-width: 860px) { .a { font-size: 14px } }',
     ].join('\n')
     const { rules } = cssToStyleRules(css, { breakpoints: [] })
-    const a = rules.find((r) => r.selector === '.a')!
     const cid = conditionId({ kind: 'media', query: '(max-width: 860px)' })
-    expect(Object.keys(a.contextStyles)).toEqual([cid])
-    expect(a.contextStyles[cid]).toMatchObject({ color: 'red', fontSize: '14px' })
+    expect(rules).toHaveLength(2)
+    expect(rules[0].contextStyles[cid]).toEqual({ color: 'red' })
+    expect(rules[1].contextStyles[cid]).toEqual({ fontSize: '14px' })
+    expect(rules.map((rule) => rule.kind)).toEqual(['class', 'ambient'])
   })
 })
 
@@ -787,18 +851,38 @@ describe('cssToStyleRules — shorthand expansion into colour longhands', () => 
   it('a real colour is left exactly as authored', () => {
     const { rules } = cssToStyleRules('.close { background: #e6e6e6; border: 1px solid #ccc }')
     expect(rules[0].styles.backgroundColor).toBe('#e6e6e6')
-    expect(rules[0].styles.borderTopColor).toBe('#ccc')
+    expect(rules[1].styles.borderTopColor).toBe('#ccc')
   })
 
   it('none is still honoured on the properties that accept it', () => {
     const { rules } = cssToStyleRules('.close { background-image: none; border-style: none }')
     expect(rules[0].styles.backgroundImage).toBe('none')
-    expect(rules[0].styles.borderTopStyle).toBe('none')
+    expect(rules[1].styles.borderTopStyle).toBe('none')
   })
 
   it('none survives verbatim in camelCase and kebab-case custom properties', () => {
     const { rules } = cssToStyleRules('.card { --myColor: none; --my-color: none }')
     expect(rules[0].styles['--myColor']).toBe('none')
-    expect(rules[0].styles['--my-color']).toBe('none')
+    expect(rules[1].styles['--my-color']).toBe('none')
+  })
+})
+
+
+describe('cssToStyleRules — empty base followed by conditional declarations', () => {
+  it('keeps the later base at its own position after an authored empty base', () => {
+    const { rules } = cssToStyleRules('.x {} @media (max-width: 600px) { .x { color: pink } } .y { color: green } .x { color: blue }')
+    expect(rules.map((rule) => [rule.selector, rule.styles.color])).toEqual([
+      ['.x', undefined], ['.x', undefined], ['.y', 'green'], ['.x', 'blue'],
+    ])
+    expect(rules[0].contextStyles).toEqual({})
+    expect(Object.values(rules[1].contextStyles)).toEqual([{ color: 'pink' }])
+  })
+  it('does not repeatedly fill a conditional rule after its first empty base', () => {
+    const { rules } = cssToStyleRules('@media (max-width: 600px) { .x { color: pink } } .x {} .y { color: green } .x { color: blue }')
+    expect(rules.map((rule) => [rule.selector, rule.styles.color])).toEqual([
+      ['.x', undefined], ['.x', undefined], ['.y', 'green'], ['.x', 'blue'],
+    ])
+    expect(Object.values(rules[0].contextStyles)).toEqual([{ color: 'pink' }])
+    expect(rules[1].contextStyles).toEqual({})
   })
 })

@@ -153,7 +153,7 @@ Each floating window has a unique `FloatingPanelId` (`'mediaDetachedInspector' |
 |-----------------|-------------------------------------------------------------------------------------------------|
 | `MediaViewerWindow` | Derived during render: `selectedAssetId !== null && selectedAssetIds.size <= 1`. Closing clears the selection. No `useState`. |
 | `BulkEditWindow`    | Derived during render: `selectedAssetIds.size >= 2`. Mutually exclusive with the viewer. No `useState`. |
-| `UploadQueueWindow` | `uploadQueueOpen` in local `useState`. Auto-opens via `useEffect` when uploads start; stays open after completion until the user dismisses it. Toolbar button toggles it. |
+| `UploadQueueWindow` | `useUploadQueueWindow(active)` — local state. Opens on the transition INTO an active upload (detected during render, not in an effect) and nothing reopens it after that, so a user can close it mid-transfer; it stays open after completion until dismissed. Toolbar button toggles it. |
 
 The viewer and bulk-edit are derived rather than stored because "closed" is identical to "no selection" — every close path calls `workspace.clearSelection()`. Deriving avoids an extra render commit and the one-frame open lag that appeared with the old `setState`-in-effect approach.
 
@@ -260,6 +260,8 @@ Folder routes (`/admin/api/cms/media/folders/...`) are matched **before** asset 
 Uploads initiated outside the Media page use the same pipeline. In particular, the Agent Panel's explicit **Save to Media** image action resolves the private chat image, wraps it in a MIME-correct `File`, and calls `uploadCmsMediaAsset`; it does not create an AI-specific storage route. On success, `mediaAssetEvents.ts` upserts the new row into an already-mounted Site → Media explorer while the normal media cache is primed for canvas consumers.
 
 The multipart body carries the `file` part and, optionally, an `altText` text part: Site Import sends the authored `<img alt>` so the record is created with it (`createMediaAsset` writes `alt_text`), instead of leaving every imported image blank for the user to back-fill. Every other upload omits it and the record starts empty.
+
+Library alt text can contain native language-file tokens such as `{site.translations.media.team}`. The Image canvas and publisher resolve them in the current render context without changing the asset record or adding per-instance alt overrides. A missing translation is a localization error; decorative images retain an empty library alt. See [Localization](localization.md).
 
 Plugins enter this same pipeline through `api.cms.media.upsert(...)`. Only source metadata crosses QuickJS. For a `remote` source, the Bun host performs a bounded, SSRF-guarded download. For a `pluginAsset` source, it reads a package-relative file beneath the plugin's canonical installed asset root and rejects traversal or symlink escapes. Both branches call the ordinary create or replace path, so storage-adapter election, MIME sniffing, intrinsic dimensions, BlurHash, and responsive variants stay identical to an admin upload. The provenance row determines whether the call creates, replaces, or returns the existing asset unchanged.
 

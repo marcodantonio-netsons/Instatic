@@ -19,12 +19,17 @@ import type {
   SourceRequestContext,
 } from '@core/loops/types'
 import { loopSourceRegistry } from '@core/loops/registry'
+import { readLoopQueryBindings, resolveLoopQueryFilters } from '@core/loops'
 import { firstImagePathFromMarkdown } from '@core/markdown/renderMarkdown'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { publicDataUserFromParts } from '@core/data/publicDataUser'
-import type { PublishedDataRow } from '@core/data/schemas'
+import type { DataField, DataRowCells, PublishedDataRow } from '@core/data/schemas'
+import { collectMediaIds, resolveMediaIdsToPaths, resolvedMediaOverlay } from '@core/loops'
+import { hasLocalizedDataFields, projectLocalizedDataCells, type DataLocalizationContext } from '@core/data/localizedCells'
+import { LocalizationError } from '@core/localization'
+import { buildTemplateRenderContext, type TemplateRenderDataContext } from '@core/templates'
 import type { DbClient } from '../db/client'
-import { walkRenderTree } from './renderTreeWalk'
+import { walkRenderTree } from '@core/visualComponents'
 
 /**
  * Resolved loop data for a single loop node on a page.
@@ -40,21 +45,47 @@ interface ResolvedLoopData extends LoopFetchResult {
 type LoopDataMap = Map<string, ResolvedLoopData>
 
 /**
- * Project a published data row into a LoopItem. The single-row route uses
- * this to seed the publisher's entry stack with one frame representing the
- * row being viewed.
+ * Seed the publisher's entry stack with one frame representing the row being
+ * viewed (entry routes, branch previews, draft previews).
+ *
+ * The table's media fields are resolved to public paths exactly like the
+ * `data.rows` loop source does, so `{currentEntry.<mediaField>}` renders the
+ * same URL on an entry route as inside a loop — not the raw media id.
+ */
+export async function publishedDataRowToEntryItem(
+  db: DbClient,
+  row: PublishedDataRow,
+  fields: readonly DataField[],
+  localization?: DataLocalizationContext,
+): Promise<LoopItem> {
+  if (hasLocalizedDataFields(fields) && !localization?.translations) {
+    throw new LocalizationError(`rows.${row.rowId}.cells`, 'Choose a configured content language to resolve localized data')
+  }
+  const cells = localization
+    ? projectLocalizedDataCells(row.cells, fields, localization, `rows.${row.rowId}.cells`)
+    : row.cells
+  const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds([{ cells_json: cells }], fields))
+  return publishedDataRowToLoopItem(row, {
+    ...cells,
+    ...resolvedMediaOverlay(cells, fields, mediaPathMap),
+  })
+}
+
+/**
+ * Project a published data row into a LoopItem.
  *
  * `cells` are spread first so all table-defined fields are available in
- * bindings by their field id. System fields (id, tableId, author, etc.)
- * are overlaid after so they can never be shadowed by a user-defined cell.
+ * bindings by their field id, with localization and media already projected
+ * against the same entry frame. System fields (id, tableId, author, etc.) are overlaid
+ * after so they can never be shadowed by a user-defined cell.
  */
-export function publishedDataRowToLoopItem(row: PublishedDataRow): LoopItem {
+function publishedDataRowToLoopItem(row: PublishedDataRow, cells: DataRowCells): LoopItem {
   const tableRouteBase = normalizeRouteBase(row.tableRouteBase || `/${row.tableSlug}`)
   const permalink = `${tableRouteBase === '/' ? '' : tableRouteBase}/${row.slug}`
 
   // For post-type rows the `body` cell holds markdown — extract the first
   // inline image to populate the `firstImage` aliases.
-  const bodyValue = row.cells['body']
+  const bodyValue = cells['body']
   const firstImagePath = typeof bodyValue === 'string'
     ? firstImagePathFromMarkdown(bodyValue)
     : null
@@ -71,7 +102,7 @@ export function publishedDataRowToLoopItem(row: PublishedDataRow): LoopItem {
     fields: {
       // Cells — primary data, spread first so bindings can reference any
       // user-defined field by its fieldId.
-      ...row.cells,
+      ...cells,
       // System identity (overlay after cells so these are never shadowed)
       id: row.rowId,
       rowId: row.rowId,
@@ -124,9 +155,9 @@ export function collectLoopNodes(
 ): PageNode[] {
   const result: PageNode[] = []
   const seen = new Set<string>()
-  // Descend into referenced VC definition trees so a base.loop inside a VC body
-  // is fetched too (ISS-022); a VC referenced twice yields one entry per id.
-  walkRenderTree(page.nodes, rootNodeId, site, (node) => {
+  // Materialize referenced VCs so loops see effective params and slots;
+  // hidden nodes are excluded, and repeated references yield one entry per id.
+  walkRenderTree(page.nodes, rootNodeId, site.visualComponents, (node) => {
     if (node.moduleId === 'base.loop' && !seen.has(node.id)) {
       seen.add(node.id)
       result.push(node as PageNode)
@@ -149,6 +180,7 @@ interface LoopProps {
   offset: number
   pagination: 'none' | 'infinite'
   pageSize: number
+  loadMoreMode: 'page' | 'all'
 }
 
 export function readLoopProps(node: PageNode): LoopProps {
@@ -166,6 +198,7 @@ export function readLoopProps(node: PageNode): LoopProps {
     pagination: props.pagination === 'infinite' ? 'infinite' : 'none',
     pageSize:
       typeof props.pageSize === 'number' && props.pageSize > 0 ? Math.floor(props.pageSize) : 10,
+    loadMoreMode: props.loadMoreMode === 'all' ? 'all' : 'page',
   }
 }
 
@@ -217,10 +250,9 @@ function readPageNumber(url: URL | undefined, loopNodeId: string): number {
  * - `pagination: 'infinite'` → fetch `pageSize` items at `offset + (page-1)*pageSize`,
  *   `hasMore` reflects whether more rows remain.
  *
- * Errors from a source are swallowed and the loop renders empty — one
- * misconfigured loop must not crash the whole page.
+ * Source errors propagate so publication cannot commit incomplete loop output.
  */
-async function resolveOneLoop(
+export async function resolveLoopPageData(
   node: PageNode,
   source: PrefetchedLoopEntitySource,
   ctx: {
@@ -230,22 +262,27 @@ async function resolveOneLoop(
     request?: SourceRequestContext
     branchId?: string
     drafts?: boolean
+    localization?: DataLocalizationContext
+    pageNumber?: number
   },
 ): Promise<ResolvedLoopData> {
   const props = readLoopProps(node)
-  const pageNumber = props.pagination === 'infinite' ? readPageNumber(ctx.url, node.id) : 1
+  const pageNumber = props.pagination === 'infinite' ? (ctx.pageNumber ?? readPageNumber(ctx.url, node.id)) : 1
+  const filters = resolveLoopQueryFilters(props.filters, readLoopQueryBindings(node.props.queryBindings),
+    ctx.url ? Object.fromEntries(ctx.url.searchParams) : {}, source.queryFilterKeys ?? [])
 
   let limit = props.limit
   let offset = props.offset
   if (props.pagination === 'infinite') {
-    limit = props.pageSize
-    offset = props.offset + (pageNumber - 1) * props.pageSize
+    const rest = props.loadMoreMode === 'all' && pageNumber > 1
+    limit = rest ? 2147483647 : props.pageSize
+    offset = props.offset + (rest ? pageNumber === 2 ? props.pageSize : 2147483647 : (pageNumber - 1) * props.pageSize)
   }
 
   const fetchCtx: SourceFetchContext = {
     db: ctx.db,
     site: ctx.site,
-    filters: props.filters,
+    filters,
     orderBy: props.orderBy || (source.orderByOptions[0]?.id ?? ''),
     direction: props.direction,
     limit,
@@ -255,21 +292,14 @@ async function resolveOneLoop(
     request: ctx.request,
     branchId: ctx.branchId,
     drafts: ctx.drafts,
+    localization: ctx.localization,
   }
 
-  try {
-    const result = await source.fetch(fetchCtx)
-    const consumed = offset + result.items.length
-    return {
-      items: result.items,
-      totalItems: result.totalItems,
-      pageNumber,
-      hasMore: props.pagination === 'infinite' && consumed < result.totalItems,
-    }
-  } catch (err) {
-    console.error(`[loopPrefetch] source "${source.id}" failed for node "${node.id}":`, err)
-    return { items: [], totalItems: 0, pageNumber, hasMore: false }
-  }
+  const result = await source.fetch(fetchCtx)
+  const consumed = offset + result.items.length
+  return { items: result.items, totalItems: result.totalItems, pageNumber,
+    hasMore: props.pagination === 'infinite' && consumed < result.totalItems }
+
 }
 
 /**
@@ -294,10 +324,15 @@ export async function prefetchLoopData(
     /** Branch whose rows loops read; absent means main (publishing, public routes). */
     branchId?: string
     drafts?: boolean
+    /** Supplied by the shared terminal-page / entry render-context builder. */
+    templateContext?: TemplateRenderDataContext
   },
 ): Promise<LoopDataMap> {
   const nodes = collectLoopNodes(page, site, options?.rootNodeId)
   if (nodes.length === 0) return new Map()
+
+  const templateContext = options?.templateContext ?? buildTemplateRenderContext(page, site, { entryStack: [] })
+  const localization = templateContext.site?.language ? { language: templateContext.site.language, translations: templateContext.site.translations } : undefined
 
   const entries: Array<[string, ResolvedLoopData]> = await Promise.all(
     nodes.map(async (node) => {
@@ -309,13 +344,14 @@ export async function prefetchLoopData(
           { items: [], totalItems: 0, pageNumber: 1, hasMore: false },
         ] as [string, ResolvedLoopData]
       }
-      const data = await resolveOneLoop(node, source, {
+      const data = await resolveLoopPageData(node, source, {
         db,
         site,
         url,
         request: options?.request,
         branchId: options?.branchId,
         drafts: options?.drafts,
+        localization,
       })
       return [node.id, data] as [string, ResolvedLoopData]
     }),

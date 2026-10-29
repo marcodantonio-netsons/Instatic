@@ -71,7 +71,7 @@ describe('generateCanvasClassCSS', () => {
     // the iframe document and never touches editor chrome. We emit the
     // SAME unscoped reset the publisher ships, so the cascade is identical
     // between canvas preview and live site.
-    expect(css).toContain(':where(*, *::before, *::after) { box-sizing: border-box; }')
+    expect(css).toContain(':where(*), ::before, ::after { box-sizing: border-box; }')
     expect(css).toContain(':where(*) { margin: 0; padding: 0; }')
     expect(css).toContain('font-family: system-ui')
     // No `[data-breakpoint-id]` prefix on the reset itself — it's unscoped.

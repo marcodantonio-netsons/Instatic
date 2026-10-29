@@ -150,6 +150,7 @@ function buildClassicRuntimeFiles(
       placement: script.config.placement,
       timing: script.config.timing,
       priority: script.config.priority,
+      ...(script.config.resourceOrigins ? { resourceOrigins: script.config.resourceOrigins } : {}),
     })
   }
 
@@ -372,6 +373,10 @@ export async function buildSiteRuntimeScripts(
       format: 'esm',
       logLevel: 'silent',
       metafile: true,
+      // Published bundles carry their npm dependencies (GSAP alone is ~170 kB
+      // unminified), so publish output is minified. Canvas builds stay
+      // readable for the inline source maps below.
+      minify: input.target === 'publish',
       nodePaths: [
         ...(
           input.dependencyCache?.nodeModulesDir
@@ -449,6 +454,7 @@ export async function buildSiteRuntimeScripts(
           placement: script.config.placement,
           timing: script.config.timing,
           priority: script.config.priority,
+          ...(script.config.resourceOrigins ? { resourceOrigins: script.config.resourceOrigins } : {}),
         }
       })
       .filter((script): script is PublishedRuntimeScriptAsset => script !== null)

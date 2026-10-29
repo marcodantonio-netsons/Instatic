@@ -90,6 +90,44 @@ api.editor.palette.registerProvider({
 
 Both `registerCommand` and `registerProvider` require the `editor.commands` permission in `plugin.json`.
 
+## Module publish requirements
+
+For a TypeScript module pack built by `bun instatic-plugin build`, define normal prop defaults with `propsSchema` and cross-field output requirements with `publishSchema`. Both use declarative TypeBox schemas and survive the QuickJS metadata boundary; transforms with executable encode/decode functions are rejected.
+
+```ts
+import { Type } from '@sinclair/typebox'
+import { defineModule, control } from '@instatic/plugin-sdk'
+
+const propsSchema = Type.Object({ count: Type.Integer({ default: 1 }) })
+const publishSchema = Type.Object({
+  props: Type.Object({ count: Type.Integer({ minimum: 1 }) }),
+})
+export default [defineModule({
+  id: 'acme.template.count', name: 'Count', category: 'Template',
+  defaults: { count: 1 }, propsSchema, publishSchema,
+  schema: { count: control.number('Count') },
+  render: ({ props }) => ({ html: '<p>' + props.count + '</p>' }),
+})]
+```
+
+`publishSchema` sees resolved bindings rather than editorial fallback values. A failure is a typed publish error with a page/node/schema path. Add the module entrypoint and `modules.register` permission to a module-pack manifest as described in [the plugin system](../../../docs/features/plugin-system.md).
+
+## Localized CMS queries
+
+Plugins that declare and receive `cms.content.read` plus the matching `contentAccess` read mode can query a localized table with an explicit language:
+
+```js
+const page = await api.cms.content.table('articles').list({
+  language: 'de',
+  filter: { heading: { like: '%Sicherheit%' } },
+  orderBy: { heading: 'asc' },
+  limit: 10,
+})
+const { results, localization } = await api.cms.content.search('Sicherheit', { language: 'de', limit: 25 })
+```
+
+The configured language files supply the text; list entries retain their raw `{ key }` authoring cells. Queries derive text before filtering, ordering, counting and paging. Omitting a language returns choices and permits authoring reads, but a localized field comparison/order fails. Search without a language reads only slug metadata in localized tables. Catalogue projections contain only keys referenced by the authorized table, never source files or unrelated text. This starter's default manifest does not request content access; declare the tables your plugin needs before using these calls.
+
 ## Permissions
 
 The template requests:
@@ -142,6 +180,17 @@ await api.cms.media.upsert({
 ```
 
 The path is package-relative. Plugins cannot read arbitrary host filesystem paths through this API.
+
+## Canvas module resources
+
+For modules created by `bun instatic-plugin init`, declare invariant payloads on the module definition:
+
+```ts
+assets: { css: '.hello { padding: 12px; }' },
+render: ({ props }) => ({ html: html`<div class="hello">${props.message}</div>` }),
+```
+
+A published runtime belongs in `assets.js` and requires the plugin's **granted** `frontend.assets` permission. Render output contains HTML and optional boolean `assetUsage`, never CSS/JS payloads. Use native classes and node properties for instance styling. See the [module SDK contract](../../../docs/features/plugin-system.md).
 
 ## Further reading
 

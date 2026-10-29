@@ -398,7 +398,9 @@ Styling rides on the `html` payload — there is no separate `classes` parameter
 
 - a bare `.foo {}` rule → a reusable Selectors-panel **class**, bound to every `class="foo"` node in the fragment;
 - class-bearing selectors (`.hero a`, `.group:hover .group-hover\:block`) → a **class** rule whose decoded binding name is the rightmost class token and whose full selector is preserved;
-- class-free selectors (`a:hover`, `nav > li`) → an **ambient** rule (media queries fold into the matching breakpoint's `contextStyles`);
+- class-free selectors (`a:hover`, `nav > li`) → an **ambient** rule;
+- repeated selectors and conditional occurrences → separate ordered fragments; one class identity remains assignable, and `grouping` preserves the exact nested media/supports/container/layer path;
+- layer openings, layer-order statements and `@property` registrations → typed stylesheet metadata, retained even when unused class declarations are pruned;
 - supported stylesheet-level rules such as `@keyframes` → ambient raw CSS rules emitted by the publisher;
 - inline `style="…"` attributes → the node's inline styles.
 
@@ -406,12 +408,16 @@ Styling rides on the `html` payload — there is no separate `classes` parameter
 
 **Authoring CSS with `site_apply_css`.** The required `operation` discriminator makes destructive intent explicit:
 
-- `{ operation: "merge", css }` creates missing selectors and patches only the supplied declarations/contexts. Touched declarations move to the end of the stored rule in authored order, so longhand/shorthand cascade order stays truthful.
+- `{ operation: "merge", css }` creates missing selectors and patches only the supplied declarations/contexts. Touched properties are removed from their old fragments, and incoming declarations retain separate ordered fragments at the addressed source positions. Untouched declarations stay in their original fragments. No merge depends on object-key order, so Postgres JSONB cannot reverse a shorthand and a longhand.
 - `{ operation: "replace", css }` makes every supplied selector's complete CSS payload authoritative: omitted base declarations and contexts are removed, while stable rule id, cascade order, metadata, and class assignments survive. An empty `.foo {}` therefore clears its CSS without detaching the class.
 - `{ operation: "remove-properties", selectors, properties }` removes CSS-native property names from base plus every viewport/custom-condition bag without rebuilding unrelated CSS. Vendor names and custom properties are accepted; emitted `padding`/`margin` shorthands also clear their stored side longhands.
 - `{ operation: "delete", selectors }` removes every exact matching rule; class-kind rules are detached from page and Visual Component nodes in the same undo step.
 
-Selectors are matched by their exact emitted text across rule kinds. `.grad`, `.hero .grad`, and `.grad, .hero .grad` are separate rules—there is no unsafe attempt at semantic selector equivalence. Destructive batches preflight missing/locked targets and fail without partial mutation. Merge/replace accept real CSS through `cssToStyleRules`, including conditions, vendor/custom properties, raw keyframes, and structurally preserved `!important`. Framework-generated locked utilities are never changed. `<style>`-only `site_insert_html`/`site_replace_node_html` payloads keep merge behavior as a forgiving fallback; a `<style>` block accompanying inserted elements remains additive (`mergeImportedStyleRules`) so dropping in structure cannot clobber a shared rule.
+Merge matches exact selector text and the native grouping path. A named layer is addressed by its name; anonymous layer occurrences remain independent. A single incoming property patch replaces its last matching source occurrence; a repeated incoming program pairs with existing occurrences in source order. Additional declarations insert beside the addressed occurrence, preserving the position of intervening selectors and conditions. Replace makes the selector's complete conditional cascade authoritative within its addressed layer path and retains its assignable class identity even when only conditional declarations remain. `.grad`, `.hero .grad`, and `.grad, .hero .grad` remain separate selectors. Delete and property removal address every exact selector occurrence. Destructive batches preflight missing/locked targets and fail without partial mutation. The parser accepts conditions, layers, registered properties, vendor/custom properties, keyframes, and declaration priorities without collapsing authored fragments. Framework-generated locked utilities are never changed. A `<style>`-only HTML payload uses the same merge operation; accompanying inserted elements use additive source-fragment insertion, retaining all declarations and one assignable identity per class name. CSS rule result counts report native fragments, including ambient companions. The merge/persistence contract is covered by `src/__tests__/editor-store/styleRuleSlice.test.ts` and `src/__tests__/siteImport/cssToStyleRules-persistence.test.ts`.
+
+Compact editor rules containing base and responsive bags are materialized by `store/slices/styleRule/contextFragments.ts` in the publisher's base, custom-condition, and viewport order before a non-empty CSS patch. Context fragments carry an explicit grouping identity, so subsequent base patches remain before their overrides. A replacement that retains only a later conditional rule keeps the assigned class as an empty anchor at its original position. New fragments use strict numeric cascade orders; insertion renumbers the existing stable sequence only when a tied order or exhausted numeric interval prevents a unique position.
+
+Class renames update matching class tokens in dependent selectors. Duplicating a class copies every fragment with that styled subject beside its source occurrence, preserving anonymous layer identity and nested conditions. Removing a grouping condition removes the conditional fragment instead of lifting its declarations into unconditional CSS. Structural stylesheet metadata is excluded from class picker controls.
 
 **Loops through HTML.** A repeated list is authored with the custom importer marker:
 
@@ -521,7 +527,7 @@ Content-scope tools are registered under `server/ai/tools/content/`. They use th
 
 - `ContentAgentMount` builds a `ContentSnapshot` from the live Content workspace: visible `postType` collections, active collection id, active document fields/schema, and current user identity.
 - `contentAgentStore.ts` mounts a standalone `AgentSlice` instance per `ContentPage` mount. The Content workspace is hook-based rather than a global Zustand store, so the bridge is exposed through `contentBridgeHandle.ts`.
-- Server read tools hit the data, media, and user repositories through `ctx.db`; write tools are browser-bridged so unsaved draft state in `useContentEntryDraft` and the Tiptap body editor stay authoritative.
+- Server read tools hit the data, media, and user repositories through `ctx.db`, and every document read resolves the table family and row ownership through `server/auth/dataAccess.ts` for the calling identity (`ctx.userId` + `ctx.capabilities`), exactly as `GET /admin/api/cms/data/rows/:id` does: a `content.edit.own` caller sees only its own rows, and system-table rows need `data.system.tables.read`; write tools are browser-bridged so unsaved draft state in `useContentEntryDraft` and the Tiptap body editor stay authoritative.
 
 **Server-side content reads — 7**
 
@@ -550,6 +556,8 @@ Content-scope tools are registered under `server/ai/tools/content/`. They use th
 
 The content system prompt is markdown-native: it tells the model to exchange body content as standard markdown, to read schemas before writing unfamiliar fields, and to prefer `content_set_document_fields` for whole-post generation. The prompt is built with the same `[staticPrefix, SYSTEM_PROMPT_DYNAMIC_BOUNDARY, dynamicSuffix]` shape as the Site prompt so provider prompt caching works the same way.
 
+Snapshot frame readiness is event-driven: `waitForAgentRenderFrame` observes canvas mounts and readiness markers, with a 250 ms fallback poll. It retains the five-second deadline and rejects frames that become ready after it, including when background-tab timers are throttled.
+
 ### Heavy evidence — image channel + vision gating + elision
 
 `site_render_snapshot` (and `site_read_document` / `site_get_node_html`) return large payloads. Five rules keep them from exploding context (a screenshot inlined as base64 JSON text once pushed a single turn past 1M tokens):
@@ -577,7 +585,7 @@ Drivers that support explicit prompt-cache controls (Anthropic) apply `cache_con
 `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` is the literal `'__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__'`, declared **once** in `server/ai/runtime/types.ts` and imported everywhere — prompt builders and every driver. A duplicate definition would silently break prompt caching on whichever driver drifted. Gated by `ai-driver-shared-helpers.test.ts`.
 
 **Static prefix key rules** (full text lives in `server/ai/tools/site/systemPrompt.ts`):
-- **Design system first.** Establish or reuse tokens before/while building (`site_set_color_tokens`, `site_set_type_scale`, `site_set_spacing_scale`, `site_set_font_tokens`), then reference them in CSS (`var(--<slug>)`, `var(--text-l)`, `var(--space-m)`, `var(--<font-var>)`) instead of raw hex/px/font-family. The dynamic suffix's `Tokens —` line shows what already exists; `(none …)` means no design system yet.
+- **Design system first.** Establish or reuse tokens before/while building (`site_set_color_tokens`, `site_set_type_scale`, `site_set_spacing_scale`, `site_set_font_tokens`), then reference them in CSS (`var(--<slug>)`, `var(--text-l)`, `var(--space-m)`, `var(--font-heading)`) instead of raw hex/px/font-family. Fonts use the role tokens `font-heading`, `font-body` and `font-mono`, which new sites already have; the prompt tells the model to change a typeface by updating the role token rather than inventing a new font variable. The dynamic suffix's `Tokens —` line shows what already exists; `(none …)` means no design system yet.
 - Structure as HTML (`site_insert_html` / `site_replace_node_html`); style with CSS in the same payload — a `<style>` block and/or `class=` attributes referencing the design tokens. The importer classifies selectors, so the agent never hand-builds classes at insert time.
 - `<style>` blocks inside imported HTML are parsed: class-bearing selectors become Selectors-panel classes while preserving complex selector text, class-free selectors (`a:hover`) become ambient rules, and supported `@keyframes` publish as raw keyframes CSS. `style=` attributes land on the node's inline styles. These are applied — not stripped.
 - CSS-only edits use an explicit `site_apply_css` operation: merge for additive patches, remove-properties for stale declarations, replace only with the selector's complete desired CSS, and delete for whole exact rules. Read the document first before destructive operations; grouped and ungrouped selectors are different identities.

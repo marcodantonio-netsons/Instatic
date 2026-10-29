@@ -173,10 +173,8 @@ describe('renderNode', () => {
     'base.text',
     {
       canHaveChildren: false,
-      render: (props, _children) => ({
-        html: `<h${props.level}>${props.text}</h${props.level}>`,
-        css: 'h1,h2,h3,h4,h5,h6 { font-family: sans-serif; }',
-      }),
+      assets: { css: 'h1,h2,h3,h4,h5,h6 { font-family: sans-serif; }' },
+      render: (props, _children) => ({ html: `<h${props.level}>${props.text}</h${props.level}>` }),
     },
   )
 
@@ -184,10 +182,8 @@ describe('renderNode', () => {
     'base.container',
     {
       canHaveChildren: true,
-      render: (props, children) => ({
-        html: `<div class="${props.className}">${children.join('')}</div>`,
-        css: '.instatic-container { display: block; }',
-      }),
+      assets: { css: '.instatic-container { display: block; }' },
+      render: (props, children) => ({ html: `<div class="${props.className}">${children.join('')}</div>` }),
     },
   )
 
@@ -326,7 +322,7 @@ describe('renderNode', () => {
     const acc = makeAccumulators()
     const html = render(
       'root',
-      { ...ctx(page), dynamicNodeIds: new Set(['root']), publishVersion: 7 },
+      { ...ctx(page), dynamicNodeIds: new Set(['root']), snapshotHash: '7' },
       acc,
     )
     expect(html).toBe('')
@@ -673,10 +669,8 @@ describe('renderNode', () => {
 
 describe('publishPage', () => {
   const headingDef = makeModule('base.text', {
-    render: (props, _) => ({
-      html: `<h1>${(props as { text: string }).text}</h1>`,
-      css: 'h1 { color: black; }',
-    }),
+    assets: { css: 'h1 { color: black; }' },
+    render: (props, _) => ({ html: `<h1>${(props as { text: string }).text}</h1>` }),
   })
   const registry = makeRegistry({ 'base.text': headingDef })
   const site = makeSite()
@@ -747,11 +741,11 @@ describe('publishPage', () => {
     const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
     const { html } = publishPage(page, site, registry)
     // Reset rules — verify both core box-model and body baseline reach the page.
-    expect(html).toContain(':where(*, *::before, *::after) { box-sizing: border-box; }')
+    expect(html).toContain(':where(*), ::before, ::after { box-sizing: border-box; }')
     expect(html).toContain(':where(*) { margin: 0; padding: 0; }')
     expect(html).toContain('font-family: system-ui')
     // Cascade order: reset must appear before module CSS so module rules win.
-    const resetIndex = html.indexOf(':where(*, *::before, *::after)')
+    const resetIndex = html.indexOf(':where(*), ::before, ::after')
     const moduleIndex = html.indexOf('h1 { color: black; }')
     expect(resetIndex).toBeGreaterThan(-1)
     expect(moduleIndex).toBeGreaterThan(resetIndex)
@@ -886,7 +880,7 @@ describe('publishPage', () => {
     const { html } = publishPage(page, proj, registry)
 
     expect(html).toContain(':root.theme-alt')
-    expect(html).toContain(':root.theme-default .theme-inverted')
+    expect(html).toContain(':root:not(.theme-alt) .theme-inverted')
     expect(html).not.toContain('theme-dark')
     expect(html).not.toContain('theme-light')
     expect(html).toContain('--primary: hsla(238, 100%, 62%, 1);')
@@ -894,6 +888,55 @@ describe('publishPage', () => {
     expect(html).toContain('.text-primary')
     expect(html).toContain('color: var(--primary);')
     expect(html).not.toContain('cf-theme')
+  })
+
+  it('a theme-inverted section on a published page takes the alt color values', () => {
+    const bandDef = makeModule('test.band', {
+      render: () => ({
+        html: '<section class="theme-inverted"><p>Band</p></section><p class="plain">Body</p>',
+      }),
+    })
+    const page = makePage({ root: { moduleId: 'test.band' } })
+    const proj = makeSite({
+      pages: [page],
+      settings: {
+        ...makeSite().settings,
+        framework: {
+          colors: {
+            tokens: [
+              {
+                id: 'bg-token',
+                category: 'Background',
+                slug: 'bg-body',
+                lightValue: 'hsla(0, 0%, 100%, 1)',
+                darkValue: 'hsla(0, 0%, 5%, 1)',
+                darkModeEnabled: true,
+                generateUtilities: { text: false, background: true, border: false, fill: false },
+                generateTransparent: false,
+                generateShades: { enabled: false, count: 0 },
+                generateTints: { enabled: false, count: 0 },
+                order: 0,
+                createdAt: 1,
+                updatedAt: 1,
+              },
+            ],
+          },
+        },
+      },
+    })
+
+    const { html } = publishPage(page, proj, makeRegistry({ 'test.band': bandDef }))
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const css = [...doc.querySelectorAll('style')].map((style) => style.textContent).join('\n')
+    const altSelectors = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+      .filter((match) => match[2].includes('--bg-body: hsla(0, 0%, 5%, 1);'))
+      .map((match) => match[1].trim())
+      .join(',\n')
+
+    expect(altSelectors).not.toBe('')
+    expect(doc.querySelector('.theme-inverted')?.matches(altSelectors)).toBe(true)
+    expect(doc.querySelector('.plain')?.matches(altSelectors)).toBe(false)
+    expect(doc.documentElement.matches(altSelectors)).toBe(false)
   })
 
   it('CSP: every published page includes Content-Security-Policy meta tag (Constraint #227)', () => {
@@ -909,10 +952,8 @@ describe('publishPage', () => {
     // and inject a <script>. After sanitization, </style> is removed, so the <script>
     // text remains INSIDE the <style> block where it is harmless raw text (not parsed as HTML).
     const evilModuleDef = makeModule('evil.module', {
-      render: (_props, _children) => ({
-        html: '<p>hello</p>',
-        css: 'p { color: red; } </style><script>alert(1)</script><style>',
-      }),
+      assets: { css: 'p { color: red; } </style><script>alert(1)</script><style>' },
+      render: (_props, _children) => ({ html: '<p>hello</p>' }),
     })
     const reg = makeRegistry({ 'evil.module': evilModuleDef })
     const page = makePage({ root: { moduleId: 'evil.module', props: {} } })

@@ -1,3 +1,4 @@
+import { buildTemplateRenderContext } from '@core/templates'
 /**
  * Draft-aware preview rendering for the Content workspace's Live mode.
  *
@@ -19,7 +20,7 @@
 
 import { Type } from '@sinclair/typebox'
 import type { DbClient } from '../../../db/client'
-import type { DataRow, DataRowCells, PublishedDataRow } from '@core/data/schemas'
+import type { DataRow, DataRowCells, DataTable, PublishedDataRow } from '@core/data/schemas'
 import { readEntrySeoOverride } from '@core/data/cells'
 import { resolveTemplateChain, composeTemplateChain } from '@core/templates'
 import { buildRouteFrame } from '@core/templates/contextFrames'
@@ -27,14 +28,15 @@ import { publishPage } from '@core/publisher'
 import { buildSiteCssBundle } from '../../../publish/siteCssBundle'
 import { buildPublishedSiteModuleJsMap } from '../../../publish/moduleJsBundle'
 import { getPublishVersion } from '../../../publish/publishState'
-import { prefetchLoopData, publishedDataRowToLoopItem } from '../../../publish/loopPrefetch'
+import { prefetchLoopData, publishedDataRowToEntryItem } from '../../../publish/loopPrefetch'
 import { prefetchMediaAssets } from '../../../publish/mediaPrefetch'
 import { registry } from '@core/module-engine'
 import { getLatestPublishedSiteSnapshot } from '../../../repositories/publish'
-import { getDataRow, getDataTable } from '../../../repositories/data'
+import { getDataRow, getDataTable, assertLocalizedDataPrincipalWrite } from '../../../repositories/data'
 import { applyPublishedHtmlPipeline } from '../../../publish/publishedHtmlPipeline'
 import { badRequest, jsonResponse, readValidatedBody } from '../../../http'
-import { canReadDataRow, canReadTable, forbidden, requireDataAccess } from './access'
+import { forbidden, requireDataAccess } from './access'
+import { canReadDataRow, canReadTable } from '../../../auth/dataAccess'
 import type { RouteParams } from '../routeTable'
 import type { BranchScope } from '../../../branches/scope'
 
@@ -80,6 +82,8 @@ export async function handleRowPreview(
 
   const body = await readValidatedBody(req, PreviewBodySchema)
   if (!body) return badRequest('Body must be { cells?: Record<string, unknown> }')
+  // A render-only draft override must not turn into an arbitrary catalogue reader.
+  await assertLocalizedDataPrincipalWrite(db, scope, table.fields, body.cells ?? {}, user, 'preview.cells')
 
   const draftCells: DataRowCells = {
     ...row.cells,
@@ -112,20 +116,21 @@ export async function handleRowPreview(
 
   const publicPath = buildEntryPublicPath(table.routeBase, draftPublishedRow.slug)
   const syntheticUrl = new URL(`http://localhost${publicPath}`)
-  const templateContext = {
-    entryStack: [publishedDataRowToLoopItem(draftPublishedRow)],
-    route: buildRouteFrame(syntheticUrl.toString()),
-  }
+  const nativeContext = buildTemplateRenderContext(merged, snapshot.site, { entryStack: [], route: buildRouteFrame(syntheticUrl.toString()) })
+  const localization = nativeContext.site?.language ? { language: nativeContext.site.language, translations: nativeContext.site.translations } : undefined
+  const templateContext = { ...nativeContext, entryStack: [await publishedDataRowToEntryItem(db, draftPublishedRow, table.fields, localization)] }
   const loopData = await prefetchLoopData(merged, snapshot.site, db, undefined, {
     branchId: scope.branchId,
+    templateContext,
   })
   const mediaAssets = await prefetchMediaAssets(merged, snapshot.site, registry, db, {
     templateContext,
     loopData,
   })
-  const cssBundle = buildSiteCssBundle(snapshot.site, registry, merged, { mediaAssets })
+  const cssBundle = buildSiteCssBundle(snapshot.site, registry, merged, { mediaAssets, runtimeAssets: snapshot.runtimeAssets })
 
   const published = publishPage(merged, snapshot.site, registry, {
+    visitorPreferencesStorage: 'memory',
     templateContext,
     documentMeta: readEntrySeoOverride(draftCells),
     runtimeAssets: snapshot.runtimeAssets,
@@ -166,7 +171,7 @@ export async function handleRowPreview(
 
 function synthesisePublishedRow(
   row: DataRow,
-  table: { id: string; slug: string; routeBase: string; kind: string },
+  table: Pick<DataTable, 'id' | 'slug' | 'routeBase' | 'kind' | 'fields'>,
   cells: DataRowCells,
 ): PublishedDataRow {
   const now = new Date().toISOString()
@@ -177,6 +182,7 @@ function synthesisePublishedRow(
     tableId: row.tableId,
     tableSlug: table.slug,
     tableKind: 'postType',
+    tableFields: table.fields,
     tableRouteBase: table.routeBase,
     versionNumber: 0,
     cells,

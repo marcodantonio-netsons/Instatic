@@ -5,7 +5,7 @@ Modules are the building blocks the visual editor places on the canvas — `base
 A module declares:
 - A unique `id` (namespaced: `base.text`, `acme.product-card`)
 - A `PropertySchema` describing its props (drives the right-panel form)
-- A pure `render(props, renderedChildren)` function that returns `{ html, css? }`
+- A pure `render(props, renderedChildren)` function that returns `{ html, assetUsage?, cspSources? }`
 - An optional canvas `component` (React) for in-editor preview
 - Required metadata: `name`, `category`, `icon`, `version`, `trusted`, `canHaveChildren`, `defaults`
 
@@ -32,7 +32,7 @@ src/core/module-engine/
 ├── dependencies.ts      — module dependency normalization + checks
 ├── runtimeResolver.ts   — bare-specifier → runtime URL mapping for ESM modules
 ├── htmlTagBadge.ts      — resolveHtmlTagBadge (shared dispatch for htmlTag field)
-└── validateNodeProps.ts — coerce + default-fill authored props against propsSchema
+└── parseModuleProps.ts — prop coercion + per-property repair against propsSchema
 
 src/modules/base/
 ├── body/                — base.body (root container)
@@ -41,23 +41,34 @@ src/modules/base/
 ├── outlet/              — base.outlet (Content Outlet — template content slot)
 ├── button/              — base.button (anchor.ts — element-decision leaf)
 ├── link/                — base.link (content.ts — children/text fallback leaf)
+├── disclosure/          — base.disclosure (native details/summary + shared dismissal behavior)
 ├── image/               — base.image
 ├── svg/                 — base.svg (inline sanitized SVG)
 ├── video/               — base.video (youtube.ts — ID parse + embed URL leaf)
 ├── list/                — base.list (items.ts — textarea item-splitting leaf)
 ├── loop/                — base.loop
-├── forms/               — base.form and form-control primitives
+├── forms/               — base.form and form-control primitives (content.ts: submit children/label rule)
 ├── visualComponentRef/  — base.visual-component-ref
 ├── slotOutlet/          — base.slot-outlet (VC author side)
 ├── slotInstance/        — base.slot-instance (VC consumer side)
 ├── shared/
-│   └── anchorTarget.ts  — AnchorTargetSchema, ANCHOR_TARGET_OPTIONS, anchorRel() (button + link)
+│   └── anchorTarget.ts  — ANCHOR_TARGET_OPTIONS, anchorRel(), mergeAnchorRel(), anchorHtmlAttributes() (button + link; schema in @core/htmlAttributes)
 ├── utils/
 │   ├── escape.ts        — escapeHtml, safeUrl, sanitiseCssValue, buildStyle (re-exports publisher utils)
 │   ├── htmlTag.ts       — htmlTagControl, customHtmlTagControl (resolution lives in @core/htmlAttributes)
 │   └── mediaAttrs.ts    — buildMediaSrcset, pickMediaVariantUrl
 └── index.ts             — side-effect imports; each module self-registers on load
 ```
+
+---
+
+## Video titles and HTML attributes
+
+`base.video.title` is an optional authored title on the native `<video>` or YouTube `<iframe>`. Its default is empty; the renderer never invents a source-specific title. The title supports the normal bindings and language catalogue tokens. An empty title omits the attribute.
+
+The normal HTML attributes panel supports safe attributes such as `aria-label`, `aria-describedby`, `id` and `data-*`. Publication and canvas use the shared HTML attribute sanitiser. These attributes belong to the player, including the iframe inside a YouTube poster facade. HTML import preserves `title` in its native prop and keeps `aria-label` in the attributes bag independently.
+
+The generated-name catalogue reserves the source, poster, dimensions, playback flags, preload and iframe loading/permission attributes for Module settings. Decorative video still forces `aria-hidden="true"` and leaves source loading and autoplay to the visitor preference owner; custom attributes cannot override that policy.
 
 ---
 
@@ -157,9 +168,37 @@ interface ModuleDefinition<TProps extends Record<string, unknown>> {
 
 Constraint #179: **`render()` is pure** — no DOM, no React, no side effects. Inputs in, strings out.
 
-`render()` may also return `js` next to `html`/`css` — an optional vanilla-JS runtime for the module TYPE, deduplicated per moduleId (like CSS) and served as an external file at `/_instatic/module-js/<moduleId>.js` on published pages. Authoring contract: a self-contained IIFE; bind via document-level event delegation (hole fragments insert into the DOM after load); idempotent; no load-order assumptions; no framework runtimes. Size discipline in the spirit of the ~1 KB hole runtime — the ~8 KB form runtime is the ceiling, not the norm. Module JS never executes in the admin canvas: the canvas renders React editor components, never published render() output.
+Declare invariant CSS and vanilla-JS in `ModuleDefinition.assets`. `render()` returns HTML, optional boolean `assetUsage` and instance-specific CSP requirements; it never returns asset payloads. The actual render may disable a payload, for example a native HTML form with enhancement disabled. Published JS is served at `/_instatic/module-js/<moduleId>.js`. Author it as a self-contained, idempotent IIFE with document-level event delegation and no framework runtime. The editor reads declared CSS and never executes published module JS. See `src/core/module-engine/moduleAssets.ts` for the shared TypeBox schemas.
 
 ---
+
+## Native disclosures
+
+`base.disclosure` emits a semantic `<details>` around its authored child nodes.
+Author its first child as `base.container` with `tag: 'custom'` and
+`customTag: 'summary'`. Its text, icons and images are ordinary nested nodes;
+they use the same classes, attributes, language-file bindings and editing as
+the rest of the document. The summary itself can have its own classes and
+attributes. The module generates no implicit summary or label and adds no
+default visual CSS, ARIA menu roles, focus trap, or arrow-key navigation.
+
+`initiallyOpen` controls authored initial state. A nonempty `group` maps to the
+native HTML `name` attribute, so one related disclosure is open at a time. Keep
+members together and do not nest members of the same group. Only one member of
+a group should be initially open.
+
+`closeOnEscape` defaults to true; outside-click/tap and focus-leave dismissal
+default to false and are opt-in for navigation disclosures. Escape closes the
+innermost open disclosure and focuses its summary. Outside dismissal does not
+prevent the pointer's default action; closing restores focus only when it would
+remain in concealed content. Focus-leave dismissal preserves the new external
+focus. Native/scripted closing also moves any concealed focus back to summary.
+
+`disclosure/behavior.ts` owns one typed, self-contained document installer. The
+canvas leases that installer per mounted component; published pages receive its
+compiled function body via the existing external module-JS channel. Delegation
+handles dynamically inserted holes and installation is idempotent. Browser
+native summary activation and group exclusivity work without the enhancement.
 
 ## Property schema
 
@@ -196,6 +235,7 @@ schema: PropertySchema = {
 | `image`     | Media picker                                              | media id or URL                 |
 | `media`     | Media picker (any media type)                             | media id                        |
 | `svg`       | Inline SVG editor                                         | SVG markup string               |
+| `condition` | Structured recursive value rule editor | `PropertyCondition` or `null` |
 | `group`     | Collapsible section header (visual grouping only)         | — (no data shape change)        |
 
 `PropertyControl` is a discriminated union — `propertySchema.ts` has the full schema.
@@ -277,12 +317,12 @@ A plugin canvas module is rendered inside the editor's sandboxed iframe just lik
 The publisher's per-node flow (see [docs/features/publisher.md](publisher.md)):
 
 ```text
-For each node, bottom-up:
-  1. renderedChildren = node.children.map(renderNode)
-  2. effectiveProps  = resolveProps(node, breakpoint, def.schema)  ← merge breakpoint overrides
-  3. dynamicProps    = resolveDynamicProps(effectiveProps, ...)     ← template bindings
-  4. resolvedProps   = resolvePageRefProps(dynamicProps, pages)     ← cms:page:<id> → /path
-  5. validatedProps  = validateNodeProps(def, resolvedProps)        ← coerce + default-fill
+For each node, with common preparation before standard/special dispatch:
+  1. effectiveProps  = resolveProps(node, breakpoint, def.schema)   ← merge breakpoint overrides
+  2. dynamicProps    = resolveDynamicProps(effectiveProps, ...)     ← template bindings
+  3. resolvedProps   = resolvePageRefProps(dynamicProps, pages)     ← cms:page:<id> → /path
+  4. validatedProps  = parseModuleProps(def, resolvedProps)         ← coerce + per-property repair
+  5. renderedChildren = node.children.map(renderNode)              ← standard path; special renderers expand VC/loop children
   6. safeProps       = escapeProps(validatedProps, schema)          ← HTML-escape string props
   7. attachResolvedMediaByKey(safeProps, ...)                       ← prefetched media assets
   8. { html, css }  = def.render(safeProps, renderedChildren)
@@ -293,9 +333,11 @@ For each node, bottom-up:
 
 A module's CSS is **collected and deduped by `moduleId`** — emitting the same CSS for every instance is fine; it appears once in the published page bundle.
 
+Missing fields use defaults declared by `propsSchema`. If parsing fails, each declared prop is parsed independently; only a prop that cannot be repaired takes its module default. Valid authored siblings and unknown injected keys survive. A schema without per-property granularity uses module defaults. Required publishing behavior belongs in an explicit `publishSchema` over resolved `{ props, settings }`; that separate hard check raises `ModulePublishValidationError` with the page/node/schema path.
+
 `renderedChildren` is a `string[]` of already-rendered child HTML. Leaf modules (text, input, image) receive an empty array. Container-like modules join it: `renderedChildren.join('')`.
 
-String props arrive HTML-escaped by step 4. If you need to emit a raw unescaped attribute value (e.g. a pre-validated URL), use `escapeHtml(value)` from `@modules/base/utils/escape` before interpolating it into the HTML string.
+String props arrive HTML-escaped by step 6. If you need to emit a raw unescaped attribute value (e.g. a pre-validated URL), use `escapeHtml(value)` from `@modules/base/utils/escape` before interpolating it into the HTML string.
 
 ---
 
@@ -411,13 +453,13 @@ export const HeadingModule: ModuleDefinition<HeadingProps> = {
       ],
     },
   },
+  assets: { css: '.heading[data-align="center"] { text-align: center; } .heading[data-align="right"] { text-align: right; }' },
   component: HeadingEditor,
   htmlTag: 'h2',
   render: (props) => {
     const tag = `h${Math.max(1, Math.min(6, Number(props.level) || 2))}`
     return {
       html: `<${tag} class="heading" data-align="${props.align}">${props.text}</${tag}>`,
-      css: `.heading[data-align="center"] { text-align: center; } .heading[data-align="right"] { text-align: right; }`,
     }
   },
 }
@@ -504,3 +546,32 @@ At render time, `resolveDynamicProps(...)` substitutes the bound value. Used ins
   - `src/__tests__/module-engine/moduleConsolidation.test.ts` — publishBehavior contract, shared media helpers, transparent validation
   - `src/__tests__/base-modules-shared-render.test.ts` — shared-leaf helper contracts + golden publisher render bytes
   - `src/__tests__/base-modules-shared-render.editor.test.tsx` — canvas component parity with publisher helpers
+
+## Scroll rails, section navigation and tabs
+
+`src/modules/base/scrollNavigation/` provides ordinary authored elements with shared, dependency-free module runtimes. These modules add no visual theme or layout wrapper. Give rails their horizontal overflow/layout classes; give controls, buttons, links and panels their normal native style classes. Text and accessible labels support the standard language-file bindings.
+
+- `base.scroll-rail` emits a `<div>`. `stepRatio` and `minimumStep` determine the previous/next distance; `dragEnabled` enables pointer dragging. Keep the rail keyboard focusable with an authored `tabindex="0"` and give it an accessible label.
+- `base.scroll-controls` emits the next sibling `<div>` immediately after its rail. It contains ordinary authored hint text/wrappers and `base.scroll-button` nodes. Its controls appear only while the rail overflows. A button's `direction` is `previous` or `next`; `label` and `disabled` are authored props. Reaching an edge does not automatically disable a button. The runtime respects both the native visitor motion preference and the operating system's reduced-motion preference.
+- `base.section-nav` emits `<nav>` with ordinary fragment links. It updates `aria-current="location"` as the linked sections pass `activationOffset`; links retain their native navigation. All sections remain ordinary visible content.
+- `base.tabs` emits a `<div>` containing exactly one direct tab-list child (`base.container` with `role="tablist"`) and ordered direct `base.tab-panel` children. Put one `base.tab` per panel inside the tab list. Exactly one tab has `initiallySelected: true`; that matching panel has `initiallyHidden: false`, and all other panels have it set to true. Panels retain their complete authored children. Click, Left/Right, Home and End select a tab; arrow and boundary keys also focus it. The selected tab is the sole tab stop.
+
+`base.tab-link` keeps an ordinary anchor and its authored children. Set the target Tabs `groupId`, the target Tab `tabKey`, and matching `groupId`/`tabKey` on the link. Its `href` names an existing local fragment. A primary click selects the tab while preserving native fragment navigation; modifier clicks and new-tab targets retain ordinary link behavior. Group IDs, tab keys within a group, and link fragment targets must be unique in the rendered page.
+
+Rail controls bind structurally to their previous sibling rail. Tabs bind structurally within their closest Tabs owner; external Tab links use explicit authored group/key identities. No source-specific class lookup participates. An optional authored rail ID must remain unique; omit it in a repeated component to receive per-instance runtime identities. The runtime assigns unique ARIA IDs and ID references within each public document, including multiple instances of the same Visual Component. Section navigation uses its authored fragment targets, so those section IDs must be unique in the page as normal HTML requires.
+
+The design canvas preserves the authored element/class topology and keeps controls editable; public/live preview runs the shared runtime through `ModuleDefinition.assets.js`. Controls and inactive panels use small module-owned `[hidden]` rules. Pointer dragging exposes `data-instatic-dragging="true"` for authored state styling. Tabs expose the standard `aria-selected` and `hidden` attributes.
+
+`assertPageScrollNavigation` / `assertSiteScrollNavigation` in `src/core/publisher/scrollNavigationPreflight.ts` validate effective Visual Component and slot composition before publication. A detached Scroll button, controls without an immediately preceding rail, mismatched tab/panel counts, tabs outside the tab list, inconsistent initial visibility, or an unresolved/ambiguous external Tab link throws `ScrollNavigationConfigurationError` with the node path. Invalid authoring never publishes a guessed association. Native module TypeBox props and generated-attribute reservations own the behavior attributes.
+
+## Structural conditions
+
+`base.condition` renders children only when its authored or bound boolean `show` is true. Its `ModuleDefinition.shouldRenderChildren` hook lets the publisher prune inactive children before their bindings, validation and assets run. This is a general module contract; the publisher does not branch on a condition module ID. The canvas retains its normal editable placeholder for inactive conditional content.
+
+## Scroll state
+
+`base.scroll-state` emits the authored semantic `tag`/`customTag`, preserves children and classes, and exposes `data-instatic-scroll-state="before"|"after"` when a page-unique authored `targetId` crosses a viewport offset. `edge="end"` compares the target's bottom with `offset` pixels from the viewport top; `edge="start"` compares its top. Equality selects `after`. The module owns no positioning, colors or animation: author those through ordinary style-registry selectors on the state attribute. It can replace a container or wrap a shared component with an authored `display:contents` class, with state selectors styling descendants.
+
+The same document-scoped installer runs in the canvas iframe and the published page. Scroll, resize, target/document resizing, font/image loads and late fragment insertion update the state. A temporarily absent, duplicated or invalid runtime target exposes `unresolved`; it does not guess a different target. `assertPageScrollState`/`assertSiteScrollState` reject missing, ambiguous and self-referential authored targets after Visual Component/slot composition, as well as void controller tags. Targets use normal unique HTML IDs; do not repeat the same target ID in multiple Visual Component instances. Module/runtime attributes cannot be overridden through `htmlAttributes`.
+
+State changes are immediate and perform no scrolling. `data-instatic-scroll-motion="reduced"|"full"` reflects the native visitor/OS reduced-motion preference so authored state animations can honor it. The shared installer reference-counts canvas instances, restores original attributes and releases observers/listeners on the final cleanup.

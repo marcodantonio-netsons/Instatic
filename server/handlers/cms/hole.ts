@@ -1,3 +1,4 @@
+import { buildTemplateRenderContext } from '@core/templates'
 /**
  * `/_instatic/hole-runtime.js` and `/_instatic/hole/<nodeId>` endpoints — Layer C server islands.
  *
@@ -18,8 +19,8 @@
  *     every page load, and responds with `Cache-Control: no-store`.
  *
  * Version-awareness: the hole runtime stamps `data-instatic-version` on each
- * placeholder. The endpoint compares `?v=` to the current `publishVersion`; a
- * mismatch returns a lightweight stale sentinel so the next page load picks up
+ * placeholder. The endpoint compares `?v=` to the frozen site's content hash;
+ * a mismatch returns a lightweight stale sentinel so the next page load picks up
  * the new version.
  *
  * Inside the hole endpoint the RenderConfig has no `dynamicNodeIds` — the node
@@ -40,10 +41,10 @@ import type { SourceRequestContext } from '@core/loops/types'
 import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
 import { renderNode, type RenderConfig, type RenderAccumulators } from '@core/publisher'
-import { buildPageFrame, buildRouteFrame, buildSiteFrame } from '@core/templates/contextFrames'
+import { buildPageFrame, buildRouteFrame } from '@core/templates/contextFrames'
 import { prefetchLoopData } from '../../publish/loopPrefetch'
 import { getOrRender } from '../../publish/renderCache'
-import { getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshotCache'
+import { getPublishedNodeIndexForVersion, getPublishedSnapshotHash } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
 import { HOLE_RUNTIME_JS } from '../../publish/holeRuntime'
 import { stampFormPageTokens } from '../../forms/formRuntime'
@@ -125,9 +126,11 @@ async function renderHoleFragment(
   request: SourceRequestContext,
 ): Promise<string> {
   const route = buildRouteFrame(pageUrl.toString())
+  const templateContext = buildTemplateRenderContext(page, site, { entryStack: [], route })
   const loopData = await prefetchLoopData(page, site, db, pageUrl, {
     request,
     rootNodeId: nodeId,
+    templateContext,
   })
   const config: RenderConfig = {
     page,
@@ -135,12 +138,8 @@ async function renderHoleFragment(
     registry,
     breakpointId: undefined,
     loopData,
-    templateContext: {
-      entryStack: [],
-      page: buildPageFrame(page),
-      site: buildSiteFrame(site),
-      route,
-    },
+    templateContext,
+    snapshotHash: getPublishedSnapshotHash(site),
     // No dynamicNodeIds: inside a hole endpoint we render the full subtree.
   }
   const acc: RenderAccumulators = {
@@ -159,7 +158,7 @@ async function renderHoleFragment(
 /**
  * Render a single dynamic node subtree for Layer C hole hydration.
  *
- * GET `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>` → HTML fragment.
+ * GET `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>` → HTML fragment.
  */
 export async function handleHoleRequest(
   req: Request,
@@ -181,26 +180,22 @@ export async function handleHoleRequest(
     })
   }
 
-  // Version check — if the ?v= param doesn't match the current publish version,
-  // return a lightweight stale sentinel without caching. The next full page load
-  // will carry the correct version in its placeholder attributes.
-  const requestVersion = url.searchParams.get('v') ?? ''
+  // Cache generations change on row publishes, unpublishes and deletes too.
+  // Fragment validity instead follows the frozen site that produced its shell.
   const currentVersion = getPublishVersion()
-  if (requestVersion !== String(currentVersion)) {
-    return new Response('<instatic-hole-stale data-instatic-stale="true"></instatic-hole-stale>', {
-      headers: {
-        'content-type': 'text/html; charset=utf-8',
-        'cache-control': 'no-store',
-      },
-    })
-  }
-
-  // Load (memoised) snapshot for this version and find the node's page in O(1).
   const snap = await getPublishedNodeIndexForVersion(ctx.db, currentVersion)
   if (!snap) {
     return new Response('Site not published', {
       status: 404,
       headers: { 'content-type': 'text/plain; charset=utf-8' },
+    })
+  }
+  if (url.searchParams.get('v') !== snap.snapshotHash) {
+    return new Response('<instatic-hole-stale data-instatic-stale="true"></instatic-hole-stale>', {
+      headers: {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+      },
     })
   }
   const foundPage = snap.nodeIndex.get(nodeId)
@@ -214,12 +209,12 @@ export async function handleHoleRequest(
 
   // Reconstruct the originating page URL forwarded by the runtime (`u`). Falls
   // back to the page's own permalink when absent (older runtime / direct hit).
-  const pageUrlRaw = url.searchParams.get('u') ?? buildPageFrame(foundPage).permalink
+  const pageUrlRaw = url.searchParams.get('u') ?? buildPageFrame(foundPage, snap.site).permalink
   let pageUrl: URL
   try {
     pageUrl = new URL(pageUrlRaw, url.origin)
   } catch {
-    pageUrl = new URL(buildPageFrame(foundPage).permalink, url.origin)
+    pageUrl = new URL(buildPageFrame(foundPage, snap.site).permalink, url.origin)
   }
 
   const perVisitor = isPerVisitorHole(node)

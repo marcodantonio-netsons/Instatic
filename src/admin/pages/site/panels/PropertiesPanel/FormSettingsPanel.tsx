@@ -34,7 +34,9 @@ type FormTableOption = Pick<DataTable, 'id' | 'name' | 'kind' | 'system'>
 
 const FORM_MODE_OPTIONS: ReadonlyArray<{ value: FormMode; label: string }> = [
   { value: 'cms', label: 'CMS-native' },
-  { value: 'custom', label: 'Custom action' },
+  { value: 'custom', label: 'HTML action' },
+  { value: 'request', label: 'HTTP request' },
+  { value: 'local', label: 'Local interaction' },
 ]
 
 const FORM_PREVIEW_STATES: ReadonlyArray<{ value: FormPreviewState; label: string }> = [
@@ -606,7 +608,7 @@ function kicker(kind: FormSettingsAnalysis['kind']): string {
 
 function panelTitle(analysis: FormSettingsAnalysis): string {
   if (analysis.kind === 'form') {
-    return analysis.form?.mode === 'custom' ? 'Custom action form' : 'CMS-native form'
+    return analysis.form?.mode === 'local' ? 'Local interaction form' : analysis.form?.mode === 'custom' ? 'HTML action form' : analysis.form?.mode === 'request' ? 'HTTP request form' : 'CMS-native form'
   }
   if (analysis.kind === 'control') {
     return analysis.field ? analysis.field.label : 'Unbound control'

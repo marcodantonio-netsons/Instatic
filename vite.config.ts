@@ -5,7 +5,6 @@ import path from 'path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 
 const CMS_DEV_SERVER_ORIGIN = `http://localhost:${process.env.PORT ?? '3001'}`
-const FILE_EXTENSION_RE = /\.[a-zA-Z0-9]+$/
 
 function isEditorAppPath(pathname: string): boolean {
   return (
@@ -17,6 +16,8 @@ function isEditorAppPath(pathname: string): boolean {
     pathname.startsWith('/src/') ||
     pathname.startsWith('/node_modules/') ||
     pathname.startsWith('/assets/') ||
+    pathname.startsWith('/runtime/') ||
+    pathname === '/favicon.svg' ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/uploads/')
   )
@@ -29,16 +30,9 @@ function shouldProxyPublicSiteRequest(req: IncomingMessage): boolean {
   const { pathname } = new URL(req.url, CMS_DEV_SERVER_ORIGIN)
   if (isEditorAppPath(pathname)) return false
 
-  // Bun server namespaces — explicitly proxied even though they carry a file
-  // extension. The fallthrough rule below rejects anything with `.<ext>` to
-  // avoid swallowing requests for editor static assets, which means we have
-  // to opt in any backend route whose URL ends with `.something`.
-  //   /_instatic/assets/  → runtime script bundles (esbuild output)
-  //   /_instatic/css/     → per-site published CSS bundle (reset / framework / style)
-  if (pathname.startsWith('/_instatic/assets/')) return true
-  if (pathname.startsWith('/_instatic/css/')) return true
-
-  return pathname === '/' || !FILE_EXTENSION_RE.test(pathname)
+  // Public pages and files share the CMS router. A file extension does not
+  // make a request an editor asset; those namespaces are identified above.
+  return true
 }
 
 async function proxyPublicSiteRequest(

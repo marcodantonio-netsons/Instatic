@@ -24,6 +24,7 @@ import type {
   ModuleComponentProps,
 } from '@core/module-engine'
 import type { PluginManifest } from '@core/plugin-sdk'
+import type { ModuleAssets, ModuleAssetUsage } from '@core/module-engine-schema'
 import type {
   PluginEditorRuntime,
   PluginModuleDefinition,
@@ -32,6 +33,7 @@ import type {
   PluginModulesEntrypointModule,
 } from '@core/plugin-sdk'
 import { assertPluginPermission } from '@core/plugin-sdk'
+import { deserializeTypeBoxSchema } from '@core/utils/typeboxDeserialize'
 import {
   pluginModuleToHostModule,
   PluginModuleValidationError,
@@ -156,16 +158,19 @@ export interface SandboxedModulePack {
     version: string
     defaults: Record<string, unknown>
     schema: Record<string, unknown>
+    propsSchema?: string
+    publishSchema?: string
     canHaveChildren?: boolean
     htmlTag?: string
     hasPreview: boolean
+    assets?: ModuleAssets
     /** Package dependencies declared by the module — surfaced in the Dependencies Panel. */
     dependencies?: PluginModuleDependencies
     /** Optional iframe-backed editor preview source. */
     editorRuntime?: PluginEditorRuntime
   }>
-  render(moduleId: string, props: Record<string, unknown>, children: string[]): { html: string; css?: string; js?: string }
-  preview(moduleId: string, props: Record<string, unknown>, children: string[]): { html: string; css?: string; js?: string }
+  render(moduleId: string, props: Record<string, unknown>, children: string[]): { html: string; assetUsage?: ModuleAssetUsage }
+  preview(moduleId: string, props: Record<string, unknown>, children: string[]): { html: string; assetUsage?: ModuleAssetUsage }
   dispose(): void
 }
 
@@ -201,7 +206,10 @@ export function activateSandboxedPluginModulePack(
       // Schema shape from the SDK is `PluginPropertySchema` — already
       // serializable JSON, cast through `unknown` is safe.
       schema: meta.schema as unknown as PluginModuleDefinition['schema'],
+      propsSchema: deserializeTypeBoxSchema(meta.propsSchema),
+      publishSchema: deserializeTypeBoxSchema(meta.publishSchema),
       canHaveChildren: meta.canHaveChildren,
+      ...(meta.assets ? { assets: meta.assets } : {}),
       htmlTag: meta.htmlTag,
       ...(meta.dependencies ? { dependencies: meta.dependencies } : {}),
       ...(meta.editorRuntime ? { editorRuntime: meta.editorRuntime } : {}),

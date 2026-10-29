@@ -1,3 +1,4 @@
+import { resolveRowAccess } from '../../../auth/rowAccess'
 /**
  * Data-row endpoints.
  *
@@ -25,7 +26,6 @@ import {
 } from '../../../publish/contentEvents'
 import {
   cancelScheduledPublish,
-  getDataRow,
   getDataTable,
   listDataAuthorOptions,
   saveDataRowDraft,
@@ -39,6 +39,7 @@ import {
   listDataRowVersions,
 } from '../../../repositories/data'
 import { publishDataRow, removeDataRowArtefact } from '../../../publish/publishRow'
+import { PublicAssetValidationError } from '@core/files/publicAssets'
 import { runPublishFlush } from '../../../publish/publishFlush'
 import { findUserById } from '../../../repositories/users'
 import { slugForTable } from '@core/data/cells'
@@ -55,10 +56,6 @@ import {
   RowUpsertBodySchema,
 } from './schemas'
 import {
-  canEditDataRow,
-  canPublishDataRow,
-  canReadDataRow,
-  canReadTable,
   forbidden,
   requireDataAccess,
   requireDataAuthorManager,
@@ -66,6 +63,12 @@ import {
   requireDataPublisher,
   requireDataRowMover,
 } from './access'
+import {
+  canEditDataRow,
+  canPublishDataRow,
+  canReadDataRow,
+  type RowCheck,
+} from '../../../auth/dataAccess'
 import { handleRowPreview } from './preview'
 import { isMainScope, type BranchScope } from '../../../branches/scope'
 
@@ -130,24 +133,20 @@ async function recordRowAuditEvent(
  * Load a row and run the caller's access check. Returns a Response on
  * 404 / forbidden so call sites can `if (row instanceof Response) return row`.
  */
+// Bind the shared row-access decision to HTTP: an invisible row (missing, or in
+// a table family the user cannot see) answers 404 so the id leaks nothing; a
+// visible row the operation is not permitted on answers 403.
 async function loadRowForAccess(
   db: DbClient,
   scope: BranchScope,
   rowId: string,
   user: AuthUser,
-  check: (user: AuthUser, row: DataRow) => boolean,
+  check: RowCheck,
 ): Promise<DataRow | Response> {
-  const row = await getDataRow(db, scope, rowId)
-  if (!row) return rowNotFound()
-  // Enforce the table-family read boundary BEFORE the row-ownership check. A
-  // persona granted a broad content.* capability but NOT data.system.tables.read
-  // satisfies row ownership on every row, so without this it could read, edit,
-  // and publish system-table rows (pages/posts drafts, author identity). The
-  // schema-read sibling already checks this; the row layer did not (GHSA-x69h).
-  const table = await getDataTable(db, scope, row.tableId)
-  if (!table || !canReadTable(user, table)) return rowNotFound()
-  if (!check(user, row)) return forbidden()
-  return row
+  const access = await resolveRowAccess(db, scope, rowId, user, check)
+  if (access.kind === 'not-found') return rowNotFound()
+  if (access.kind === 'forbidden') return forbidden()
+  return access.row
 }
 
 // ---------------------------------------------------------------------------
@@ -268,7 +267,13 @@ async function handleRowPublish(
   const currentRow = await loadRowForAccess(db, scope, rowId, user, canPublishDataRow)
   if (currentRow instanceof Response) return currentRow
 
-  const result = await publishDataRow(db, rowId, user.id, options.uploadsDir)
+  let result: Awaited<ReturnType<typeof publishDataRow>>
+  try {
+    result = await publishDataRow(db, rowId, user.id, options.uploadsDir)
+  } catch (error) {
+    if (error instanceof PublicAssetValidationError) return jsonResponse({ error: error.message }, { status: 422 })
+    throw error
+  }
   await emitContentEntryUpdated(db, scope, rowId, ['status'], { kind: 'user', userId: user.id })
   await recordRowAuditEvent(db, user, req, 'data.row.publish', result.row, {
     versionNumber: result.version.versionNumber,
@@ -392,8 +397,12 @@ async function handleRowAuthor(
   const author = await findUserById(db, body.authorUserId)
   if (!author || author.status !== 'active') return badRequest('Author must be an active user')
 
-  const currentRow = await getDataRow(db, scope, rowId)
-  if (!currentRow) return rowNotFound()
+  // Reassignment is an edit of the row, so it rides the same table-family and
+  // ownership boundary as every other row write. Reading the row directly here
+  // let a content.edit.any persona without data.system.tables.read read and
+  // re-author system-table rows it could not open (GHSA-m425).
+  const currentRow = await loadRowForAccess(db, scope, rowId, user, canEditDataRow)
+  if (currentRow instanceof Response) return currentRow
 
   const row = await updateDataRowAuthor(db, scope, rowId, body.authorUserId, user.id)
   if (!row) return rowNotFound()

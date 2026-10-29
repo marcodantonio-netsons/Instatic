@@ -10,7 +10,7 @@
  * `import '@modules/base'` populates the module registry so `base.text`'s
  * inline-text prop (`text`) seeds as Y.Text — the character-merge substrate.
  */
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it, spyOn } from 'bun:test'
 import * as Y from 'yjs'
 import '@modules/base'
 import {
@@ -18,6 +18,7 @@ import {
   projectLayoutDoc,
   projectPageDoc,
   projectSiteDoc,
+  projectSiteRosters,
   reconcileTreeIntegrity,
   seedComponentDoc,
   seedLayoutDoc,
@@ -44,6 +45,21 @@ function fixturePage() {
 }
 
 describe('page doc seed → project round-trip', () => {
+  it('replicates native binary site files without changing payload identity', () => {
+    const file = {
+      id: 'public-data', path: 'public/data', type: 'asset' as const,
+      blob: { mimeType: 'application/json', base64: Buffer.from('{"native":true}').toString('base64') },
+      createdAt: 1, updatedAt: 2,
+    }
+    const source = new Y.Doc()
+    const replica = new Y.Doc()
+    const site = makeSite({ files: [file] })
+    seedSiteDoc(source, site)
+    Y.applyUpdate(replica, Y.encodeStateAsUpdate(source))
+    expect(validateSite({ ...site, ...projectSiteDoc(replica).shell }).files).toEqual([file])
+    source.destroy()
+    replica.destroy()
+  })
   it('projects back exactly the seeded page (parentId re-derived)', () => {
     const page = fixturePage()
     const doc = new Y.Doc()
@@ -130,6 +146,29 @@ describe('component + layout doc round-trips', () => {
 })
 
 describe('site doc (shell + rosters)', () => {
+  it('reads owned roster IDs without cloning or changing any shell data', () => {
+    const site = makeSite({
+      pages: [makePage({ id: 'b', slug: 'b' }), makePage({ id: 'a', slug: 'index' })],
+      visualComponents: [makeVC({ id: 'vc-b', name: 'B' }), makeVC({ id: 'vc-a', name: 'A' })],
+    })
+    const doc = new Y.Doc()
+    seedSiteDoc(doc, site)
+    const before = Y.encodeStateVector(doc)
+    const clone = spyOn(globalThis, 'structuredClone')
+    try {
+      const rosters = projectSiteRosters(doc)
+      expect(rosters).toEqual({ pages: ['b', 'a'], components: ['vc-a', 'vc-b'], layouts: [] })
+      expect(clone).not.toHaveBeenCalled()
+      // Returned arrays are caller-owned, just like full projection output.
+      rosters.pages.push('outside')
+      expect(projectSiteRosters(doc).pages).toEqual(['b', 'a'])
+      expect(Y.encodeStateVector(doc)).toEqual(before)
+    } finally {
+      clone.mockRestore()
+      doc.destroy()
+    }
+  })
+
   it('projects shell fields, per-entry maps, and rosters back', () => {
     const site = makeSite({
       name: 'Acme',

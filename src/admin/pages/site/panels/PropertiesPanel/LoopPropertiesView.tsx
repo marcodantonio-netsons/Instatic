@@ -13,10 +13,13 @@
  * Achromatic palette (Constraint #376). CSS Modules only (Constraint #402).
  */
 
+import { useEffect } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useEditorStore } from '@site/store/store'
 import { loopSourceRegistry } from '@core/loops/registry'
-import { ENTRY_FIELD_FILTER_KEY, ENTRY_FIELD_SOURCE_ID } from '@core/loops'
+import { ENTRY_FIELD_FILTER_KEY, ENTRY_FIELD_SOURCE_ID, readLoopQueryBindings } from '@core/loops'
+import { LoopSearchConfigurationSchema, type LoopSearchConfiguration } from '@core/loops-schema'
+import { parseValue } from '@core/utils/typeboxHelpers'
 import {
   CELL_ORDER_PREFIX,
   isCellComparableField,
@@ -31,6 +34,9 @@ import { getAncestors, type Page } from '@core/page-tree'
 import { PropertyControlRenderer } from '@site/property-controls/PropertyControlRenderer'
 import { CUSTOM_HTML_TAG_VALUE } from '@core/htmlAttributes'
 import { customHtmlTagControl, htmlTagControl } from '@modules/base/utils/htmlTag'
+import { pushToast } from '@ui/components/Toast'
+import { LoopQueryControls } from './LoopQueryControls'
+import { loopFormOptions } from './loopQueryModel'
 
 interface LoopPropertiesViewProps {
   nodeId: string
@@ -40,9 +46,11 @@ interface LoopPropertiesViewProps {
 
 export function LoopPropertiesView({ nodeId, props, activePage }: LoopPropertiesViewProps) {
   const updateNodeProps = useEditorStore((s) => s.updateNodeProps)
+  const site = useEditorStore((s) => s.site)
 
   const sources = loopSourceRegistry.list()
   const sourceId = typeof props.sourceId === 'string' ? props.sourceId : ''
+  const tableSource = sourceId === 'data.rows' || sourceId === 'data.pivot'
   const source: LoopEntitySource | undefined = sources.find((s) => s.id === sourceId)
 
   const filters =
@@ -51,16 +59,20 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
       : {}
 
   // Data table list — fetched lazily for the data.rows source's tableId picker.
-  // Other sources resolve to `null` (no fetch); a failed load resolves to an
-  // empty list so the picker degrades gracefully.
-  const { data: tables } = useAsyncResource<DataTableListItem[] | null>(
+  // Other sources resolve to `null` (no fetch); failed loads retain their
+  // real error and offer a retry through the ordinary toast bus.
+  const { data: tables, error: tablesError, refresh: refreshTables } = useAsyncResource<DataTableListItem[] | null>(
     () => (
-      sourceId === 'data.rows' || sourceId === ENTRY_FIELD_SOURCE_ID
-        ? listCmsDataTables().catch(() => [])
+      tableSource || sourceId === ENTRY_FIELD_SOURCE_ID
+        ? listCmsDataTables()
         : Promise.resolve(null)
     ),
-    [sourceId],
+    [sourceId, tableSource],
   )
+  useEffect(() => {
+    if (tablesError) pushToast({ kind: 'error', title: 'Could not load data tables', body: tablesError,
+      action: { label: 'Retry', onSelect: refreshTables } })
+  }, [tablesError, refreshTables])
 
   // A relation cell stores the referenced row's ID, so a free-text value box
   // would ask the author to type an opaque string the editor never shows them
@@ -68,25 +80,29 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
   // the referenced table's rows so the value can be picked by name instead.
   // Every other field type keeps the text box.
   const relationTargetTableId = (() => {
-    if (sourceId !== 'data.rows' || typeof filters.cellField !== 'string') return null
+    if (!tableSource || typeof filters.cellField !== 'string') return null
     const table = tables?.find((t) => t.id === filters.tableId)
     const field = table?.fields.find((f) => f.id === filters.cellField)
     return field?.type === 'relation' ? field.targetTableId : null
   })()
 
-  const { data: relationRows } = useAsyncResource<DataRow[] | null>(
+  const { data: relationRows, error: relationRowsError, refresh: refreshRelationRows } = useAsyncResource<DataRow[] | null>(
     () => (
       relationTargetTableId
-        ? listCmsDataRows(relationTargetTableId).catch(() => [])
+        ? listCmsDataRows(relationTargetTableId)
         : Promise.resolve(null)
     ),
     [relationTargetTableId],
   )
+  useEffect(() => {
+    if (relationRowsError) pushToast({ kind: 'error', title: 'Could not load related rows', body: relationRowsError,
+      action: { label: 'Retry', onSelect: refreshRelationRows } })
+  }, [relationRowsError, refreshRelationRows])
 
   // Build the per-source filter schema with dynamic options patched in.
   function buildFilterSchema(): PropertySchema {
     if (!source) return {}
-    if (source.id === 'data.rows' && tables) {
+    if (tableSource && tables) {
       const tableField = source.filterSchema.tableId
       if (tableField && tableField.type === 'select') {
         const selectedTable = tables.find((t) => t.id === filters.tableId)
@@ -171,7 +187,7 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
     options: source
       ? [
         ...source.orderByOptions.map((o) => ({ label: o.label, value: o.id })),
-        ...(source.id === 'data.rows'
+        ...(tableSource
           ? (tables?.find((t) => t.id === filters.tableId)?.fields ?? [])
             .filter(isCellComparableField)
             .map((f) => ({ label: `Field: ${f.label || f.id}`, value: `${CELL_ORDER_PREFIX}${f.id}` }))
@@ -187,6 +203,7 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
     updateNodeProps(nodeId, {
       sourceId: nextId,
       filters: {},
+      queryBindings: [],
       orderBy: next?.orderByOptions[0]?.id ?? '',
       direction: next?.kind === 'contextual' ? 'asc' : 'desc',
       pagination: next?.kind === 'contextual' ? 'none' : props.pagination,
@@ -204,8 +221,11 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
     // panel disagreeing with the query.
     if (key === 'tableId' && value !== filters.tableId) {
       const orderBy = typeof props.orderBy === 'string' ? props.orderBy : ''
+      delete nextFilters.search
+      delete nextFilters.searchText
       updateNodeProps(nodeId, {
         filters: withoutCellFilter(nextFilters),
+        queryBindings: [],
         ...(parseCellOrder(orderBy)
           ? { orderBy: source?.orderByOptions[0]?.id ?? '' }
           : {}),
@@ -222,6 +242,18 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
 
   const tagValue = typeof props.tag === 'string' ? props.tag : 'div'
   const customTagValue = typeof props.customTag === 'string' ? props.customTag : ''
+  const queryBindings = readLoopQueryBindings(props.queryBindings)
+  const search = filters.search === undefined ? undefined : parseValue(LoopSearchConfigurationSchema, filters.search)
+  const selectedTable = tables?.find(table => table.id === filters.tableId)
+  const searchFields = tableSource ? (selectedTable?.fields ?? [])
+    .filter(field => ['text', 'localizedText', 'longText', 'richText', 'number', 'url', 'email', 'select', 'date', 'dateTime'].includes(field.type))
+    .map(field => ({ label: field.label || field.id, value: field.id })) : []
+  function changeSearch(value: LoopSearchConfiguration | undefined) {
+    const next = { ...filters }
+    if (value) next.search = value
+    else { delete next.search; delete next.searchText }
+    updateNodeProps(nodeId, { filters: next, ...(!value ? { queryBindings: queryBindings.filter(binding => binding.filterKey !== 'searchText') } : {}) })
+  }
 
   return (
     <>
@@ -268,6 +300,15 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
 
       {source ? (
         <>
+          {source.kind !== 'contextual' ? <LoopQueryControls
+            search={search}
+            searchFields={searchFields}
+            bindings={queryBindings}
+            filterOptions={(source.queryFilterKeys ?? []).filter(key => key !== 'searchText' || search).map(key => ({ value: key, label: source.filterSchema[key]?.label ?? key }))}
+            forms={loopFormOptions(activePage, site)}
+            onSearchChange={changeSearch}
+            onBindingsChange={bindings => updateNodeProps(nodeId, { queryBindings: bindings })}
+          /> : null}
           {source.kind !== 'contextual' ? (
             <PropertyControlRenderer
               propKey="orderBy"
@@ -350,7 +391,8 @@ function entryCollectionFieldOptions(
 
   const enclosingDataRowsLoop = [...getAncestors(activePage, nodeId)]
     .reverse()
-    .find((node) => node.moduleId === 'base.loop' && node.props.sourceId === 'data.rows')
+    .find((node) => node.moduleId === 'base.loop' && (node.props.sourceId === 'data.rows' || node.props.sourceId === 'data.pivot'))
+  if (enclosingDataRowsLoop?.props.sourceId === 'data.pivot') return [{ label: 'Compared columns', value: 'columns' }, { label: 'Compared rows', value: 'rows' }, { label: 'Compared cells', value: 'cells' }]
   const filters = enclosingDataRowsLoop?.props.filters
   const enclosingTableId =
     filters && typeof filters === 'object' && !Array.isArray(filters)
@@ -373,7 +415,7 @@ function entryCollectionFieldOptions(
   for (const table of contextTables) {
     for (const field of table.fields) {
       const isCollection =
-        field.type === 'multiSelect' ||
+        field.type === 'multiSelect' || field.type === 'repeater' ||
         ((field.type === 'media' || field.type === 'relation') && field.allowMultiple === true)
       if (!isCollection || seen.has(field.id)) continue
       seen.add(field.id)

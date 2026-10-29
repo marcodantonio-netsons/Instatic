@@ -25,6 +25,8 @@ import { contentHash } from '../branches/contentHash'
 import type { DataRow } from '@core/data/schemas'
 import type { SiteDocument } from '@core/page-tree'
 import type { PublishedPageRuntimeAssets } from '@core/site-runtime'
+import { PublishedPageRuntimeAssetsSchema } from '@core/site-runtime'
+import { compiledCheck } from '@core/utils/typeboxCompiler'
 import type { PublishedRuntimePackageImportmap } from '@core/publisher'
 import type { DbClient } from '../db/client'
 import { MAIN_SCOPE, type BranchScope } from '../branches/scope'
@@ -96,7 +98,9 @@ export interface PersistSitePublishInput {
   site: SiteDocument
   serializedImportmap: { body: string; sha256: string } | null
   pages: PublishedPageVersionWrite[]
-  publishedByUserId: string
+  publishedByUserId: string | null
+  /** On a page-only publish, other rows retain their draft/status metadata. */
+  editedPageId?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +167,52 @@ export async function getDraftSiteDocument(
   }
 }
 
+/** A page-only publish needs an existing frozen shell, even when that page is scheduled. */
+export class PagePublishError extends Error {
+  readonly pageId: string
+
+  constructor(pageId: string, message: string) {
+    super(message)
+    this.name = 'PagePublishError'
+    this.pageId = pageId
+  }
+}
+
+/** Replace just the selected page; shared resources and all other pages stay published. */
+export async function getPagePublishDocument(db: DbClient, row: DataRow): Promise<SiteDocument> {
+  const { rows } = await db<{ site_json: SiteDocument }>`
+    select site_snapshots.site_json
+    from data_rows
+    join data_row_versions on data_row_versions.id = data_rows.active_version_id
+    join site_snapshots on site_snapshots.id = data_row_versions.site_snapshot_id
+    where data_rows.table_id = 'pages'
+      and data_rows.deleted_at is null
+      and (data_rows.status = 'published' or data_rows.id = ${row.id})
+    order by data_rows.created_at asc
+    limit 1
+  `
+  const site = rows[0]?.site_json
+  if (!site) throw new PagePublishError(row.id, 'Publish the site first before publishing an individual page.')
+  const pageRows = await listDataRows(db, MAIN_SCOPE, 'pages')
+  const publicIds = new Set(pageRows.filter((page) => page.status === 'published').map((page) => page.id))
+  const page = pageFromRow(row)
+  const pages = site.pages.filter((other) => other.id === row.id || publicIds.has(other.id))
+  if (pages.some((other) => other.id !== row.id && other.slug === page.slug)) {
+    throw new PagePublishError(row.id, `The published route "${page.slug}" belongs to another page. Publish the site to apply both route changes together.`)
+  }
+  for (const node of Object.values(page.nodes)) {
+    if (node.moduleId === 'base.visual-component-ref' && !site.visualComponents.some((vc) => vc.id === node.props.componentId)) {
+      throw new PagePublishError(row.id, 'This page uses an unpublished component. Publish the site first.')
+    }
+  }
+  return {
+    ...site,
+    pages: pages.some((other) => other.id === row.id)
+      ? pages.map((other) => other.id === row.id ? page : other)
+      : [...pages, page],
+  }
+}
+
 /**
  * Draft-vs-published comparison for the Publish control. Publishing only
  * exists on `main`, so this always reads the main draft.
@@ -223,11 +273,14 @@ export async function getDraftPublishStatus(db: DbClient): Promise<DraftPublishS
  * each page row to `published`. DB writes only — every expensive non-DB
  * build (runtime bundling, rendering) happens in the orchestrator BEFORE
  * this is called, so the SQLite adapter's serialized transaction chain is
- * held for milliseconds, not seconds.
+ * held for milliseconds, not seconds. The orchestrator's already-staged
+ * generation activates as the final transaction step; an activation failure
+ * rolls back every snapshot/version write.
  */
 export async function persistSitePublish(
   db: DbClient,
   input: PersistSitePublishInput,
+  activateGeneration: () => Promise<void>,
 ): Promise<void> {
   await db.transaction(async (tx) => {
     // The site document is stored ONCE per publish; every page version row
@@ -245,9 +298,22 @@ export async function persistSitePublish(
     `
 
     for (const page of input.pages) {
+      const refreshOnly = input.editedPageId !== undefined && input.editedPageId !== page.pageId
+      const { rows: previousRows } = await tx<{
+        active_version_id: string | null
+        published_by_user_id: string | null
+        published_at: string | Date | null
+      }>`
+        select active_version_id, published_by_user_id, published_at
+        from data_rows where id = ${page.pageId}
+      `
+      const previous = previousRows[0]
+      const previousVersionId = previous?.active_version_id ?? null
+      const publisherUserId = refreshOnly ? previous?.published_by_user_id ?? null : input.publishedByUserId
+      const publishedAt = refreshOnly ? previous?.published_at ?? nowIso() : nowIso()
       await tx`
         insert into data_row_versions
-          (id, row_id, version_number, cells_json, slug, site_snapshot_id, runtime_assets_json, published_by_user_id)
+          (id, row_id, version_number, cells_json, slug, site_snapshot_id, runtime_assets_json, published_by_user_id, published_at)
         values (
           ${page.versionId},
           ${page.pageId},
@@ -256,12 +322,16 @@ export async function persistSitePublish(
           ${page.slug},
           ${input.siteSnapshotId},
           ${page.runtimeAssets},
-          ${input.publishedByUserId}
+          ${publisherUserId},
+          ${publishedAt}
         )
       `
       await savePublishedRuntimeAssets(tx, page.versionId, page.runtimeFiles)
       const now = nowIso()
-      const { rowCount } = await tx`
+      const { rowCount } = refreshOnly
+        ? await tx`update data_rows set active_version_id = ${page.versionId}
+            where id = ${page.pageId} and deleted_at is null`
+        : await tx`
         update data_rows
         set active_version_id = ${page.versionId},
             status = 'published',
@@ -276,9 +346,38 @@ export async function persistSitePublish(
       // reaped it in between, don't leave an orphan version pointing at it.
       if (rowCount === 0) {
         await tx`delete from data_row_versions where id = ${page.versionId}`
+        continue
       }
+      await pruneSupersededRuntimeAssets(tx, page.pageId, page.versionId, previousVersionId)
     }
+    await activateGeneration()
   })
+}
+
+/**
+ * Drop the stored runtime assets of a page's versions older than the one just
+ * superseded. Every full publish stores each page's bundled runtime files
+ * again under a fresh version path, and nothing re-activates an old version,
+ * so without this the table grew by the whole site's bundles on every publish
+ * (hundreds of MB a day on a busy site). The previous version's assets are
+ * kept so visitors still holding its HTML can load its scripts — the same
+ * window the disk's two-slot swap covers. The version rows themselves stay.
+ */
+async function pruneSupersededRuntimeAssets(
+  tx: DbClient,
+  pageId: string,
+  activeVersionId: string,
+  previousVersionId: string | null,
+): Promise<void> {
+  await tx`
+    delete from published_runtime_assets
+    where data_row_version_id in (
+      select id from data_row_versions
+      where row_id = ${pageId}
+        and id <> ${activeVersionId}
+        and id <> ${previousVersionId ?? ''}
+    )
+  `
 }
 
 export async function getPublishedPageBySlug(
@@ -295,7 +394,7 @@ export async function getPublishedPageBySlug(
     join data_row_versions on data_row_versions.id = data_rows.active_version_id
     join site_snapshots on site_snapshots.id = data_row_versions.site_snapshot_id
     where data_rows.table_id = 'pages'
-      and data_rows.slug = ${slug}
+      and data_row_versions.slug = ${slug}
       and data_rows.status = 'published'
       and data_rows.deleted_at is null
     limit 1
@@ -323,6 +422,27 @@ export async function getPublishedPageSnapshotById(
     limit 1
   `
   return rows[0] ? snapshotFromQueryRow(rows[0]) : null
+}
+
+/** Per-page manifests without repeatedly loading the whole site document. */
+export async function listPublishedPageRuntimeAssets(db: DbClient): Promise<Map<string, PublishedPageRuntimeAssets>> {
+  const { rows } = await db<{ row_id: string; runtime_assets_json: unknown }>`
+    select data_rows.id as row_id, data_row_versions.runtime_assets_json
+    from data_rows
+    join data_row_versions on data_row_versions.id = data_rows.active_version_id
+    where data_rows.table_id = 'pages'
+      and data_rows.status = 'published'
+      and data_rows.deleted_at is null
+  `
+  const manifests = new Map<string, PublishedPageRuntimeAssets>()
+  for (const row of rows) {
+    if (row.runtime_assets_json === null) continue
+    if (!compiledCheck(PublishedPageRuntimeAssetsSchema, row.runtime_assets_json)) {
+      throw new Error(`Invalid published runtime manifest for page "${row.row_id}"`)
+    }
+    manifests.set(row.row_id, row.runtime_assets_json)
+  }
+  return manifests
 }
 
 /**

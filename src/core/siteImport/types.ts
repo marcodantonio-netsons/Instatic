@@ -7,7 +7,7 @@
 
 import type { StyleRule, ConditionDef } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
-import type { FontFileFormat } from '@core/fonts'
+import type { FontDisplay, FontFileFormat } from '@core/fonts'
 import type { SiteScriptFormat } from '@core/site-runtime'
 
 // ---------------------------------------------------------------------------
@@ -49,8 +49,9 @@ export type NewStyleRule = Omit<StyleRule, 'id' | 'createdAt' | 'updatedAt'>
  *   declaration value. Assets are collected in `assetRefs` (not warnings) by
  *   the Phase 1 parser; this kind is reserved for Phase 2's use.
  * - `duplicate-class`: two `.foo { ... }` rules with the same class selector
- *   appeared in the same file. The later rule's declarations win (CSS cascade
- *   semantics). One warning is emitted per duplicated class.
+ *   appeared in the same file. Each occurrence keeps its source position;
+ *   the browser resolves declaration priority and source order. One warning
+ *   is emitted per repeated occurrence.
  *
  * Phase 2 (site import pipeline) kinds:
  * - `missing-stylesheet`: a stylesheet referenced from an HTML `<link>` or a
@@ -196,6 +197,7 @@ export interface ParsedFontFace {
   /** Raw `url(...)` payloads from the `src` descriptor, in source order. */
   srcUrls: string[]
   unicodeRange?: string
+  fontDisplay?: FontDisplay
 }
 
 /**
@@ -208,6 +210,7 @@ export interface ImportFontFile {
   /** FileMap key (pre-rewrite) → media public URL (post-rewrite). */
   src: string
   unicodeRange?: string
+  fontDisplay?: FontDisplay
 }
 
 /** A custom font family synthesized from imported `@font-face` blocks. */
@@ -243,7 +246,7 @@ export interface ImportColorToken {
 
 /**
  * A root-scope `--font-*` custom property pulled from imported CSS. Committed
- * into `site.settings.fonts.tokens` so `font-family: var(--font-primary)` keeps
+ * into `site.settings.fonts.tokens` so `font-family: var(--font-body)` keeps
  * resolving through the builder's editable font-token model.
  */
 export interface ImportFontToken {
@@ -460,7 +463,7 @@ export interface PagePlan {
   /**
    * The body content as a flat node fragment.
    *
-   * URL-shaped props (`src`, `href`, `srcset`) are normalized to FileMap keys
+   * URL-shaped props (`src`, `href`, `srcset`, `videoUrl`, `poster`) are normalized to FileMap keys
    * (relative paths) so that `applyAssetRewrites` can do exact-string
    * replacement without needing the original base path.
    */
@@ -549,7 +552,7 @@ export interface CrossSheetClassConflict {
 }
 
 /**
- * A design-token CSS custom property (`--bg`, `--font-primary`) extracted from
+ * A design-token CSS custom property (`--bg`, `--font-body`) extracted from
  * the import that collides with an existing token in the site.
  *
  * Both colour tokens (keyed by `--<slug>`) and font tokens (keyed by
@@ -567,7 +570,7 @@ export interface TokenConflict {
   kind: 'color' | 'font'
   /**
    * The CSS custom-property name without the leading `--` the importer wanted
-   * (e.g. `bg` for `--bg`, `font-primary` for `--font-primary`).
+   * (e.g. `bg` for `--bg`, `font-body` for `--font-body`).
    */
   desiredVariable: string
   /** ID of the existing token (framework colour / font token) that owns the name. */

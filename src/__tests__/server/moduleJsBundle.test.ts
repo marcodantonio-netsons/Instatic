@@ -3,6 +3,8 @@ import { collectSiteModuleAssets } from '../../../server/publish/siteModuleAsset
 import {
   buildSiteModuleJsMap,
   injectModuleScripts,
+  moduleJsAssetPath,
+  moduleJsIdFromAssetPath,
 } from '../../../server/publish/moduleJsBundle'
 import { makeModule, makePage, makeRegistry, makeSite } from '../publisher/helpers'
 
@@ -12,7 +14,8 @@ const registry = makeRegistry({
     render: (_p, children) => ({ html: `<main>${children.join('')}</main>` }),
   }),
   'test.jsy': makeModule('test.jsy', {
-    render: () => ({ html: '<div></div>', js: 'JS_BODY' }),
+    assets: { js: 'JS_BODY' },
+    render: () => ({ html: '<div></div>' }),
   }),
   'test.plain': makeModule('test.plain'),
 })
@@ -42,6 +45,21 @@ const HTML_DOC = `<!doctype html>
 </html>`
 
 describe('site module-JS map', () => {
+  it('collects a runtime used only by an entry template with no published rows', () => {
+    const template = makePage({ root: { moduleId: 'base.body', children: ['script'] }, script: { moduleId: 'test.jsy' } })
+    template.template = { enabled: true, target: { kind: 'postTypes', tableSlugs: ['posts'] }, priority: 1 }
+    const site = makeSite({ pages: [template] })
+    expect([...buildSiteModuleJsMap(site, registry)]).toEqual([['test.jsy', 'JS_BODY']])
+  })
+
+  it('uses one validated path contract for generation and requests', () => {
+    expect(moduleJsAssetPath('base.scroll-state')).toBe('/_instatic/module-js/base.scroll-state.js')
+    expect(moduleJsIdFromAssetPath(moduleJsAssetPath('plugin.widget'))).toBe('plugin.widget')
+    expect(moduleJsIdFromAssetPath('/_instatic/module-js/../base.form.js')).toBeNull()
+    expect(moduleJsIdFromAssetPath('/_instatic/module-js/%E0%A4%A.js')).toBeNull()
+    expect(() => moduleJsAssetPath('bad/path')).toThrow('Invalid module-JS module ID')
+  })
+
   it('walks every page and dedupes js per moduleId', () => {
     const site = makeTwoPageSite()
     const acc = collectSiteModuleAssets(site, registry)

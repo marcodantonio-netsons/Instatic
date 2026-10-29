@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'bun:test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { SiteDocument, SiteShell } from '@core/page-tree'
+import { LocalizationError } from '@core/localization'
+import { FormConfigurationError } from '@core/forms'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import type { DbResult } from '../../../server/db'
 import { saveDraftSite } from '../../../server/repositories/site'
@@ -12,6 +17,8 @@ import { createDataRow, saveDataRowDraft } from '../../../server/repositories/da
 import { pageToCells } from '../../../src/core/data/pageFromRow'
 import { createFakeDb } from './dbTestFake'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
+import { getPublishVersion } from '../../../server/publish/publishState'
+import { getActiveSlot, prepareInactiveSlot, readArtefact, swapSlot, writeArtefact } from '../../../server/publish/staticArtefact'
 
 function createPublishFakeDb() {
   const state = {
@@ -24,6 +31,14 @@ function createPublishFakeDb() {
 
   const db = createFakeDb(async (rawSql, params): Promise<DbResult> => {
     const sql = rawSql.replace(/\s+/g, ' ').trim().toLowerCase()
+
+    // Repository writers inspect the real target schema before persisting cells.
+    if (sql.includes('from data_tables') && params[0] === 'pages') {
+      return { rows: [{ logical_id: 'pages', name: 'Pages', slug: 'pages', kind: 'page', route_base: '/',
+        singular_label: 'Page', plural_label: 'Pages', primary_field_id: 'title', system: true,
+        fields_json: [{ id: 'title', label: 'Title', type: 'text' }, { id: 'body', label: 'Body', type: 'pageTree' }],
+        created_by_user_id: null, updated_by_user_id: null, created_at: '2026-01-01T00:00:00.000Z', updated_at: '2026-01-01T00:00:00.000Z' }], rowCount: 1 }
+    }
 
     // saveDraftSite — insert or update site row (NOT site_snapshots)
     if (sql.startsWith('insert into site (')) {
@@ -158,6 +173,22 @@ function createPublishFakeDb() {
       })
       return { rows: [], rowCount: 1 }
     }
+    // persistSitePublish — read the page's previously active version
+    if (sql.startsWith('select active_version_id, published_by_user_id, published_at from data_rows where id =')) {
+      const row = state.dataRows.find((r) => r.id === params[0])
+      return { rows: row ? [{ active_version_id: row.active_version_id, published_by_user_id: row.published_by_user_id, published_at: row.published_at }] : [], rowCount: row ? 1 : 0 }
+    }
+    // pruneSupersededRuntimeAssets — params: $1=rowId, $2=activeVersionId, $3=previousVersionId
+    if (sql.startsWith('delete from published_runtime_assets')) {
+      const pruned = new Set(
+        state.dataRowVersions
+          .filter((v) => v.row_id === params[0] && v.id !== params[1] && v.id !== params[2])
+          .map((v) => v.id),
+      )
+      const before = state.runtimeAssets.length
+      state.runtimeAssets = state.runtimeAssets.filter((a) => !pruned.has(a.page_version_id))
+      return { rows: [], rowCount: before - state.runtimeAssets.length }
+    }
     // update data_rows set active_version_id = $1 ... (after publish)
     // SQL params: $1=versionId, $2=publishedByUserId, $3=published_at, $4=updatedByUserId, $5=updated_at, $6=rowId
     if (sql.startsWith('update data_rows') && sql.includes('active_version_id')) {
@@ -176,7 +207,7 @@ function createPublishFakeDb() {
       return { rows: [], rowCount: row ? 1 : 0 }
     }
     // getPublishedPageBySlug — join data_rows + data_row_versions + site_snapshots
-    if (sql.includes('site_snapshots.site_json') && sql.includes('data_rows.slug')) {
+    if (sql.includes('site_snapshots.site_json') && sql.includes('data_row_versions.slug')) {
       const slug = params[0] as string
       const row = state.dataRows.find((r) => r.slug === slug && r.status === 'published')
       const version = row ? state.dataRowVersions.find((v) => v.id === row.active_version_id) : null
@@ -213,6 +244,10 @@ function createPublishFakeDb() {
         })
         .filter(Boolean)
       return { rows, rowCount: rows.length }
+    }
+    if (sql.includes('from installed_plugins') || sql.includes('from active_media_storage_adapter') ||
+        sql.startsWith('select data_rows.id as row_id, data_row_versions.slug as row_slug')) {
+      return { rows: [], rowCount: 0 }
     }
     throw new Error(`Unhandled SQL: ${rawSql}`)
   })
@@ -280,6 +315,67 @@ async function seedSiteAndPage(
 }
 
 describe('CMS publishing', () => {
+  it('preserves the previous snapshot, version and active artefact for invalid form behavior', async () => {
+    const { state, db } = createPublishFakeDb()
+    await seedSiteAndPage(db, 'Previous published content')
+    await publishDraftSite(db, 'admin_1')
+    const snapshots = structuredClone(state.siteSnapshots)
+    const versions = structuredClone(state.dataRowVersions)
+    const activeVersion = state.dataRows[0].active_version_id
+    const uploadsDir = await mkdtemp(join(tmpdir(), 'form-publish-'))
+    try {
+      const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+      await writeArtefact(slotDir, '/', '<html>Previous published content</html>')
+      await swapSlot(uploadsDir, slot)
+      const version = getPublishVersion()
+      const page = makeHomePage('Invalid behavior')
+      page.nodes.text_1.moduleId = 'base.form'
+      page.nodes.text_1.props = { mode: 'request', formId: 'contact', action: 'javascript:invalid' }
+      await saveDataRowDraft(db, MAIN_SCOPE, page.id, { cells: pageToCells(page), slug: page.slug }, 'admin_1')
+      await expect(publishDraftSite(db, 'admin_1', uploadsDir)).rejects.toBeInstanceOf(FormConfigurationError)
+      expect(state.siteSnapshots).toEqual(snapshots)
+      expect(state.dataRowVersions).toEqual(versions)
+      expect(state.dataRows[0].active_version_id).toBe(activeVersion)
+      expect(getPublishVersion()).toBe(version)
+      expect(await getActiveSlot(uploadsDir)).toBe(slot)
+      expect(await readArtefact(uploadsDir, '/')).toBe('<html>Previous published content</html>')
+    } finally { await rm(uploadsDir, { recursive: true, force: true }) }
+  })
+
+  for (const invalid of ['catalogue', 'key', 'pageLanguage'] as const) {
+    it(`leaves snapshots, publish version and the active artefact intact for an invalid language ${invalid}`, async () => {
+      const { state, db } = createPublishFakeDb()
+      await seedSiteAndPage(db, 'Previous published content')
+      await publishDraftSite(db, 'admin_1')
+      const snapshots = structuredClone(state.siteSnapshots)
+      const versions = structuredClone(state.dataRowVersions)
+      const publishedRow = structuredClone(state.dataRows[0])
+      const uploadsDir = await mkdtemp(join(tmpdir(), 'language-publish-'))
+      try {
+        const { slot, slotDir } = await prepareInactiveSlot(uploadsDir)
+        await writeArtefact(slotDir, '/', '<html>Previous published content</html>')
+        await swapSlot(uploadsDir, slot)
+        const publishVersion = getPublishVersion()
+        const shell = makeSiteShell({
+          settings: { shortcuts: {}, language: 'it', localization: { catalogues: [{ language: 'it', fileId: 'it' }] } },
+          files: [{ id: 'it', path: 'locales/it.json', type: 'config', content: invalid === 'catalogue' ? '{' : JSON.stringify({ language: 'it', messages: { label: 'Contatti' } }), createdAt: 0, updatedAt: 0 }],
+        })
+        await saveDraftSite(db, MAIN_SCOPE, shell)
+        const page = { ...makeHomePage(invalid === 'key' ? '{site.translations.missing}' : '{site.translations.label}'), ...(invalid === 'pageLanguage' ? { language: 'fr' } : {}) }
+        await saveDataRowDraft(db, MAIN_SCOPE, page.id, { cells: pageToCells(page), slug: page.slug }, 'admin_1')
+        await expect(publishDraftSite(db, 'admin_1', uploadsDir)).rejects.toBeInstanceOf(LocalizationError)
+        expect(state.siteSnapshots).toEqual(snapshots)
+        expect(state.dataRowVersions).toEqual(versions)
+        expect(state.dataRows[0].active_version_id).toBe(publishedRow.active_version_id)
+        expect(getPublishVersion()).toBe(publishVersion)
+        expect(await getActiveSlot(uploadsDir)).toBe(slot)
+        expect(await readArtefact(uploadsDir, '/')).toBe('<html>Previous published content</html>')
+      } finally {
+        await rm(uploadsDir, { recursive: true, force: true })
+      }
+    })
+  }
+
   it('publishes draft pages as immutable active snapshots', async () => {
     const { state, db } = createPublishFakeDb()
     await seedSiteAndPage(db, 'Published headline')

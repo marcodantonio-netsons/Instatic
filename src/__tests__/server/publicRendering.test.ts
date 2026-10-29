@@ -144,6 +144,7 @@ describe('public rendering', () => {
       tableId: 'tbl_posts',
       tableSlug: 'posts',
       tableKind: 'posts',
+      tableFields: [],
       tableRouteBase: '/blog',
       versionNumber: 1,
       cells: { title: 'Hello' },
@@ -223,6 +224,7 @@ describe('public rendering', () => {
     tableId: 'tbl_posts',
     tableSlug: 'posts',
     tableKind: 'posts',
+    tableFields: [],
     tableRouteBase: '/blog',
     versionNumber: 1,
     slug: 'hello',
@@ -415,7 +417,7 @@ describe('public rendering', () => {
     const { html } = await renderPublishedSnapshot(snap, { db: makeFakeDb(snap) })
     expect(html).toMatch(/<link rel="stylesheet" href="\/_instatic\/css\/reset-[a-f0-9]{12}\.css">/)
     // No inline reset block — site-wide CSS lives in the external bundle.
-    expect(html).not.toContain(':where(*, *::before, *::after)')
+    expect(html).not.toContain(':where(*), ::before, ::after')
   })
 
   it('serves the reset bundle file from /_instatic/css/<filename> with immutable cache', async () => {
@@ -438,7 +440,7 @@ describe('public rendering', () => {
     expect(cssRes.headers.get('cache-control')).toContain('immutable')
     expect(cssRes.headers.get('cache-control')).toContain('max-age=31536000')
     const cssBody = await cssRes.text()
-    expect(cssBody).toContain(':where(*, *::before, *::after) { box-sizing: border-box; }')
+    expect(cssBody).toContain(':where(*), ::before, ::after { box-sizing: border-box; }')
   })
 
   it('returns 404 for stale CSS hashes so cached HTML refetches the page', async () => {

@@ -7,12 +7,25 @@
  * that whitespace when rendering, so storing it verbatim would surface stray
  * leading spaces / line breaks in the editor's text fields.
  *
- * `normalizeImportedText` mirrors the browser's whitespace collapsing: runs of
- * any whitespace become a single space, and the result is trimmed.
+ * Only HTML's collapsible ASCII whitespace (TAB, LF, FF, CR and SPACE) is
+ * normalized. NBSP, narrow NBSP and other authored Unicode spacing remain
+ * content, including at the edges of a text run.
  *
  * Lives in its own module so both `rules.ts` (element → text/label props) and
  * `walkAndMap.ts` (bare text nodes) can share it without an import cycle.
  */
+export function collapseHtmlWhitespace(raw: string): string {
+  return raw.replace(/[\t\n\f\r ]+/g, ' ')
+}
+
+export function trimHtmlWhitespaceStart(raw: string): string {
+  return raw.replace(/^[\t\n\f\r ]+/, '')
+}
+
+export function trimHtmlWhitespaceEnd(raw: string): string {
+  return raw.replace(/[\t\n\f\r ]+$/, '')
+}
+
 export function normalizeImportedText(raw: string): string {
-  return raw.replace(/\s+/g, ' ').trim()
+  return trimHtmlWhitespaceEnd(trimHtmlWhitespaceStart(collapseHtmlWhitespace(raw)))
 }

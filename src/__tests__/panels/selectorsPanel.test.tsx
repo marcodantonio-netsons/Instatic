@@ -7,7 +7,7 @@ import { SelectorsPanel } from '@site/panels/SelectorsPanel'
 import { PropertiesPanel } from '@site/panels/PropertiesPanel/PropertiesPanel'
 import {
   buildClassTokenUsageMap,
-  buildSelectorUsageMap,
+  createSelectorUsageMapSelector,
   formatSelectorUsage,
   getReusableClasses,
   getSelectorStyleSummary,
@@ -19,6 +19,7 @@ import { makeNode, makePage, makeSite } from '../fixtures'
 import '@modules/base/index'
 
 const SRC_ROOT = join(import.meta.dir, '../../')
+const buildSelectorUsageMap = createSelectorUsageMapSelector()
 
 afterEach(cleanup)
 
@@ -734,6 +735,50 @@ describe('SelectorsPanel', () => {
     fireEvent.contextMenu(screen.getByRole('button', { name: /edit selector \.cta-button/i }))
     fireEvent.click(screen.getByRole('menuitem', { name: /remove from selected element/i }))
     expect(useEditorStore.getState().site!.pages[0].nodes[textNodeId].classIds ?? []).not.toContain('cta-button')
+  })
+
+  it('applies and removes a selector from every selected element in one undo step', () => {
+    const { textNodeId, buttonNodeId } = loadSiteWithSelectors()
+    // Keep the anchor on the button, which already has cta-button. The other
+    // selected node is missing it; this is the case the old single-node gate
+    // incorrectly disabled/applied only to the anchor.
+    useEditorStore.setState({
+      selectedNodeId: buttonNodeId,
+      selectedNodeIds: [textNodeId, buttonNodeId],
+    } as Parameters<typeof useEditorStore.setState>[0])
+    render(<SelectorsPanel variant="docked" />)
+
+    const row = screen.getByRole('button', { name: /edit selector \.cta-button/i })
+    fireEvent.contextMenu(row)
+    fireEvent.click(screen.getByRole('menuitem', { name: /apply to selected element/i }))
+
+    const nodesAfterApply = useEditorStore.getState().site!.pages[0].nodes
+    expect(nodesAfterApply[textNodeId].classIds).toEqual(['hero-title', 'cta-button'])
+    expect(nodesAfterApply[buttonNodeId].classIds).toEqual(['hero-title', 'cta-button'])
+
+    fireEvent.contextMenu(row)
+    fireEvent.click(screen.getByRole('menuitem', { name: /remove from selected element/i }))
+
+    const nodesAfterRemove = useEditorStore.getState().site!.pages[0].nodes
+    expect(nodesAfterRemove[textNodeId].classIds).toEqual(['hero-title'])
+    expect(nodesAfterRemove[buttonNodeId].classIds).toEqual(['hero-title'])
+
+    // The batch remove and batch apply each have their own single undo step.
+    useEditorStore.getState().undo()
+    expect(useEditorStore.getState().site!.pages[0].nodes[textNodeId].classIds).toEqual([
+      'hero-title',
+      'cta-button',
+    ])
+    expect(useEditorStore.getState().site!.pages[0].nodes[buttonNodeId].classIds).toEqual([
+      'hero-title',
+      'cta-button',
+    ])
+    useEditorStore.getState().undo()
+    expect(useEditorStore.getState().site!.pages[0].nodes[textNodeId].classIds).toEqual(['hero-title'])
+    expect(useEditorStore.getState().site!.pages[0].nodes[buttonNodeId].classIds).toEqual([
+      'hero-title',
+      'cta-button',
+    ])
   })
 
   it('renames and deletes selectors with confirmation', () => {

@@ -20,6 +20,7 @@
 
 import { normalizeImportedText } from './text'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
+import { normalizeAnchorTarget } from '@core/htmlAttributes'
 
 export interface ImportRule {
   /** CSS selector tested via `el.matches()`. */
@@ -62,6 +63,7 @@ const TEXT_INPUT_TYPES = [
   'tel',
   'url',
   'number',
+  'range',
   'date',
   'time',
   'datetime-local',
@@ -373,6 +375,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
           autocomplete: attr(el, 'autocomplete'),
           min: attr(el, 'min'),
           max: attr(el, 'max'),
+          step: attr(el, 'step'),
           minLength: numberAttr(el, 'minlength'),
           maxLength: numberAttr(el, 'maxlength'),
           pattern: attr(el, 'pattern'),
@@ -388,12 +391,16 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
   // treatment the plain anchor rule below gives a compound `<a>` — which keeps
   // href and target. The `btn` class rides along as a classId, so the swap does
   // not change how the element is styled.
+  //
+  // `target` is normalised, not copied: an empty attribute, `_top` or a named
+  // frame is not in `AnchorTargetSchema`. Preserve the intended browsing
+  // context here instead of relying on the publisher's default-target repair.
   {
     match: 'a.btn',
     map: (el) => {
       const text = normalizeImportedText(el.textContent ?? '')
       const href = el.getAttribute('href') ?? ''
-      const target = el.getAttribute('target') ?? '_self'
+      const target = normalizeAnchorTarget(el.getAttribute('target'))
 
       return hasElementChild(el)
         ? { moduleId: 'base.link', props: { text, href, target } }
@@ -413,7 +420,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
       props: {
         text: normalizeImportedText(el.textContent ?? ''),
         href: el.getAttribute('href') ?? '',
-        target: el.getAttribute('target') ?? '_self',
+        target: normalizeAnchorTarget(el.getAttribute('target')),
       },
     }),
     recurse: hasElementChild,
@@ -459,11 +466,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
   // A non-submit button that WRAPS element children (icon + span label, an
   // `<img>` thumbnail) recurses into a container tagged `button`, because
   // base.button is `canHaveChildren: false` and would keep only the text.
-  // Submit buttons stay on base.submit even when compound: `core/forms`
-  // identifies a form's submit control by that module id, so re-tagging one as
-  // a container would leave the form without a submit. A compound submit button
-  // therefore still keeps only its label — lifting that needs base.submit to
-  // accept children, which is a module change rather than an importer one.
+  // Submit buttons remain base.submit and preserve their authored children.
   {
     match: 'button',
     map: (el) => {
@@ -494,7 +497,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
         },
       }
     },
-    recurse: (el) => !isSubmitButton(el) && hasElementChild(el),
+    recurse: hasElementChild,
   },
 
   // ul / ol are BUILTIN_HTML_TAGS for base.container → container + RECURSE.
@@ -608,11 +611,18 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
         attr(el, 'src')
         || el.querySelector('source')?.getAttribute('src')
         || ''
+      const authoredPreload = normalizedAttr(el, 'preload')
+      const preload = authoredPreload === 'none' || authoredPreload === 'metadata' || authoredPreload === 'auto'
+        ? authoredPreload
+        : el.hasAttribute('preload') ? 'auto' : 'metadata'
 
       return {
         moduleId: 'base.video',
         props: {
           videoUrl,
+          poster: attr(el, 'poster'),
+          preload,
+          title: attr(el, 'title'),
           autoplay: el.hasAttribute('autoplay'),
           loop: el.hasAttribute('loop'),
           muted: el.hasAttribute('muted'),

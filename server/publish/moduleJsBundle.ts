@@ -1,9 +1,11 @@
 /**
  * Published module-JS channel — server-side builder + injector.
  *
- * `render()` may return `js` next to `html`/`css` (see `RenderOutput`). The
- * publisher dedupes it per moduleId into `RenderAccumulators.jsMap`; this file
- * owns the site-wide map and the page-level `<script>` injection:
+ * `ModuleDefinition.assets.js` declares an invariant type payload. Real
+ * render output activates it through `assetUsage`; the publisher dedupes
+ * active payloads per moduleId into `RenderAccumulators.jsMap`. This file
+ * owns the site-wide map, shared asset paths and page-level script injection.
+ * Full publication writes this map into the prepared static generation:
  *
  * - `buildSiteModuleJsMap` rebuilds the map from scratch (preview, tests).
  * - `buildPublishedSiteModuleJsMap` memoises it by publishVersion + site
@@ -22,6 +24,29 @@ import type { IModuleRegistry } from '@core/module-engine'
 import { addCspSources, escapeHtml, rewriteCspMeta } from '@core/publisher'
 import { collectSiteModuleAssets } from './siteModuleAssets'
 import { getPublishVersion, registerVersionedCacheReset } from './publishState'
+
+export const MODULE_JS_PATH_PREFIX = '/_instatic/module-js/'
+const MODULE_JS_ID_PATTERN = /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$/
+
+/** One path contract for staged files, document references and the public route. */
+export function moduleJsAssetPath(moduleId: string): string {
+  if (!MODULE_JS_ID_PATTERN.test(moduleId)) throw new Error(`Invalid module-JS module ID: ${moduleId}`)
+  return `${MODULE_JS_PATH_PREFIX}${encodeURIComponent(moduleId)}.js`
+}
+
+/** Validate the untrusted path before filesystem or published-site access. */
+export function moduleJsIdFromAssetPath(pathname: string): string | null {
+  if (!pathname.startsWith(MODULE_JS_PATH_PREFIX)) return null
+  let filename: string
+  try {
+    filename = decodeURIComponent(pathname.slice(MODULE_JS_PATH_PREFIX.length))
+  } catch (error) {
+    if (error instanceof URIError) return null
+    throw error
+  }
+  const moduleId = filename.endsWith('.js') ? filename.slice(0, -3) : ''
+  return MODULE_JS_ID_PATTERN.test(moduleId) ? moduleId : null
+}
 
 /** Build the moduleId → JS map fresh. Use for draft/preview/arbitrary sites. */
 export function buildSiteModuleJsMap(
@@ -80,7 +105,7 @@ export function injectModuleScripts(
   const tags = ids
     .map(
       (id) =>
-        `<script src="/_instatic/module-js/${encodeURIComponent(id)}.js?v=${publishVersion}" defer data-instatic-module-js="${escapeHtml(id)}"></script>`,
+        `<script src="${moduleJsAssetPath(id)}?v=${publishVersion}" defer data-instatic-module-js="${escapeHtml(id)}"></script>`,
     )
     .join('\n')
   const withScripts = html.includes('</body>')

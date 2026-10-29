@@ -22,9 +22,10 @@
  *
  * Specificity / cascade
  * ─────────────────────
- * Every selector is wrapped in `:where(...)` so the reset has zero specificity.
- * That means any user class, framework utility, or module CSS rule trivially
- * overrides reset declarations — no `!important`, no specificity wars.
+ * Element selectors use `:where(...)` for zero specificity. Pseudo-elements
+ * cannot be arguments of `:where(...)`, so their standalone selectors retain
+ * type-level specificity. User classes, framework utilities and module classes
+ * override both without `!important`.
  *
  * Stability
  * ─────────
@@ -39,8 +40,9 @@
  * propagate into `<button>` / `<input>` without per-module work.
  */
 export const PUBLISHER_RESET_CSS = [
-  // Box model — apply to every element including pseudos
-  ':where(*, *::before, *::after) { box-sizing: border-box; }',
+  // Pseudo-elements inside :where() are discarded from its forgiving selector
+  // list. Keep them outside the function so their box model is reset too.
+  ':where(*), ::before, ::after { box-sizing: border-box; }',
 
   // Strip default margin and padding on every element. Matches the editor's
   // canvas reset so the design view and the published page agree on spacing.

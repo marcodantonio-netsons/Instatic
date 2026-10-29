@@ -13,6 +13,7 @@ import { describe, it, expect } from 'bun:test'
 import '@modules/base'
 import { importHtml } from '@core/htmlImport'
 import { TextModule } from '@modules/base/text'
+import { SubmitModule } from '@modules/base/forms'
 
 function childrenOf(html: string) {
   const r = importHtml(html)
@@ -125,12 +126,15 @@ describe('compound buttons keep what they wrap', () => {
     expect(root.children).toHaveLength(0)
   })
 
-  it('a submit button stays base.submit even when compound', () => {
-    // core/forms finds a form's submit control by module id, so a compound
-    // submit must not be re-tagged as a container. It keeps only its label.
-    const r = importHtml('<form><button><svg viewBox="0 0 1 1"></svg><span>Send</span></button></form>')
+  it('a compound submit keeps its native form identity, child nodes and safe authored attributes', () => {
+    const r = importHtml('<form><button data-owner="submit" aria-describedby="hint"><svg viewBox="0 0 1 1"></svg><span>Send</span></button></form>')
     const submit = Object.values(r.nodes).find((n) => n.moduleId === 'base.submit')
     expect(submit).toBeDefined()
-    expect(submit!.children).toHaveLength(0)
+    expect(submit!.children.map(id => r.nodes[id].moduleId)).toEqual(['base.svg','base.text'])
+    expect(submit!.props.htmlAttributes).toEqual({ 'data-owner': 'submit', 'aria-describedby': 'hint' })
+    const html = SubmitModule.render({ ...SubmitModule.defaults, ...submit!.props }, ['<svg viewBox="0 0 1 1"></svg>','<span>Send</span>']).html
+    expect(html).toContain('<button type="submit"')
+    expect(html).toContain('data-owner="submit"')
+    expect(html).toContain('<svg viewBox="0 0 1 1"></svg><span>Send</span></button>')
   })
 })

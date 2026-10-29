@@ -119,11 +119,12 @@ export interface StyleRuleSlice {
   updateClassStyles(classId: string, patch: Partial<CSSPropertyBag>): void
 
   /**
-   * Apply parsed authored CSS by exact emitted selector. Merge patches only
-   * the addressed declarations/contexts; replace makes the incoming rule's
+   * Apply parsed authored CSS by exact selector and native grouping path.
+   * Merge patches only the addressed declarations/contexts; replace makes the incoming rule's
    * complete CSS payload authoritative while preserving registry identity,
-   * cascade order, assignments, and metadata. Duplicate exact selectors are
-   * all updated atomically. New selectors append in authored order.
+   * cascade order, assignments, and metadata. Source occurrences stay separate;
+   * a single patch updates all matching occurrences, while multiple incoming
+   * occurrences pair in source order. New fragments append in authored order.
    */
   applyCssRules(
     rules: NewStyleRule[],
@@ -251,6 +252,14 @@ export interface StyleRuleSlice {
    * skipped. No-op (no history entry) when nothing new would be added.
    */
   addNodeClasses(nodeId: string, classIds: string[]): void
+
+  /**
+   * Add or remove one classId on several nodes in ONE batched mutation. This
+   * is the transaction boundary for applying a selector to a canvas
+   * multi-selection, so one action produces one undo step. Ambient rules are
+   * never treated as class assignments; existing class order is preserved.
+   */
+  setNodeClassAssignments(nodeIds: string[], classId: string, assigned: boolean): void
 
   /** Remove a classId from a node's classIds (no-op if not present). */
   removeNodeClass(nodeId: string, classId: string): void
