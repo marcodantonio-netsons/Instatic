@@ -25,6 +25,9 @@ import type { DynamicPropBinding } from '@core/page-tree'
 import { useEditorPermissions } from '@site/editorPermissionsContext'
 import { ChevronRightIcon } from 'pixel-art-icons/icons/chevron-right'
 import { TextControl } from './TextControl'
+import { ConditionControl } from './ConditionControl'
+import { ExpressionsControl } from './ExpressionsControl'
+import { PreferenceValuesControl } from './PreferenceValuesControl'
 import { TextareaControl } from './TextareaControl'
 import { NumberControl } from './NumberControl'
 import { ColorControl } from './ColorControl'
@@ -84,6 +87,7 @@ function defaultLayoutFor(controlType: PropertyControl['type']): PropertyControl
     case 'media':
     case 'svg':
     case 'textarea':
+    case 'preferenceValues':
       return 'stacked'
     default:
       return 'inline'
@@ -133,6 +137,15 @@ export function PropertyControlRenderer({
   let inner: React.ReactNode
 
   switch (control.type) {
+    case 'condition':
+      inner = <ConditionControl {...shared} />
+      break
+    case 'expressions':
+      inner = <ExpressionsControl {...shared} single={control.mode === 'single'} />
+      break
+    case 'preferenceValues':
+      inner = <PreferenceValuesControl {...shared} />
+      break
     case 'text':
       inner = (
         <TextControl

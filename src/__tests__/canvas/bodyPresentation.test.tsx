@@ -3,6 +3,9 @@ import React from 'react'
 import { act, cleanup, render, waitFor } from '@testing-library/react'
 import { DndContext } from '@dnd-kit/core'
 import { classKindSelector, type StyleRule } from '@core/page-tree'
+import { registry } from '@core/module-engine'
+import { publishPage } from '@core/publisher'
+import { composeTemplateChain } from '@core/templates'
 import { useEditorStore } from '@site/store/store'
 import { CanvasRoot } from '@site/canvas/CanvasRoot'
 import { makeNode, makePage, makeSite } from '../fixtures'
@@ -233,7 +236,7 @@ describe('canvas iframe body presentation', () => {
     })
   })
 
-  it('uses the outer wrapper body class and inline background, matching publisher ownership', async () => {
+  it('merges outer body classes with inner presentation, matching the publisher', async () => {
     const outerBodyClass: StyleRule = {
       id: 'outer-body-class',
       name: 'outer-body',
@@ -278,11 +281,15 @@ describe('canvas iframe body presentation', () => {
       nodes: { [pageRoot.id]: pageRoot },
     })
 
+    const site = makeSite({
+      pages: [wrapper, page],
+      styleRules: { [outerBodyClass.id]: outerBodyClass },
+    })
+    const composed = composeTemplateChain([wrapper], { kind: 'page', page })
+    const published = new DOMParser().parseFromString(publishPage(composed, site, registry).html, 'text/html')
+
     useEditorStore.setState({
-      site: makeSite({
-        pages: [wrapper, page],
-        styleRules: { [outerBodyClass.id]: outerBodyClass },
-      }),
+      site,
       activePageId: page.id,
     } as Parameters<typeof useEditorStore.setState>[0])
 
@@ -291,12 +298,15 @@ describe('canvas iframe body presentation', () => {
 
     await waitFor(() => {
       expect(frameDocument.body.classList.contains('outer-body')).toBe(true)
-      expect(frameDocument.body.style.backgroundColor).toBe('rgb(7, 11, 19)')
-      expect(frameDocument.body.style.backgroundColor).not.toBe('rgb(220, 30, 40)')
-      expect(frameDocument.body.id).toBe('outer-body')
+      expect(frameDocument.body.style.backgroundColor).toBe('rgb(220, 30, 40)')
+      expect(frameDocument.body.id).toBe('inner-body')
       expect(frameDocument.body.dir).toBe('rtl')
-      expect(frameDocument.body.dataset.theme).toBe('outer-dark')
+      expect(frameDocument.body.dataset.theme).toBe('inner-light')
       expect(frameDocument.body.dataset.breakpointId).toBe('desktop')
+      for (const attribute of ['class', 'id', 'dir', 'data-theme']) {
+        expect(frameDocument.body.getAttribute(attribute)).toBe(published.body.getAttribute(attribute))
+      }
+      expect(frameDocument.body.style.backgroundColor).toBe(published.body.style.backgroundColor)
     })
   })
 
@@ -353,7 +363,7 @@ describe('canvas iframe body presentation', () => {
       expect(frameDocument.body.hasAttribute('data-canvas-selected')).toBe(false)
       expect(frameDocument.body.hasAttribute('data-hovered')).toBe(false)
       expect(frameDocument.body.hasAttribute('tabindex')).toBe(false)
-      expect(frameDocument.body.style.backgroundColor).toBe('rgb(7, 11, 19)')
+      expect(frameDocument.body.style.backgroundColor).toBe('rgb(20, 30, 40)')
     })
   })
 })

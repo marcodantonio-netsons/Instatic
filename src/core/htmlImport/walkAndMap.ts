@@ -43,6 +43,7 @@ import { registry } from '@core/module-engine'
 import {
   normalizeHtmlAttributeName,
   sanitizeRenderableHtmlAttribute,
+  MODULE_GENERATED_ATTRIBUTE_NAMES,
 } from '@core/htmlAttributes'
 import { HTML_TO_MODULE_RULES } from './rules'
 import type { ImportRule } from './rules'
@@ -50,6 +51,7 @@ import { parseHtml } from './parseHtml'
 import { stripUnsafe, collectStyleCss } from './stripUnsafe'
 import type { StripReport } from './stripUnsafe'
 import { harvestInlineStyles } from './inlineStyle'
+import { collapseHtmlWhitespace, trimHtmlWhitespaceEnd, trimHtmlWhitespaceStart } from './text'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -117,42 +119,18 @@ const HTML_ATTRIBUTE_MODULES = new Set([
   'base.link',
   'base.button',
   'base.image',
+  'base.video',
   // A form is the anchor an authored progressive-enhancement script binds to,
   // so its safe data-* / ARIA attributes have to survive import like any other
   // element's. Without this the hooks silently vanish and the script no-ops.
   'base.form',
+  'base.submit',
+  'base.input',
+  'base.textarea',
+  'base.select',
+  'base.checkbox',
+  'base.radio',
 ])
-
-// `rel` is deliberately absent from the anchor modules: base.link and
-// base.button only ever generate the security rel for `target="_blank"`, so a
-// source-declared `rel` (nofollow, sponsored, next/prev, …) has no other home
-// and would be lost outright. It stays in the bag and the modules merge it
-// with the security rel at render time (`anchorHtmlAttributes`).
-const MODULE_GENERATED_ATTRIBUTE_NAMES: Record<string, readonly string[]> = {
-  'base.button': ['aria-disabled', 'disabled', 'href', 'target', 'type'],
-  'base.form': [
-    'action',
-    'data-instatic-form-id',
-    'data-instatic-form-mode',
-    'data-instatic-success-message',
-    'data-instatic-success-redirect',
-    'data-instatic-target-table',
-    'method',
-  ],
-  'base.image': [
-    'alt',
-    'decoding',
-    'fetchpriority',
-    'height',
-    'loading',
-    'sizes',
-    'src',
-    'srcset',
-    'style',
-    'width',
-  ],
-  'base.link': ['href', 'target'],
-}
 
 /**
  * Mutable accumulator threaded through the recursive walk.
@@ -274,7 +252,7 @@ function mapChildNodes(parent: Element, ctx: WalkContext): string[] {
   }
 
   // Normal flow: collapse whitespace the way the browser renders it.
-  //   - runs of whitespace → a single space,
+  //   - runs of collapsible ASCII whitespace → a single space,
   //   - a whitespace-only node containing a newline = pretty-print indentation
   //     between block elements → dropped,
   //   - a whitespace-only node WITHOUT a newline = a significant inline space
@@ -282,18 +260,17 @@ function mapChildNodes(parent: Element, ctx: WalkContext): string[] {
   //   - leading/trailing space at the block's edges is insignificant → trimmed.
   // This keeps inline spacing intact (`Bold <strong>word</strong> here` →
   // "Bold word here") while not surfacing stray indentation in text fields.
+  // Nonbreaking and other Unicode spaces are content, not indentation.
   const items: ChildItem[] = []
   for (const child of Array.from(parent.childNodes)) {
     if (child.nodeType === ELEMENT_NODE) {
       items.push({ kind: 'el', el: child as Element })
     } else if (child.nodeType === TEXT_NODE) {
       const raw = child.textContent ?? ''
-      if (/^\s*$/.test(raw)) {
-        if (/[\n\r]/.test(raw)) continue // indentation between block tags
-        items.push({ kind: 'text', text: ' ' }) // significant inline space
-      } else {
-        items.push({ kind: 'text', text: raw.replace(/\s+/g, ' ') })
-      }
+      const text = collapseHtmlWhitespace(raw)
+      if (text.length === 0) continue
+      if (text === ' ' && /[\n\r]/.test(raw)) continue // indentation between block tags
+      items.push({ kind: 'text', text })
     }
   }
 
@@ -301,11 +278,11 @@ function mapChildNodes(parent: Element, ctx: WalkContext): string[] {
   // run that follows or precedes an element is mixed-content spacing and must
   // keep its collapsed boundary space (`<span>A</span> B`).
   if (items[0]?.kind === 'text') {
-    items[0] = { kind: 'text', text: items[0].text.replace(/^\s+/, '') }
+    items[0] = { kind: 'text', text: trimHtmlWhitespaceStart(items[0].text) }
   }
   const last = items[items.length - 1]
   if (last?.kind === 'text') {
-    items[items.length - 1] = { kind: 'text', text: last.text.replace(/\s+$/, '') }
+    items[items.length - 1] = { kind: 'text', text: trimHtmlWhitespaceEnd(last.text) }
   }
 
   const childIds: string[] = []

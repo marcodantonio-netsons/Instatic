@@ -38,7 +38,7 @@ IframeFrameSurface
   <iframe srcDoc="<!doctype html><html>…">
     (inside iframe document, via createPortal)
     ├── EditorChromeInjector   (head: unlayered editor chrome CSS)
-    ├── ClassStyleInjector     (head: @layer user-authored — publisher reset + class registry)
+    ├── ClassStyleInjector     (head: @layer user-authored — publisher reset + active document classes)
     ├── UserStylesheetInjector (head: @layer user-authored — user-uploaded stylesheets)
     ├── {children}             (body: React node tree via NodeRenderer)
     └── RuntimeScriptInjector (body: opt-in runtime scripts when "Run scripts" is on)
@@ -124,7 +124,7 @@ Five `<style>` elements are injected per iframe (three from `ClassStyleInjector`
 | Injector | `id` attribute | Cascade layer | Purpose |
 |---|---|---|---|
 | `EditorChromeInjector` | `instatic-editor-chrome` | **unlayered** | Editor chrome: placeholder, slot-instance, unknown-module styles. Copies the admin tokens the chrome reads from parent `:root` onto iframe `:root`, every one under the **chrome namespace** (`--radius` → `--chrome-radius`, `--text` → `--chrome-text`, `--font-sans` → `--chrome-font-sans`, `--space-s` → `--chrome-space-s`). It never declares an admin token under its own name, because the injector is unlayered and would otherwise override any site custom property with the same name. |
-| `ClassStyleInjector` | `mc-classes` | `@layer user-authored` | Publisher reset + framework CSS (incl. the opt-in `html { font-size }` rule) + class registry CSS |
+| `ClassStyleInjector` | `mc-classes` | `@layer user-authored` | Publisher reset + framework CSS (including the opt-in root font size) + active page/VC’s reachable class CSS |
 | `ClassStyleInjector` | `mc-classes-preview` | `@layer user-authored` | Higher-specificity preview rule (doubled selector) while a property control is hovered. Empty for state-pseudo rules — those use `mc-classes-force-state` instead. |
 | `ClassStyleInjector` | `mc-classes-force-state` | `@layer user-authored` | Force-paints the active state-pseudo rule (`.btn:hover`, `.card:focus`, etc.) onto the selected node via a doubled `[data-node-id]` selector so the state is visible/editable without physically triggering it. Mirrors the full `contextStyles` emission per breakpoint and condition. |
 | `UserStylesheetInjector` | `mc-user-styles` | `@layer user-authored` | User-uploaded stylesheets (verbatim, unscoped) |
@@ -217,7 +217,7 @@ Tests that render the canvas and query nodes must use the `iframeCanvasQuery.ts`
   - `src/admin/shared/CanvasFrameSkeleton/CanvasFrameSkeleton.tsx` — shared frame skeleton for the document-loading / startup states
   - `src/admin/pages/site/canvas/useIframeCursorBridge.ts` — surfaces iframe cursor movement to parent-doc callbacks
   - `src/admin/pages/site/canvas/EditorChromeInjector.tsx` — unlayered chrome CSS
-  - `src/admin/pages/site/canvas/ClassStyleInjector.tsx` — class registry CSS
+  - `src/admin/pages/site/canvas/ClassStyleInjector.tsx` — active page/VC class CSS; `canvasStyleUsage.ts` selects reachable classes and enabled/scoped canvas-script modifiers through the shared publisher walker
   - `src/admin/pages/site/canvas/UserStylesheetInjector.tsx` — user stylesheet CSS
   - `src/admin/pages/site/canvas/RuntimeScriptInjector.tsx` — opt-in runtime scripts
   - `src/admin/pages/site/canvas/useRuntimeScriptBuild.ts` — script bundle builder

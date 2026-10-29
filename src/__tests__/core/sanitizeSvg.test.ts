@@ -21,6 +21,18 @@ describe('sanitizeSvg', () => {
     expect(out).toContain('currentColor')
   })
 
+  it('preserves text baseline positioning without preserving event handlers', () => {
+    const out = sanitizeSvg(
+      '<svg viewBox="0 0 100 100"><text x="50" y="50" dominant-baseline="central" onload="alert(1)">A</text></svg>',
+    )
+
+    expect(out).toContain('dominant-baseline="central"')
+    expect(out).toContain('>A</text>')
+    expect(out.toLowerCase()).not.toContain('onload')
+    expect(out.toLowerCase()).not.toContain('alert(1)')
+    expect(sanitizeSvg(out)).toBe(out)
+  })
+
   it('preserves safe fragment references used by text paths', () => {
     const out = sanitizeSvg(
       '<svg viewBox="0 0 100 100"><defs><path id="ring" d="M10 50a40 40 0 1 1 80 0"/></defs><text><textPath href="#ring" xlink:href="#ring">Around the ring</textPath></text></svg>',

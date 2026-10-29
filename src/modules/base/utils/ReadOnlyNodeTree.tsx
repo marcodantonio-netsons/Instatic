@@ -28,7 +28,7 @@
  * `style="…"` the published page does.
  */
 
-import type { ReactNode } from 'react'
+import { createContext, use, type ReactNode } from 'react'
 import { registry } from '@core/module-engine'
 import type { NodeWrapperProps as NodeWrapperPropsType } from '@core/module-engine'
 import type { BaseNode, PageNode } from '@core/page-tree'
@@ -38,8 +38,10 @@ import {
   effectiveNodeBindings,
   resolveDynamicProps,
   type TemplateRenderDataContext,
-} from '@core/templates/dynamicBindings'
+} from '@core/templates'
 import { useLoopPreviewItems } from '@site/canvas/useLoopPreviewItems'
+import { Button } from '@ui/components/Button'
+import { CanvasNodeTreeContext, CanvasTemplateContext } from '@site/canvas/CanvasContexts'
 
 /**
  * Identifies the editable source a read-only region was composed from, so the
@@ -91,6 +93,24 @@ interface ReadOnlyNodeTreeProps {
   templateContext?: TemplateRenderDataContext
 }
 
+interface ReadOnlyTreeScope {
+  node: (id: string) => BaseNode | undefined
+  classNames: (ids: readonly string[] | undefined) => string[]
+  outletNodeId: string | undefined
+  outletSlot: ReactNode
+  readonlyMarkers: NodeWrapperPropsType | undefined
+}
+
+// Tree resources belong to one materialized subtree, not to every recursive
+// node's props. Accessors share the original maps without copying them.
+const ReadOnlyTreeContext = createContext<ReadOnlyTreeScope | null>(null)
+
+function useReadOnlyTreeScope(): ReadOnlyTreeScope {
+  const scope = use(ReadOnlyTreeContext)
+  if (!scope) throw new Error('Read-only node renderer requires its tree scope')
+  return scope
+}
+
 /** Build the `data-instatic-readonly-*` marker bag spread onto read-only nodes. */
 function readonlyMarkers(region: ReadOnlyRegion | undefined): NodeWrapperPropsType | undefined {
   if (!region) return undefined
@@ -119,21 +139,30 @@ export function ReadOnlyNodeTree({
   readonly,
   templateContext,
 }: ReadOnlyNodeTreeProps) {
+  const inheritedContext = use(CanvasTemplateContext)
+  const renderContext = templateContext ?? inheritedContext
   // Resolve the single outlet that hosts `outletSlot` up front so only the
   // first outlet is filled (matching the composer's "first outlet wins").
   const outletNodeId = outletSlot !== undefined ? firstOutletId(nodes) : undefined
+  const scope: ReadOnlyTreeScope = {
+    node: (id) => nodes[id],
+    classNames: (ids) => classNamesForClassIds(classes, ids),
+    outletNodeId,
+    outletSlot,
+    readonlyMarkers: readonlyMarkers(readonly),
+  }
   return (
-    <ReadOnlyNodeRenderer
-      nodeId={rootNodeId}
-      nodes={nodes}
-      classes={classes}
-      extraClassName={rootMcClassName}
-      extraNodeWrapperProps={rootNodeWrapperProps}
-      outletNodeId={outletNodeId}
-      outletSlot={outletSlot}
-      readonlyMarkers={readonlyMarkers(readonly)}
-      templateContext={templateContext}
-    />
+    <CanvasNodeTreeContext.Provider value={nodes}>
+      <CanvasTemplateContext.Provider value={renderContext}>
+        <ReadOnlyTreeContext.Provider value={scope}>
+          <ReadOnlyNodeRenderer
+            nodeId={rootNodeId}
+            extraClassName={rootMcClassName}
+            extraNodeWrapperProps={rootNodeWrapperProps}
+          />
+        </ReadOnlyTreeContext.Provider>
+      </CanvasTemplateContext.Provider>
+    </CanvasNodeTreeContext.Provider>
   )
 }
 
@@ -143,34 +172,20 @@ export function ReadOnlyNodeTree({
 
 interface ReadOnlyNodeRendererProps {
   nodeId: string
-  nodes: Record<string, BaseNode>
-  classes: StyleRuleRegistry
   /** Extra class string merged onto this node's mcClassName (first root only). */
   extraClassName?: string
   /** Editor wrapper bag forwarded onto the first rendered root only. */
   extraNodeWrapperProps?: NodeWrapperPropsType
-  /** The outlet node id that should render `outletSlot` instead of itself. */
-  outletNodeId?: string
-  /** Content rendered in place of the outlet node identified by `outletNodeId`. */
-  outletSlot?: ReactNode
-  /** Read-only marker bag stamped on every node lacking selection props. */
-  readonlyMarkers?: NodeWrapperPropsType
-  /** Render data used to resolve dynamic props and token interpolation. */
-  templateContext?: TemplateRenderDataContext
 }
 
 function ReadOnlyNodeRenderer({
   nodeId,
-  nodes,
-  classes,
   extraClassName,
   extraNodeWrapperProps,
-  outletNodeId,
-  outletSlot,
-  readonlyMarkers,
-  templateContext,
 }: ReadOnlyNodeRendererProps) {
-  const node = nodes[nodeId]
+  const scope = useReadOnlyTreeScope()
+  const templateContext = use(CanvasTemplateContext)
+  const node = scope.node(nodeId)
   const ownStyle = useResponsiveBackgroundStyle(node?.inlineStyles)
   if (!node) return null
   if (node.hidden) return null
@@ -178,26 +193,20 @@ function ReadOnlyNodeRenderer({
   // Splice the editable document into the wrapping template's outlet: the
   // outlet node is replaced wholesale by `outletSlot`, just as the publisher
   // deletes the outlet and inserts the matched content at its position.
-  if (nodeId === outletNodeId) {
-    return <>{outletSlot}</>
+  if (nodeId === scope.outletNodeId) {
+    return <>{scope.outletSlot}</>
   }
 
   if (node.moduleId === 'base.body') {
-    const firstRenderableChildId = node.children.find((childId) => isRenderableNode(nodes, childId))
+    const firstRenderableChildId = node.children.find((childId) => isRenderableNode(scope.node, childId))
     return (
       <>
         {node.children.map((childId) => (
           <ReadOnlyNodeRenderer
             key={childId}
             nodeId={childId}
-            nodes={nodes}
-            classes={classes}
             extraClassName={childId === firstRenderableChildId ? extraClassName : undefined}
             extraNodeWrapperProps={childId === firstRenderableChildId ? extraNodeWrapperProps : undefined}
-            outletNodeId={outletNodeId}
-            outletSlot={outletSlot}
-            readonlyMarkers={readonlyMarkers}
-            templateContext={templateContext}
           />
         ))}
       </>
@@ -215,38 +224,24 @@ function ReadOnlyNodeRenderer({
   )
 
   const children = node.moduleId === 'base.loop' && node.children.length > 0 ? (
-    <ReadOnlyLoopIterationsPreview
-      node={node as PageNode}
-      nodes={nodes}
-      classes={classes}
-      outletNodeId={outletNodeId}
-      outletSlot={outletSlot}
-      readonlyMarkers={readonlyMarkers}
-      templateContext={templateContext}
-    />
+    <ReadOnlyLoopIterationsPreview node={node as PageNode} />
   ) : (
     node.children.map((childId) => (
       <ReadOnlyNodeRenderer
         key={childId}
         nodeId={childId}
-        nodes={nodes}
-        classes={classes}
-        outletNodeId={outletNodeId}
-        outletSlot={outletSlot}
-        readonlyMarkers={readonlyMarkers}
-        templateContext={templateContext}
       />
     ))
   )
 
-  const ownClassNames = classNamesForClassIds(classes, node.classIds)
+  const ownClassNames = scope.classNames(node.classIds)
   const merged = [extraClassName, ...ownClassNames].filter(Boolean).join(' ')
   const mcClassName = merged.length > 0 ? merged : ''
 
   // Selection-forwarding nodes (the VC ref root) keep their editor bag; every
   // other read-only node carries only the read-only markers so the canvas can
   // identify and label the region.
-  const baseWrapperProps = extraNodeWrapperProps ?? readonlyMarkers
+  const baseWrapperProps = extraNodeWrapperProps ?? scope.readonlyMarkers
 
   // Apply the node's inline styles, exactly as the publisher's
   // `injectNodeInlineStyles` emits them as a `style="…"` attribute — composed
@@ -272,35 +267,25 @@ function ReadOnlyNodeRenderer({
   )
 }
 
-function isRenderableNode(nodes: Record<string, BaseNode>, nodeId: string): boolean {
-  const node = nodes[nodeId]
+function isRenderableNode(readNode: ReadOnlyTreeScope['node'], nodeId: string): boolean {
+  const node = readNode(nodeId)
   if (!node || node.hidden) return false
   if (node.moduleId === 'base.body') {
-    return node.children.some((childId) => isRenderableNode(nodes, childId))
+    return node.children.some((childId) => isRenderableNode(readNode, childId))
   }
   return Boolean(registry.get(node.moduleId))
 }
 
 interface ReadOnlyLoopIterationsPreviewProps {
   node: PageNode
-  nodes: Record<string, BaseNode>
-  classes: StyleRuleRegistry
-  outletNodeId?: string
-  outletSlot?: ReactNode
-  readonlyMarkers?: NodeWrapperPropsType
-  templateContext?: TemplateRenderDataContext
 }
 
 function ReadOnlyLoopIterationsPreview({
   node,
-  nodes,
-  classes,
-  outletNodeId,
-  outletSlot,
-  readonlyMarkers,
-  templateContext,
 }: ReadOnlyLoopIterationsPreviewProps) {
-  const items = useLoopPreviewItems(node, templateContext)
+  const templateContext = use(CanvasTemplateContext)
+  const { items, error, refresh } = useLoopPreviewItems(node, templateContext)
+  if (error) return <div data-canvas-interactive="true"><p>{error}</p><Button variant="secondary" size="sm" onClick={refresh}>Retry loop data</Button></div>
   if (items.length === 0) return null
 
   const baseStack = templateContext?.entryStack ?? []
@@ -313,16 +298,9 @@ function ReadOnlyLoopIterationsPreview({
           entryStack: [...baseStack, item],
         }
         return (
-          <ReadOnlyNodeRenderer
-            key={`${variantId}-${i}-${item.id}`}
-            nodeId={variantId}
-            nodes={nodes}
-            classes={classes}
-            outletNodeId={outletNodeId}
-            outletSlot={outletSlot}
-            readonlyMarkers={readonlyMarkers}
-            templateContext={augmentedContext}
-          />
+          <CanvasTemplateContext.Provider key={`${variantId}-${i}-${item.id}`} value={augmentedContext}>
+            <ReadOnlyNodeRenderer nodeId={variantId} />
+          </CanvasTemplateContext.Provider>
         )
       })}
     </>

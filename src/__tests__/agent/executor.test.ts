@@ -11,10 +11,13 @@
  */
 
 import { describe, it, expect } from 'bun:test'
+import { GlobalWindow } from 'happy-dom'
 import { useEditorStore } from '@site/store/store'
 import { executeAgentTool } from '@site/agent'
 import type { AiToolOutput } from '@core/ai'
 import { classNamesForClassIds } from '@core/page-tree'
+import { generateClassCSS, publishPage } from '@core/publisher'
+import { registry } from '@core/module-engine'
 import '@modules/base'
 
 // ---------------------------------------------------------------------------
@@ -165,7 +168,8 @@ describe('executeAgentTool — insertHtml', () => {
     const heroClass = classes.find((c) => c.name === 'hero-section')
     expect(heroClass).toBeDefined()
     expect(heroClass!.styles.paddingTop).toBe('80px')
-    expect(heroClass!.styles.backgroundColor).toBe('tomato')
+    expect(classes.find((rule) => rule.selector === '.hero-section' && rule.kind === 'ambient')?.styles.backgroundColor)
+      .toBe('tomato')
 
     // ...AND the imported node must reference the class by its registry id, so
     // the declared styles actually resolve at render time (regression guard:
@@ -238,26 +242,43 @@ describe('executeAgentTool — insertHtml', () => {
     }
   })
 
-  it('a <style> @media block folds into the class contextStyles for the matching breakpoint', async () => {
+  it('a <style> @media fragment keeps its source order when inserted and published', async () => {
     const { rootId } = freshStore()
     // The default site's `mobile` breakpoint is `(max-width: 375px)`, so a
-    // matching @media query folds into contextStyles.mobile.
+    // matching @media fragment keeps contextStyles.mobile at its own position.
     const result = await executeAgentTool('site_insert_html', {
       parentId: rootId,
       html:
         '<style>' +
         '.hero-title { font-size: 56px; }' +
+        '.secondary { font-size: 40px; }' +
         '@media (max-width: 375px) { .hero-title { font-size: 32px; } }' +
         '</style>' +
-        '<h1 class="hero-title">Hello</h1>',
+        '<h1 class="hero-title secondary">Hello</h1>',
     })
     expectNodeIds(result)
-    const cls = Object.values(useEditorStore.getState().site!.styleRules).find(
+    const site = useEditorStore.getState().site!
+    const cls = Object.values(site.styleRules).find(
       (c) => c.name === 'hero-title',
     )
     expect(cls).toBeDefined()
     expect(cls!.styles.fontSize).toBe('56px')
-    expect(cls!.contextStyles.mobile.fontSize).toBe('32px')
+    const conditional = Object.values(site.styleRules).find((rule) =>
+      rule.selector === '.hero-title' && rule.contextStyles.mobile?.fontSize === '32px',
+    )!
+    expect(conditional.kind).toBe('ambient')
+    expect(conditional.order).toBeGreaterThan(cls!.order)
+
+    const { html } = publishPage(site.pages[0], site, registry)
+    for (const [width, expected] of [[375, '32px'], [1280, '40px']] as const) {
+      const window = new GlobalWindow({ width })
+      window.document.write(html)
+      const heading = window.document.querySelector('h1')!
+      expect(heading.textContent).toBe('Hello')
+      expect(heading.classList.contains('hero-title')).toBe(true)
+      expect(heading.classList.contains('secondary')).toBe(true)
+      expect(window.getComputedStyle(heading).fontSize).toBe(expected)
+    }
   })
 
   it('returns failure for missing html (schema validation)', async () => {
@@ -1026,13 +1047,14 @@ describe('executeAgentTool — applyCss', () => {
       css: '.btn-primary { font-size: 14px; color: var(--primary); }',
     })
     const data = expectToolData<{ cssRulesCreated: number; cssRulesUpdated: number }>(result)
-    expect(data.cssRulesCreated).toBe(1)
+    expect(data.cssRulesCreated).toBe(2)
     expect(data.cssRulesUpdated).toBe(0)
 
     const cls = findRule((c) => c.name === 'btn-primary')!
     expect(cls.kind ?? 'class').toBe('class')
     expect(cls.styles.fontSize).toBe('14px')
-    expect(cls.styles.color).toBe('var(--primary)')
+    expect(findRule((rule) => rule.selector === '.btn-primary' && rule.kind === 'ambient')?.styles.color)
+      .toBe('var(--primary)')
   })
 
   it('EDITS an existing class when its selector is re-applied (upsert, not duplicate)', async () => {
@@ -1044,12 +1066,13 @@ describe('executeAgentTool — applyCss', () => {
     })
     const data = expectToolData<{ cssRulesCreated: number; cssRulesUpdated: number }>(result)
     expect(data.cssRulesUpdated).toBe(1)
-    expect(data.cssRulesCreated).toBe(0)
+    expect(data.cssRulesCreated).toBe(1)
 
     const cards = Object.values(useEditorStore.getState().site!.styleRules).filter((c) => c.name === 'card')
     expect(cards).toHaveLength(1) // merged onto the existing rule, not duplicated
     expect(cards[0].styles.color).toBe('blue') // overwritten
-    expect(cards[0].styles.fontSize).toBe('20px') // added
+    expect(findRule((rule) => rule.selector === '.card' && rule.kind === 'ambient')?.styles.fontSize)
+      .toBe('20px')
   })
 
   it('creates an assignable class rule from a descendant selector', async () => {
@@ -1083,10 +1106,11 @@ describe('executeAgentTool — applyCss', () => {
     )
     expect(matches).toHaveLength(1) // upserted, not piled up as a duplicate
     expect(matches[0].styles.color).toBe('var(--primary)')
-    expect(matches[0].styles.textDecoration).toBe('underline')
+    expect(findRule((rule) => rule.selector === '.hero a:hover' && rule.kind === 'ambient')?.styles.textDecoration)
+      .toBe('underline')
   })
 
-  it('folds a matching @media block into the rule contextStyles', async () => {
+  it('preserves a matching @media fragment at its source position', async () => {
     freshStore()
     await executeAgentTool('site_apply_css', {
       operation: 'merge',
@@ -1096,7 +1120,10 @@ describe('executeAgentTool — applyCss', () => {
     })
     const cls = findRule((c) => c.name === 'hero-title')!
     expect(cls.styles.fontSize).toBe('56px')
-    expect(cls.contextStyles.mobile.fontSize).toBe('32px')
+    const fragment = findRule((c) => c.selector === '.hero-title' && c.kind === 'ambient')!
+    expect(fragment.contextStyles.mobile.fontSize).toBe('32px')
+    expect(fragment.grouping).toEqual([expect.objectContaining({ kind: 'context', contextId: 'mobile' })])
+    expect(fragment.order).toBeGreaterThan(cls.order)
   })
 
   it('replace makes one selector payload authoritative without changing its identity or assignment', async () => {
@@ -1150,7 +1177,7 @@ describe('executeAgentTool — applyCss', () => {
     expect(activePage().nodes[nodeId].classIds).toContain(rule.id)
   })
 
-  it('merge reorders touched declarations so a longhand authored after a shorthand wins', async () => {
+  it('merge preserves shorthand/longhand order through separate native fragments', async () => {
     freshStore()
     const rule = useEditorStore.getState().createClass('grad', {
       backgroundClip: 'text',
@@ -1166,8 +1193,15 @@ describe('executeAgentTool — applyCss', () => {
         '}',
     })
 
-    const keys = Object.keys(useEditorStore.getState().site!.styleRules[rule.id].styles)
-    expect(keys.indexOf('background')).toBeLessThan(keys.indexOf('backgroundClip'))
+    const site = useEditorStore.getState().site!
+    expect(site.styleRules[rule.id].styles).toEqual({
+      background: 'linear-gradient(var(--primary), var(--accent))',
+    })
+    const clip = findRule((candidate) => candidate.selector === '.grad' && candidate.kind === 'ambient')!
+    expect(clip.styles).toEqual({ backgroundClip: 'text' })
+    expect(clip.order).toBeGreaterThan(rule.order)
+    const css = generateClassCSS(site.styleRules, site.breakpoints, site.conditions)
+    expect(css.indexOf('background:')).toBeLessThan(css.indexOf('background-clip: text'))
   })
 
   it('preserves important priority and lets a later normal merge remove it explicitly', async () => {
@@ -1240,11 +1274,14 @@ describe('executeAgentTool — applyCss', () => {
     })
 
     const data = expectToolData<{ cssRulesUpdated: number; cssPropertiesRemoved: number }>(result)
-    expect(data.cssRulesUpdated).toBe(1)
+    expect(data.cssRulesUpdated).toBe(6)
     expect(data.cssPropertiesRemoved).toBeGreaterThan(4)
-    const rule = findRule((candidate) => candidate.selector === '.mask')!
+    const rule = findRule((candidate) => candidate.selector === '.mask' && 'color' in candidate.styles)!
     expect(rule.styles.color).toBe('transparent')
-    for (const bag of [rule.styles, ...Object.values(rule.contextStyles)]) {
+    const bags = Object.values(useEditorStore.getState().site!.styleRules)
+      .filter((candidate) => candidate.selector === '.mask')
+      .flatMap((candidate) => [candidate.styles, ...Object.values(candidate.contextStyles)])
+    for (const bag of bags) {
       expect('background' in bag).toBe(false)
       expect('WebkitTextFillColor' in bag).toBe(false)
       expect('--mask-token' in bag).toBe(false)
@@ -1276,7 +1313,7 @@ describe('executeAgentTool — applyCss', () => {
       properties: ['background', 'border-image-source'],
     })
     expectToolError(removeResult)
-    const rule = findRule((candidate) => candidate.selector === '.safe')!
+    const rule = findRule((candidate) => candidate.selector === '.safe' && 'background' in candidate.styles)!
     expect(rule.styles.background).toBe('var(--surface)')
   })
 

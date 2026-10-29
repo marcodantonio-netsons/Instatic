@@ -139,3 +139,32 @@ describe('hasContentTableAccess — list/search membership', () => {
     expect(hasContentTableAccess(entry.manifest, table('customers', null))).toBe(false)
   })
 })
+
+
+describe('hasContentTableAccess — operation mode before content reads', () => {
+  it('keeps membership for write-only tables while excluding their reads', () => {
+    const entry = pluginRecord('acme.importer', [
+      { table: 'write-only', modes: ['write'] },
+      { table: OWN_CREATED_TABLES_MARKER, modes: ['write'] },
+    ])
+    for (const target of [table('write-only', null), table('runtime-products', entry.manifest.id)]) {
+      expect(hasContentTableAccess(entry.manifest, target)).toBe(true)
+      expect(hasContentTableAccess(entry.manifest, target, 'read')).toBe(false)
+      expect(hasContentTableAccess(entry.manifest, target, 'write')).toBe(true)
+    }
+    expect(hasContentTableAccess(entry.manifest, table('runtime-products', 'other.plugin'), 'write')).toBe(false)
+  })
+
+  it('unions slug and creator grants for the requested mode without widening ownership', () => {
+    const entry = pluginRecord('acme.importer', [
+      { table: 'runtime-products', modes: ['write'] },
+      { table: OWN_CREATED_TABLES_MARKER, modes: ['read'] },
+    ])
+    const own = table('runtime-products', entry.manifest.id)
+    expect(hasContentTableAccess(entry.manifest, own, 'read')).toBe(true)
+    expect(hasContentTableAccess(entry.manifest, own, 'write')).toBe(true)
+    expect(hasContentTableAccess(entry.manifest, own, 'delete')).toBe(false)
+    expect(hasContentTableAccess(entry.manifest, table('runtime-products', 'other.plugin'), 'read')).toBe(false)
+    expect(hasContentTableAccess(entry.manifest, table('undeclared', null), 'read')).toBe(false)
+  })
+})

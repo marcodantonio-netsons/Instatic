@@ -39,6 +39,7 @@ import type { IModuleRegistry } from '@core/module-engine'
 import { selectVisualComponentById } from '@core/page-tree'
 import { loopSourceRegistry } from '@core/loops/registry'
 import { containsTokens, parseTokenString } from '@core/templates/tokenInterpolation'
+import { mapJsonStrings } from '@core/utils/jsonStrings'
 
 // ---------------------------------------------------------------------------
 // Binding-source classification
@@ -120,18 +121,20 @@ function checkDynamicBindings(node: AnalysisNode): string | null {
  * Returns the first matching reason string or null.
  */
 function checkInlineTokens(node: AnalysisNode): string | null {
-  for (const [propKey, propValue] of Object.entries(node.props)) {
-    if (typeof propValue !== 'string') continue
-    if (!containsTokens(propValue)) continue
+  let reason: string | null = null
+  mapJsonStrings(node.props, (propValue, propKey) => {
+    if (reason || !containsTokens(propValue)) return propValue
     const segments = parseTokenString(propValue)
     for (const seg of segments) {
       if (seg.kind !== 'token') continue
       if (isBindingSourceRequestDependent(seg.source, seg.field)) {
-        return `node "${node.id}": prop "${propKey}" contains request-dependent token "{${seg.source}.${seg.field}}"`
+        reason = `node "${node.id}": prop "${propKey}" contains request-dependent token "{${seg.source}.${seg.field}}"`
+        break
       }
     }
-  }
-  return null
+    return propValue
+  })
+  return reason
 }
 
 /**

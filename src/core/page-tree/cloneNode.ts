@@ -1,4 +1,5 @@
 import type { PageNode } from './pageNode'
+import { remapNodeReferenceProps } from './nodeReferences'
 
 // ---------------------------------------------------------------------------
 // cloneNodeWithRemap — the single node deep-clone primitive
@@ -14,8 +15,8 @@ import type { PageNode } from './pageNode'
  *
  * Every persisted sub-object is copied so NOTHING is shared by reference with
  * the source:
- *   - `props` — shallow-copied (prop values are content, mutated via replace).
- *   - `breakpointOverrides` — deep-copied one level (per-breakpoint bags).
+ *   - `props` / `breakpointOverrides` — copied, with declared tree-node
+ *     references remapped; other prop values are content, mutated via replace.
  *   - `inlineStyles` / `propBindings` / `dynamicBindings` — copied when present.
  *   - `children` — remapped through `idMap`; ids absent from the map are dropped
  *     (a self-contained subtree has every child in the map, so for well-formed
@@ -40,9 +41,9 @@ export function cloneNodeWithRemap(
   const cloned: PageNode = {
     ...node,
     id: newId,
-    props: { ...node.props },
+    props: remapNodeReferenceProps(node.moduleId, node.props, idMap),
     breakpointOverrides: Object.fromEntries(
-      Object.entries(node.breakpointOverrides).map(([k, v]) => [k, { ...v }]),
+      Object.entries(node.breakpointOverrides).map(([k, v]) => [k, remapNodeReferenceProps(node.moduleId, v, idMap)]),
     ),
     children: node.children
       .map((childId) => idMap.get(childId))

@@ -13,9 +13,12 @@
  */
 
 import { describe, it, expect, beforeEach } from 'bun:test'
+import { GlobalWindow } from 'happy-dom'
 import { useEditorStore } from '@site/store/store'
-import type { NewStyleRule } from '@core/siteImport'
+import { cssToStyleRules, type NewStyleRule } from '@core/siteImport'
 import { classKindSelector } from '@core/page-tree'
+import { generateClassCSS } from '@core/publisher'
+import parse from 'postcss/lib/parse'
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -231,6 +234,216 @@ describe('styleRuleSlice.setClassContextStyles', () => {
 // ---------------------------------------------------------------------------
 
 describe('styleRuleSlice.applyCssRules', () => {
+  function apply(css: string, mode: 'merge' | 'replace' = 'merge') {
+    const parsed = cssToStyleRules(css, { breakpoints: [], mediaTolerance: 0 })
+    expect(parsed.warnings.filter((warning) => warning.kind !== 'duplicate-class')).toEqual([])
+    return getStore().applyCssRules(parsed.rules, parsed.conditions, mode)
+  }
+  function emitted() {
+    const site = getStore().site!
+    return generateClassCSS(site.styleRules, site.breakpoints, site.conditions)
+  }
+  function color(classes: string, width = 1280) {
+    const window = new GlobalWindow({ width })
+    window.document.write(`<style>${emitted()}</style><div class="${classes}">Text</div>`)
+    return window.getComputedStyle(window.document.querySelector('div')!).color
+  }
+
+  it('preserves repeated source fragments, layer anchors, nested contexts and native registrations', () => {
+    setupSite()
+    const source =
+      '@layer low, high; @layer low { .a {color:red} .b {color:blue} .a {color:green!important} } @layer high { @media (min-width:1px) { @supports (display:grid) { .a {color:black} } } } @property --size {syntax:"<length>";inherits:false;initial-value:12px}'
+    apply(source)
+    const css = emitted()
+    expect(css.indexOf('color: red')).toBeLessThan(css.indexOf('color: blue'))
+    expect(css.indexOf('color: blue')).toBeLessThan(css.indexOf('color: green !important'))
+    expect(css).toContain('@supports (display:grid)')
+    expect(css).toContain('@property --size')
+    expect(
+      Object.values(getStore().site!.styleRules).filter(
+        (rule) => rule.kind === 'class' && rule.name === 'a',
+      ),
+    ).toHaveLength(1)
+    const before = getStore().site!.styleRules
+    expect(apply(source)).toEqual({ created: 0, updated: 0, blockedSelectors: [] })
+    expect(getStore().site!.styleRules).toBe(before)
+    expect(emitted()).toBe(css)
+  })
+
+  it('keeps named layers distinct and edits one group without moving its sibling declarations', () => {
+    setupSite()
+    apply('@layer first { .a {color:red} .b{color:blue} } @layer second { .a {color:green} }')
+    apply('@layer first { .a {color:black} }')
+    const root = parse(emitted())
+    const layers = root.nodes.filter((node) => node.type === 'atrule' && node.name === 'layer')
+    expect(layers).toHaveLength(2)
+    expect(layers[0].toString()).toContain('color: black')
+    expect(layers[0].toString()).toContain('.b')
+    expect(layers[1].toString()).toContain('color: green')
+  })
+
+  it('keeps anonymous layers independent across separately applied CSS batches', () => {
+    setupSite()
+    apply('@layer { .a {color:red!important} .b {color:blue} }')
+    apply('@layer { .a {color:green!important} }')
+    const layers = parse(emitted()).nodes.filter((node) => node.type === 'atrule')
+    expect(layers).toHaveLength(2)
+    expect(layers[0].toString()).toContain('color: red !important')
+    expect(layers[0].toString()).toContain('.b')
+    expect(layers[1].toString()).toContain('color: green !important')
+  })
+
+  it('replace removes omitted conditional fragments within one layer and retains assignment identity', () => {
+    setupSite()
+    apply(
+      '@layer first { .a {color:red} @media (min-width:1px) { .a {color:blue} } } @layer second { .a {color:green} }',
+    )
+    const binding = Object.values(getStore().site!.styleRules).find(
+      (rule) => rule.kind === 'class' && rule.name === 'a',
+    )!
+    const id = binding.id,
+      order = binding.order
+    apply('@layer first { .a {color:black} }', 'replace')
+    const css = emitted()
+    expect(css).not.toContain('@media')
+    expect(css).not.toContain('color: blue')
+    expect(css).toContain('color: black')
+    expect(css).toContain('color: green')
+    expect(getStore().site!.styleRules[id].order).toBe(order)
+  })
+
+  it('updates property descriptors rather than dropping metadata or treating the write as a no-op', () => {
+    setupSite()
+    apply('@property --size {syntax:"<length>";inherits:false;initial-value:12px}')
+    expect(
+      apply('@property --size {syntax:"<percentage>";inherits:true;initial-value:10%}').updated,
+    ).toBe(1)
+    expect(emitted()).toContain('syntax: "<percentage>"')
+    expect(emitted()).toContain('inherits: true')
+    expect(emitted()).toContain('initial-value: 10%')
+  })
+
+  it('keeps merge declarations independent of object-key order and preserves competing source positions', () => {
+    setupSite()
+    apply('.a {background:var(--hero)} .b {color:blue} @media (min-width:1px) {.a {color:green}}')
+    const binding = Object.values(getStore().site!.styleRules).find((rule) => rule.kind === 'class' && rule.name === 'a')!
+    const originalOrder = binding.order
+    apply('.a {background:var(--hero); background-clip:text; color:red}')
+    const site = getStore().site!
+    expect(site.styleRules[binding.id].order).toBe(originalOrder)
+    const css = emitted()
+    expect(css.indexOf('background: var(--hero)')).toBeLessThan(css.indexOf('background-clip: text'))
+    expect(css.indexOf('background-clip: text')).toBeLessThan(css.indexOf('color: red'))
+    expect(css.indexOf('color: red')).toBeLessThan(css.indexOf('color: blue'))
+    expect(css.indexOf('color: blue')).toBeLessThan(css.indexOf('color: green'))
+    const reversed = Object.fromEntries(Object.entries(site.styleRules).map(([id, rule]) => [id, {
+      ...rule,
+      styles: Object.fromEntries(Object.entries(rule.styles).reverse()),
+      contextStyles: Object.fromEntries(Object.entries(rule.contextStyles).map(([context, bag]) => [
+        context, Object.fromEntries(Object.entries(bag).reverse()),
+      ])),
+    }]))
+    expect(generateClassCSS(reversed, site.breakpoints, site.conditions)).toBe(css)
+    expect(apply('.a {background:var(--hero); background-clip:text; color:red}'))
+      .toEqual({ created: 0, updated: 0, blockedSelectors: [] })
+  })
+
+  it('merges a property without copying untouched declarations into its new fragment', () => {
+    setupSite()
+    const binding = getStore().createClass('a', { color: 'red', background: 'var(--hero)' })
+    apply('.a {background:var(--other)}')
+    const fragments = Object.values(getStore().site!.styleRules).filter((rule) => rule.selector === '.a')
+    expect(fragments).toHaveLength(2)
+    expect(getStore().site!.styleRules[binding.id].styles).toEqual({ color: 'red' })
+    expect(fragments.find((rule) => rule.kind === 'ambient')?.styles).toEqual({ background: 'var(--other)' })
+  })
+
+  it('replaces a base rule with a conditional program while retaining the assigned class identity', () => {
+    setupSite()
+    apply('.a {background:red} .b {color:blue} @media (min-width:1px) {.a {color:green}}')
+    const binding = Object.values(getStore().site!.styleRules).find((rule) => rule.kind === 'class' && rule.name === 'a')!
+    expect(color('a b')).toBe('green')
+    apply('@media (min-width:1px) {.a {color:red}}', 'replace')
+    const site = getStore().site!
+    expect(site.styleRules[binding.id].kind).toBe('class')
+    expect(site.styleRules[binding.id].styles).toEqual({})
+    expect(Object.values(site.styleRules).filter((rule) => rule.selector === '.a')).toHaveLength(2)
+    expect(emitted()).toContain('@media (min-width:1px)')
+    expect(emitted().indexOf('color: blue')).toBeLessThan(emitted().indexOf('color: red'))
+    expect(color('a b')).toBe('red')
+  })
+
+  it('treats an empty merge on an existing selector as a no-op', () => {
+    setupSite()
+    apply('.a {color:red}')
+    const before = getStore().site!.styleRules
+    expect(apply('.a {}')).toEqual({ created: 0, updated: 0, blockedSelectors: [] })
+    expect(getStore().site!.styleRules).toBe(before)
+  })
+
+  it('keeps newly appended selectors after companions without duplicate cascade orders', () => {
+    setupSite()
+    apply('.a {color:red}')
+    apply('.a {color:red; background:blue} .b {color:green}')
+    const rules = Object.values(getStore().site!.styleRules)
+    expect(new Set(rules.map((rule) => rule.order)).size).toBe(rules.length)
+    expect(rules.sort((a, b) => a.order - b.order).map((rule) => rule.selector))
+      .toEqual(['.a', '.a', '.b'])
+  })
+
+  it('inserts beside the anchor before a competitor in the same order bucket', () => {
+    setupSite()
+    const a = getStore().createClass('a', { color: 'red' })
+    const b = getStore().createClass('b', { color: 'blue' })
+    const site = getStore().site!
+    useEditorStore.setState({ site: { ...site, styleRules: {
+      [a.id]: { ...a, order: 0 }, [b.id]: { ...b, order: 0 },
+    } } })
+    apply('.a {color:red; background:green}')
+    const rules = Object.values(getStore().site!.styleRules).sort((a, b) => a.order - b.order)
+    expect(rules.map((rule) => rule.selector)).toEqual(['.a', '.a', '.b'])
+    expect(new Set(rules.map((rule) => rule.order)).size).toBe(rules.length)
+    expect(color('a b')).toBe('blue')
+  })
+
+  it('renumbers an exhausted numeric interval without changing emitted source sequence', () => {
+    setupSite()
+    apply('.a {color:red} .b {color:blue}')
+    const extras = Array.from({ length: 70 }, (_, index) => `--p${index}:${index};`).join('')
+    apply(`.a {color:red;${extras}}`)
+    const rules = Object.values(getStore().site!.styleRules).sort((a, b) => a.order - b.order)
+    expect(rules).toHaveLength(72)
+    expect(rules.slice(0, -1).every((rule) => rule.selector === '.a')).toBe(true)
+    expect(rules.at(-1)?.selector).toBe('.b')
+    expect(new Set(rules.map((rule) => rule.order)).size).toBe(rules.length)
+    expect(color('a b')).toBe('blue')
+  })
+
+  it('inserts base patches before existing compact responsive overrides on consecutive merges', () => {
+    setupSite()
+    const binding = getStore().createClass('a', { background: 'red' })
+    getStore().setClassContextStyles(binding.id, 'mobile', { color: 'green' })
+    apply('.a {color:red}')
+    expect(color('a', 375)).toBe('green')
+    expect(color('a', 1280)).toBe('red')
+    apply('.a {color:blue; font-size:20px}')
+    expect(color('a', 375)).toBe('green')
+    expect(color('a', 1280)).toBe('blue')
+    const context = Object.values(getStore().site!.styleRules).find((rule) => rule.contextStyles.mobile?.color === 'green')!
+    expect(context.grouping).toEqual([expect.objectContaining({ kind: 'context', contextId: 'mobile' })])
+    expect(getStore().site!.styleRules[binding.id].kind).toBe('class')
+    expect(apply('.a {color:blue; font-size:20px}')).toEqual({ created: 0, updated: 0, blockedSelectors: [] })
+  })
+
+  it('does not materialize compact responsive bags for an empty merge', () => {
+    setupSite()
+    const binding = getStore().createClass('a', { background: 'red' })
+    getStore().setClassContextStyles(binding.id, 'mobile', { color: 'green' })
+    const before = getStore().site!.styleRules
+    expect(apply('.a {}')).toEqual({ created: 0, updated: 0, blockedSelectors: [] })
+    expect(getStore().site!.styleRules).toBe(before)
+  })
+
   it('skips identical writes and prunes priority metadata when values are cleared', () => {
     setupSite()
     const incoming: NewStyleRule = {
@@ -245,12 +458,13 @@ describe('styleRuleSlice.applyCssRules', () => {
     }
 
     expect(getStore().applyCssRules([incoming], [], 'merge')).toEqual({
-      created: 1,
+      created: 2,
       updated: 0,
       blockedSelectors: [],
     })
-    const rule = Object.values(useEditorStore.getState().site!.styleRules)
-      .find((candidate) => candidate.selector === '.priority')!
+    const rule = Object.values(useEditorStore.getState().site!.styleRules).find(
+      (candidate) => candidate.selector === '.priority',
+    )!
     const historyBeforeNoop = historyLength()
     const updatedAtBeforeNoop = rule.updatedAt
 
@@ -263,10 +477,12 @@ describe('styleRuleSlice.applyCssRules', () => {
     expect(useEditorStore.getState().site!.styleRules[rule.id].updatedAt).toBe(updatedAtBeforeNoop)
 
     getStore().updateClassStyles(rule.id, { color: undefined })
-    getStore().setClassContextStyles(rule.id, 'mobile', { color: undefined })
+    const responsive = Object.values(getStore().site!.styleRules).find((candidate) => candidate.contextStyles.mobile?.color === 'blue')!
+    getStore().setClassContextStyles(responsive.id, 'mobile', { color: undefined })
     const cleared = useEditorStore.getState().site!.styleRules[rule.id]
     expect(cleared.stylePriorities).toBeUndefined()
     expect(cleared.contextStylePriorities).toBeUndefined()
+    expect(getStore().site!.styleRules[responsive.id].contextStylePriorities).toBeUndefined()
   })
 })
 
@@ -708,7 +924,9 @@ describe('styleRuleSlice — undo / redo', () => {
 
     getStore().deleteClass(cls.id)
     expect(useEditorStore.getState().site!.styleRules[cls.id]).toBeUndefined()
-    expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).not.toContain(cls.id)
+    expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).not.toContain(
+      cls.id,
+    )
 
     useEditorStore.getState().undo()
     expect(useEditorStore.getState().site!.styleRules[cls.id]).toBeDefined()
@@ -716,7 +934,9 @@ describe('styleRuleSlice — undo / redo', () => {
 
     useEditorStore.getState().redo()
     expect(useEditorStore.getState().site!.styleRules[cls.id]).toBeUndefined()
-    expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).not.toContain(cls.id)
+    expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).not.toContain(
+      cls.id,
+    )
   })
 
   it('style edits are undoable and redoable', () => {
@@ -738,13 +958,19 @@ describe('styleRuleSlice — undo / redo', () => {
     const cls = getStore().createClass('responsive')
 
     getStore().setClassContextStyles(cls.id, 'mobile', { fontSize: '14px' })
-    expect(useEditorStore.getState().site!.styleRules[cls.id].contextStyles.mobile?.fontSize).toBe('14px')
+    expect(useEditorStore.getState().site!.styleRules[cls.id].contextStyles.mobile?.fontSize).toBe(
+      '14px',
+    )
 
     useEditorStore.getState().undo()
-    expect(useEditorStore.getState().site!.styleRules[cls.id].contextStyles.mobile?.fontSize).toBeUndefined()
+    expect(
+      useEditorStore.getState().site!.styleRules[cls.id].contextStyles.mobile?.fontSize,
+    ).toBeUndefined()
 
     useEditorStore.getState().redo()
-    expect(useEditorStore.getState().site!.styleRules[cls.id].contextStyles.mobile?.fontSize).toBe('14px')
+    expect(useEditorStore.getState().site!.styleRules[cls.id].contextStyles.mobile?.fontSize).toBe(
+      '14px',
+    )
   })
 
   it('node class assignments are undoable and redoable', () => {
@@ -755,13 +981,17 @@ describe('styleRuleSlice — undo / redo', () => {
     expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).toContain(cls.id)
 
     useEditorStore.getState().undo()
-    expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).not.toContain(cls.id)
+    expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).not.toContain(
+      cls.id,
+    )
 
     useEditorStore.getState().redo()
     expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).toContain(cls.id)
 
     getStore().removeNodeClass(childId, cls.id)
-    expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).not.toContain(cls.id)
+    expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).not.toContain(
+      cls.id,
+    )
 
     useEditorStore.getState().undo()
     expect(useEditorStore.getState().site!.pages[0].nodes[childId].classIds ?? []).toContain(cls.id)
@@ -863,9 +1093,7 @@ describe('styleRuleSlice — node class assignment in VC canvas', () => {
 
     getStore().addNodeClass(vcChildId, cls.id)
 
-    const vc = useEditorStore
-      .getState()
-      .site!.visualComponents.find((v) => v.id === vcId)!
+    const vc = useEditorStore.getState().site!.visualComponents.find((v) => v.id === vcId)!
     expect(vc.tree.nodes[vcChildId].classIds).toContain(cls.id)
   })
 
@@ -876,9 +1104,7 @@ describe('styleRuleSlice — node class assignment in VC canvas', () => {
     getStore().addNodeClass(vcChildId, cls.id)
     getStore().removeNodeClass(vcChildId, cls.id)
 
-    const vc = useEditorStore
-      .getState()
-      .site!.visualComponents.find((v) => v.id === vcId)!
+    const vc = useEditorStore.getState().site!.visualComponents.find((v) => v.id === vcId)!
     expect(vc.tree.nodes[vcChildId].classIds ?? []).not.toContain(cls.id)
   })
 
@@ -894,9 +1120,7 @@ describe('styleRuleSlice — node class assignment in VC canvas', () => {
     // [a, b, c] → move c up → [a, c, b]
     getStore().reorderNodeClass(vcChildId, c.id, 'up')
 
-    const vc = useEditorStore
-      .getState()
-      .site!.visualComponents.find((v) => v.id === vcId)!
+    const vc = useEditorStore.getState().site!.visualComponents.find((v) => v.id === vcId)!
     expect(vc.tree.nodes[vcChildId].classIds).toEqual([a.id, c.id, b.id])
   })
 
@@ -907,9 +1131,7 @@ describe('styleRuleSlice — node class assignment in VC canvas', () => {
 
     getStore().deleteClass(cls.id)
 
-    const vc = useEditorStore
-      .getState()
-      .site!.visualComponents.find((v) => v.id === vcId)!
+    const vc = useEditorStore.getState().site!.visualComponents.find((v) => v.id === vcId)!
     expect(vc.tree.nodes[vcChildId].classIds ?? []).not.toContain(cls.id)
   })
 })

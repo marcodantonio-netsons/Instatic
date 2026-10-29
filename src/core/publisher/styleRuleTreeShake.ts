@@ -27,9 +27,8 @@ let lastScriptRuns: Set<string> = new Set()
  * live site with nothing to point at.
  */
 function scriptIdentifierRuns(files: SiteDocument['files']): Set<string> {
-  // `usedStyleRuleIdSignature` runs inside a canvas store selector, so this is
-  // hit on every store change. The store snapshot is immutable, so identity on
-  // the files array is enough to skip re-splitting unchanged sources.
+  // Inventory callers share immutable snapshots, so identity on the files
+  // array is enough to skip re-splitting unchanged sources.
   if (files === lastScriptFiles) return lastScriptRuns
 
   const runs = new Set<string>()
@@ -68,24 +67,20 @@ export function collectUsedStyleRuleIds(
     }
   }
 
+  addScriptStyleRuleIds(usedIds, site)
+  return usedIds
+}
+
+function addScriptStyleRuleIds(
+  usedIds: Set<string>,
+  site: Pick<SiteDocument, 'files' | 'styleRules'>,
+): void {
   const runs = scriptIdentifierRuns(site.files ?? [])
   if (runs.size > 0) {
     for (const rule of Object.values(site.styleRules ?? {})) {
       if (rule.kind === 'class' && runs.has(rule.name)) usedIds.add(rule.id)
     }
   }
-
-  return usedIds
-}
-
-/**
- * A stable primitive signature suitable for store subscriptions. It changes
- * only when the set of assigned class ids changes, not for unrelated edits.
- */
-export function usedStyleRuleIdSignature(
-  site: Pick<SiteDocument, 'pages' | 'visualComponents' | 'files' | 'styleRules'>,
-): string {
-  return [...collectUsedStyleRuleIds(site)].sort().join('\0')
 }
 
 const NEGATION_PSEUDOS: ReadonlySet<string> = new Set(['not'])
@@ -248,8 +243,8 @@ function selectorCanMatch(
 /**
  * Select only registry rules that can affect the current document trees.
  *
- * Class rules require their assignment id and every known class dependency in
- * their selector. Ambient selector fragments require every known dependency
+ * Class rules require their assignment id and every known outer positive class
+ * dependency. Ambient selector fragments require every known outer dependency
  * in at least one selector-list alternative. Class-free selectors and raw
  * stylesheet blocks stay conservative because their reach cannot be inferred
  * from node class ids alone.
@@ -286,7 +281,7 @@ export function treeShakeStyleRules(
     }
 
     if (
-      rule.rawCss
+      rule.rawCss || rule.atRule
       || selectorCanMatch(rule.selector, knownClassNames, usedClassNames)
     ) {
       selected[rule.id] = rule

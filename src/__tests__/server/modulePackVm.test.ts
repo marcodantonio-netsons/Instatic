@@ -8,6 +8,8 @@
  */
 import { describe, expect, it } from 'bun:test'
 import { createModulePackVm } from '../../../server/plugins/modulePackVm'
+import { deserializeTypeBoxSchema } from '@core/utils/typeboxDeserialize'
+import { compiledCheck } from '@core/utils/typeboxCompiler'
 import {
   DEFAULT_EVAL_TIMEOUT_MS,
   DEFAULT_MEMORY_LIMIT_BYTES,
@@ -30,6 +32,23 @@ var __modules_facade_default = [counter];
 `
 
 describe('modulePackVm — source shim', () => {
+  it('transports declarative TypeBox props and publish schemas through real QuickJS metadata', async () => {
+    const source = `
+      const kind = Symbol.for('TypeBox.Kind');
+      const count = { [kind]: 'Integer', type: 'integer', minimum: 1, default: 1 };
+      const props = { [kind]: 'Object', type: 'object', properties: { count }, required: ['count'] };
+      const publish = { [kind]: 'Object', type: 'object', properties: { props }, required: ['props'] };
+      export default [{ id: 'acme.canvas.strict', name: 'Strict', category: 'Acme', version: '1.0.0', defaults: { count: 1 }, schema: {}, propsSchema: props, publishSchema: publish, render: () => ({ html: '<p>ok</p>' }) }];
+    `
+    const vm = await createModulePackVm({ pluginId: 'acme.canvas', packSource: source })
+    try {
+      const props = deserializeTypeBoxSchema(vm.modules[0]!.propsSchema)!
+      const publish = deserializeTypeBoxSchema(vm.modules[0]!.publishSchema)!
+      expect(compiledCheck(props, { count: 1 })).toBe(true)
+      expect(compiledCheck(publish, { props: { count: 0 }, settings: {} })).toBe(false)
+      expect(compiledCheck(publish, { props: { count: 2 }, settings: {} })).toBe(true)
+    } finally { vm.dispose() }
+  })
   it('accepts `export default <expr>` bundles', async () => {
     const source = `${PACK_BODY}\nexport default __modules_facade_default;\n`
     const vm = await createModulePackVm({ pluginId: 'acme.canvas', packSource: source })
@@ -139,46 +158,31 @@ describe('modulePackVm — shared sandbox limits', () => {
   }, 10_000)
 })
 
-describe('modulePackVm — render js boundary', () => {
+describe('modulePackVm — invariant asset boundary', () => {
   const JS_PACK = `
 const widget = {
-  id: 'acme.canvas.widget',
-  name: 'Widget',
-  category: 'Acme',
-  version: '1.0.0',
-  defaults: {},
-  schema: {},
-  render: () => ({ html: '<div></div>', js: '(function(){})();' }),
+  id: 'acme.canvas.widget', name: 'Widget', category: 'Acme', version: '1.0.0',
+  defaults: {}, schema: {},
+  assets: { css: '.widget{display:block}', js: '(function(){})();' },
+  render: () => ({ html: '<div></div>', assetUsage: { js: false } }),
 };
-const badJs = {
-  id: 'acme.canvas.badjs',
-  name: 'BadJs',
-  category: 'Acme',
-  version: '1.0.0',
-  defaults: {},
-  schema: {},
-  render: () => ({ html: '<div></div>', js: 42 }),
-};
-export default [widget, badJs];
+export default [widget];
 `
-
-  it('passes string render() js through the VM boundary', async () => {
+  it('passes invariant payloads in metadata and only boolean usage in render output', async () => {
     const vm = await createModulePackVm({ pluginId: 'acme.canvas', packSource: JS_PACK })
     try {
-      const out = vm.render('acme.canvas.widget', {}, [])
-      expect(out.html).toBe('<div></div>')
-      expect(out.js).toBe('(function(){})();')
-    } finally {
-      vm.dispose()
-    }
+      expect(vm.modules[0].assets).toEqual({ css: '.widget{display:block}', js: '(function(){})();' })
+      expect(vm.render('acme.canvas.widget', {}, [])).toEqual({ html: '<div></div>', assetUsage: { js: false } })
+    } finally { vm.dispose() }
   })
-
-  it('drops non-string js at the VM boundary', async () => {
-    const vm = await createModulePackVm({ pluginId: 'acme.canvas', packSource: JS_PACK })
-    try {
-      expect(vm.render('acme.canvas.badjs', {}, []).js).toBeUndefined()
-    } finally {
-      vm.dispose()
+  it('rejects non-string asset payloads at activation', async () => {
+    await expect(createModulePackVm({ pluginId: 'acme.canvas', packSource: JS_PACK.replace("js: '(function(){})();'", 'js: 42') })).rejects.toThrow('Invalid module pack metadata')
+  })
+  it('rejects malformed usage and render-time payloads at the VM boundary', async () => {
+    for (const output of ["{ html: '<div></div>', assetUsage: { js: 42 } }", "{ html: '<div></div>', js: 'runtime' }"]) {
+      const vm = await createModulePackVm({ pluginId: 'acme.canvas', packSource: JS_PACK.replace("{ html: '<div></div>', assetUsage: { js: false } }", output) })
+      try { expect(() => vm.render('acme.canvas.widget', {}, [])).toThrow('Invalid module render output') }
+      finally { vm.dispose() }
     }
   })
 })

@@ -147,13 +147,15 @@ The editor canvas preview for a `base.visual-component-ref` node is rendered by 
 - `rootMcClassName` — the ref node's own resolved class string, so styles assigned to the ref instance apply to its rendered root (same contract as the publisher's `injectClassIntoRootElement`).
 - `rootNodeWrapperProps` — the editor wrapper bag (`data-node-id`, event handlers, etc.) so canvas selection, hover, and overlay positioning target the rendered component content rather than a dropped wrapper or the iframe `<body>`.
 
+The shared `ReadOnlyNodeTree` owns one subtree context with node/class accessors. Recursive renderers receive only a node ID and local root overrides; they do not repeat the tree, class registry or template context in every node's props. Template context is provided at the tree boundary and each loop iteration, preserving nested component and slot scopes without cloning the shared registries.
+
 **`base.body` is transparent in inline preview.** Every VC tree has `base.body` as its stored root. In the editor preview, `base.body` is not rendered as a DOM element — `VCInlineTree` renders `base.body`'s children directly, forwarding `rootMcClassName` and `rootNodeWrapperProps` to the **first renderable** child (the first non-hidden child with a registered module). This prevents a nested component body from overwriting the canvas iframe's real `<body>` element's attributes. The real iframe `<body>` always belongs to the page root node only.
 
 ---
 
 ## Param substitution and prop bindings
 
-A VC ref instance carries `instanceProps` — the values for the VC's `params`. Inside the VC tree, any node prop can be bound to a param via `propBindings`:
+A VC ref instance carries `propOverrides`, keyed by each parameter's stable `id`. Inside the VC tree, any node prop can be bound to a param via `propBindings`:
 
 ```jsonc
 // A node inside the VC tree:
@@ -169,11 +171,32 @@ A VC ref instance carries `instanceProps` — the values for the VC's `params`. 
 
 At render time, `renderVisualComponentRef`:
 
-1. Iterates the ref's `instanceProps` keyed by `paramId`.
-2. For each VC node with `propBindings`, replaces the bound prop value with the matching `instanceProps[paramId]` (or the param's `defaultValue` if unset).
-3. The substituted props pass through `escapeProps` like any other node.
+1. Calls `instantiateVCAtRef` to select an own override or the declared default and materialize native slot fills.
+2. Checks required parameters through `assertVCRequiredParameters`, using the same data context as the actual render.
+3. Resolves the substituted node props through the ordinary dynamic binding pipeline, then passes them through `escapeProps` like any other node.
 
 So inside the VC, props always have a "design-time default" (in `node.props`); at render time, the binding overrides it with the instance value.
+
+### Required parameters
+
+`required` is an instance rendering contract. A definition, plugin pack, or draft reference may remain incomplete while its author edits it. Rendering a public instance rejects a missing, invalid, or unresolved required value with `VisualComponentParameterError`, including its component, parameter, reference, and path. The publish endpoint reports these errors as validation failures before activating a new generation.
+
+| Value or type | Required semantics |
+| --- | --- |
+| No own override | Use the declared default. A valid default satisfies the requirement. |
+| Own `undefined`, `null`, empty string, or whitespace | Missing. An explicit override never reverts to the default. |
+| `number` | A finite number, including `0`. Strings are not coerced to numbers. |
+| `boolean` | A boolean, including `false`. |
+| `enum` | A nonempty string included in the declared options. |
+| `string`, `color`, `richText` | A nonempty string. This checks the authored value's presence and type, not whether rich text paints visible pixels. Module schemas and sanitation still own the destination format. |
+| `url`, `image` | A nonempty string accepted by the native URL safety policy, including relative paths, query strings, fragments, and resolved native file references. Asset lookup remains owned by the normal file/media pipeline. |
+| `slot` | Visible materialized content at the named native outlet. Values in `propOverrides` or a `slotContent` bag cannot satisfy a slot. A present empty slot fill clears its default. |
+
+Tokens in string parameters and structured bindings to the reference's `propOverrides` bag use the existing binding resolver. Number and boolean values keep their native types when supplied through a structured bag binding; token interpolation always produces a string. Values are resolved for inspection without rewriting the instance tree, so escaped tokens still pass through interpolation exactly once.
+
+The canvas uses the same inspector. A missing entry, parent entry, or request frame produces a pending preview state; it does not invent a row or treat an empty stack as a valid data value. The rendered-tree context follows component and slot boundaries, including each loop iteration. Concrete missing or invalid arguments show a field-specific component placeholder while the draft remains editable.
+
+The publish preflight visits the canonical published render scopes and materialized tree, including dynamic holes. It rejects concrete failures and defers values whose actual entry/request frame does not exist at preflight time. The normal renderer checks those values when a real entry, loop item, or visitor request materializes. Unused components, unused templates, hidden subtrees, and orphan nodes are not rendered instances.
 
 ### Inserting a binding
 
@@ -365,7 +388,7 @@ renderVisualComponentRef(refNode, config, acc, renderNode):
 
 Slot-outlet ↔ slot-instance bridging happens inside `instantiateVCAtRef` — by the time the recursive render walk starts, the instantiated node map already contains the consumer's slot content at the correct positions. The consumer page tree is the canonical store for slot fills; the publisher materialises them at render time only.
 
-Server-side prefetch — `loopPrefetch.ts` and `mediaPrefetch.ts` — both use `walkRenderTree` (`server/publish/renderTreeWalk.ts`) to descend into every VC definition tree referenced from the page, so a `base.loop` or image inside a VC body is collected and pre-fetched before the render walk starts.
+Server-side prefetch — `loopPrefetch.ts` and `mediaPrefetch.ts` — both use `walkRenderTree` from `@core/visualComponents`. The visitor materializes effective param overrides and filled or default slots through `instantiateVCAtRef`, follows nested references with a component cycle guard, and skips hidden subtrees and unused slot content. This is also the shared traversal for render-time preflight checks. Page-authored slot fills retain native dynamic bindings and inline styles when published.
 
 See [docs/features/publisher.md](publisher.md) for the broader pipeline.
 
@@ -395,13 +418,14 @@ Consumers see a control for the param in the VC ref's Properties Panel (type-dri
 ### Programmatically instantiate a VC
 
 ```ts
-import { instantiateVCAtRef } from '@core/visualComponents'
+import { instantiateVCAtRef, assertVCRequiredParameters } from '@core/visualComponents'
 
-const { refNode, slotInstances } = instantiateVCAtRef(vc, { /* instanceProps */ })
-// refNode has props.componentId = vc.id and one slot-instance child per slot.
+const instance = instantiateVCAtRef(vc, propOverrides, slotInstancesByName, page.nodes, ref.id)
+assertVCRequiredParameters(vc, instance, ref.id, renderContext, ref.dynamicBindings?.propOverrides)
+// instance.nodes and instance.rootNodeId are the materialized render tree.
 ```
 
-`instantiateVCAtRef` is what the editor uses internally when a ref is dropped. Plugins shipping a VC pack use it during install to materialize starter refs.
+`instantiateVCAtRef` materializes an existing reference; it does not insert a reference or persist nodes. Editor and plugin tree mutations insert the native reference, and `syncSlotInstances` reconciles its slot-instance children. Both canvas and publisher consume that same stored shape.
 
 ### Delete a VC safely
 

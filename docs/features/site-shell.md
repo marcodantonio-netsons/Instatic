@@ -125,6 +125,7 @@ type SiteSettings = {
   metaDescription?: string
   faviconUrl?:      string
   language?:        string
+  localization?:    { catalogues: { language: string; fileId: string }[] }
   framework?:       FrameworkSettings       // colors, typography, spacing, preferences — absent when disabled
   fonts?:           SiteFontsSettings       // installed font library + editable font tokens
   shortcuts:        Record<string, string>  // keyboard shortcut overrides
@@ -216,8 +217,16 @@ Schema source of truth: `src/core/files/schemas.ts`.
 
 - `'style'` files are concatenated into the page-scoped `userStyles` bundle via `userStylesheets.ts`, honouring each stylesheet's `SiteRuntimeConfig.styles[id]` (enable / scope / priority).
 - `'script'` files are exposed to module render functions through `props._siteScripts`.
-- `'component'`, `'config'`, and `'doc'` files are stored but not auto-emitted; modules can read them via `ctx.siteFiles`.
-- `'asset'` files store binary content in `blob` (base64-encoded); the file's `content` field is absent.
+- `'component'`, `'config'`, and `'doc'` files are stored but not auto-emitted. There is no module `ctx.siteFiles` runtime API.
+- `'asset'` files store binary content in `blob` (base64-encoded); the file's `content` field is absent. A file at `public/<path>` publishes at `/<path>`, with its declared MIME and exact bytes (SVG is sanitized before emission). Binary file edits use the same site-shell Yjs document and normal export/import storage as other files.
+
+Public assets must have canonical base64, a safe MIME value and portable path segments. Server-owned namespaces (`admin`, `api`, `assets`, `health`, `uploads`, `_instatic`), `.html` artefact names, URL collisions and file/directory collisions are rejected before a publish transaction. HTML, scripts and CSS use their own native pipelines, rather than binary asset MIME types. Missing blobs are valid authoring placeholders but block publication; malformed present blobs are errors, never silently discarded. The existing 50 MB file hard limit applies.
+
+The binding picker offers public files by stable file id. `{file.<id>.url}` (or a structured binding with source `file`, field `<id>.url`) resolves against a typed file-reference frame containing `id`, `path`, `url` and `mimeType`. A published render uses the public URL. A canvas or full-page preview uses owner-scoped URLs under `/admin/api/cms/runtime/files/<build>/<id>`; both build and read require `site.read`, reads require the build's owner, and the bounded in-memory capability expires after 15 minutes. Canvas references refresh on binary edits and every ten minutes, independently of “Run scripts”. This does not publish or persist a preview.
+
+The single `buildTemplateRenderContext` composes this frame alongside page, site/language and route data. File references are strict: a missing file, missing payload or unknown metadata property is an explicit error, including when the authored token has fallback text. Publication validates visible materialized component/slot trees and native SEO/JSON-LD before changing the snapshot. Unused component params, overridden defaults and hidden/orphan content do not add dependencies. The canvas waits for a current private frame, presents fetch failures with a retry action, and discards stale references immediately after binary edits. Full-page preview keeps same-origin credentials in its sandbox while permitting no scripts or forms.
+
+Literal URLs and arbitrary fetch calls keep their authored meaning. To preview an unsaved file, use its native binding; the preview does not rewrite HTML after rendering, redirect arbitrary runtime fetches, or expose draft files at visitor URLs. A branch preview uses its existing live preview cookie to serve the branch's draft files at their public paths, with `private, no-store` and noindex. Revocation removes that access.
 
 Generated files (e.g. `package.json`, `vite.config.ts`) are hidden in the Site Explorer until the user ejects them. Files are created and renamed through the Site Explorer panel and edited with the CodeMirror-backed code editor.
 
@@ -359,6 +368,7 @@ type SiteRuntimeConfig = {
     timing: 'immediate' | 'dom-ready' | 'idle'
     scope: SiteAssetScope
     priority: number
+    resourceOrigins?: { scripts: string[]; frames: string[]; connections: string[]; styles?: string[]; fonts?: string[] }
   }>
   // Per-stylesheet targeting + cascade, keyed by SiteFile id.
   styles: Record<string, {
@@ -372,6 +382,8 @@ type SiteRuntimeConfig = {
 `dependencyLock` is the resolved snapshot from the last successful `bun install` — the publisher uses it to build the `<script type="importmap">` entries that map bare specifiers (`three`) to `/_instatic/runtime/cache/<hash>/...` URLs.
 
 `scripts` and `styles` share the `SiteAssetScope` shape and the `assetScopeAppliesToPage` helper, so a script and a stylesheet target pages identically. Scripts additionally carry `placement`/`timing`/`runInCanvas` (a `<link>` has no execution model, so stylesheets omit those). Both are edited from the floating code editor's left rail (`ScriptSettingsPane` / `StyleSettingsPane`).
+
+The script settings rail also accepts comma-separated HTTP(S) origins for external scripts, stylesheets, frames, fonts and connections. `resourceOrigins` grants those origins in the published page's matching CSP directives, only when that script emits a tag on the page. Disabled, out-of-scope and failed builds grant nothing. Paths, credentials, wildcards and CSP keywords are rejected; origins are normalized and deduplicated. Stylesheet, font and connection declarations retain same-origin access. Canvas execution remains governed by its own iframe policy; these declarations control published-page CSP.
 
 ---
 
@@ -637,6 +649,15 @@ discarded on disconnect. Incoming write and awareness caps remain unchanged.
 The shared framing code lives in `src/core/collab/frameTransfer.ts`;
 real-socket coverage lives in `collabLargeDelivery.test.ts`.
 
+Stored snapshots can exceed a socket's outbound buffer. The server sends
+these through `collabFramePackets` in 256 KiB packets, waiting for drain
+between buffered direct sends. Broadcast updates use the same packet format.
+The client reconstructs each complete frame before applying it to Yjs;
+interleaved transfers are bounded to four documents and 64 MiB total and
+discarded on disconnect. Incoming write and awareness caps remain unchanged.
+The shared framing code lives in `src/core/collab/frameTransfer.ts`;
+real-socket coverage lives in `collabLargeDelivery.test.ts`.
+
 **Client transport** (`src/admin/pages/site/collab/collabProvider.ts`): one
 socket, every bound doc multiplexed; local transactions send updates the
 moment they commit (no flush window to lose on unload); reconnect uses
@@ -644,6 +665,20 @@ exponential backoff, and each (re)connect re-runs syncStep1 so Yjs state
 vectors pull exactly the missed delta. `usePersistence` HTTP-loads the
 document once for first paint, then connects the provider — edits gate on
 each doc's first sync so an unseeded doc can never receive local ops.
+Before connection, `detachedCollabDocs.ts` retains row JSON and creates each
+local Y doc on first access. Seeds precede undo tracking; unused row seeds
+remain available for roster undo after deletion. Connecting replaces these
+local docs with server-seeded provider documents.
+Initial sync projections collect socket tasks over a 16 ms frame and commit
+rows plus their roster to the store together. Each batch indexes its row
+collections once and rebuilds only changed collections. A projection equal
+to the HTTP snapshot preserves the existing row, shell fields, and Site
+identity without notifying store subscribers; omitted optional fields are
+equivalent to `undefined`, while actual remote changes still replace the
+affected values. Server-owned page attribution stays outside the CRDT.
+The shell timestamp changes only when its content or roster changes.
+Write gates open after that projection, so tools never edit a stale HTTP snapshot. Live remote updates
+retain microtask projection; undo/redo project synchronously.
 Because every committed edit is a frame, burst-prone inputs coalesce before
 they commit: the `ColorInput` primitive throttles picker-drag change events
 (leading fire for instant clicks, one trailing fire with the final value),
@@ -748,7 +783,7 @@ The Site Explorer calls `createFile(path, type, content)` from `filesSlice`. For
 createFile('src/styles/analytics.css', 'style', '/* ... */')
 ```
 
-`'style'` files are auto-concatenated into the published bundle. Other types are stored and accessible via `ctx.siteFiles` at render time. `'asset'` files use `updateFileBlob(id, { mimeType, base64 })` instead.
+`'style'` files are emitted through the stylesheet pipeline; `'script'` files through runtime bundling. Binary `'asset'` files use `updateFileBlob(id, { mimeType, base64 })` and the public-file pipeline described above. Config, component and documentation files are not emitted as visitor assets.
 
 ### Declare a site dependency
 

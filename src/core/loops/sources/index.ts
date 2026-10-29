@@ -9,11 +9,13 @@
 
 import { loopSourceRegistry } from '@core/loops/registry'
 import { DataRowsSource } from './dataRows'
+import { DataPivotSource } from './dataPivot'
 import { SitePagesSource } from './sitePages'
 import { SiteMediaSource } from './siteMedia'
 import { EntryFieldSource } from './entryField'
 
 loopSourceRegistry.registerOrReplace(DataRowsSource)
+loopSourceRegistry.registerOrReplace(DataPivotSource)
 loopSourceRegistry.registerOrReplace(SitePagesSource)
 loopSourceRegistry.registerOrReplace(SiteMediaSource)
 loopSourceRegistry.registerOrReplace(EntryFieldSource)

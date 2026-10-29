@@ -24,10 +24,13 @@
 import type { PageNode } from '@core/page-tree'
 import { isPageRef, resolvePageRef } from '@core/page-tree'
 import type { AnyModuleDefinition } from '@core/module-engine'
-import { validateNodeProps } from '@core/module-engine'
+import { parseModuleProps, validateModulePublishInput } from '@core/module-engine'
+import { resolveInitialFormValues, resolveFormRenderProps, FormConfigurationError } from '@core/forms'
+import { normalizeIdentifierValue } from '@core/utils/identifier'
+import { buildTemplateRenderContext, interpolateTokens, type TemplateRenderDataContext } from '@core/templates'
 import { resolveProps } from '@core/page-tree'
-import { resolveDynamicProps, effectiveNodeBindings } from '@core/templates/dynamicBindings'
-import { sanitizeModuleCSS } from './cssCollector'
+import { resolveDynamicProps, effectiveNodeBindings } from '@core/templates'
+import { collectModuleAssets } from './moduleAssets'
 import { escapeHtml } from './utils'
 import { escapeProps } from './escapeProps'
 import { injectNodeClassIds, injectNodeId, injectNodeInlineStyles } from './classInjection'
@@ -35,6 +38,7 @@ import { renderVisualComponentRef } from './renderVisualComponentRef'
 import { renderLoop } from './renderLoop'
 import { resolveAutoSizes } from './sizesResolver'
 import { RICHTEXT_CONTENT_CONFIG, sanitizeRichtext } from '@core/sanitize'
+import { readSummaryLoopIds } from '@core/loops'
 import type {
   RenderConfig,
   RenderAccumulators,
@@ -80,6 +84,7 @@ function attachResolvedMediaByKey(
   def: AnyModuleDefinition,
   resolvedProps: Record<string, unknown>,
   mediaAssets: ReadonlyMap<string, RenderResolvedMedia> | undefined,
+  templateContext: TemplateRenderDataContext | undefined,
 ): void {
   if (!mediaAssets || mediaAssets.size === 0) return
   const byKey: Record<string, RenderResolvedMedia> = {}
@@ -88,7 +93,10 @@ function attachResolvedMediaByKey(
     const value = resolvedProps[propKey]
     if (typeof value !== 'string') continue
     const resolved = mediaAssets.get(value)
-    if (resolved) byKey[propKey] = resolved
+    if (resolved) byKey[propKey] = {
+      ...resolved,
+      altText: interpolateTokens(resolved.altText, templateContext ?? { entryStack: [] }),
+    }
   }
   if (Object.keys(byKey).length > 0) {
     safeProps._resolvedMediaByKey = byKey
@@ -119,8 +127,8 @@ function attachResolvedAutoSizes(
 }
 
 /**
- * Standard bottom-up render path: children first, then resolve props, attach
- * resolved assets, call the module's pure render(), collect deduped CSS,
+ * Standard bottom-up render path: children first, then attach resolved assets
+ * to the dispatcher-parsed props, call the module's pure render(), collect deduped CSS,
  * inject author classes onto the root element.
  *
  * `base.body` emits no wrapper element — its render returns naked children
@@ -133,49 +141,38 @@ function renderStandardNode(
   config: RenderConfig,
   acc: RenderAccumulators,
 ): string {
-  const renderedChildren = (node.children ?? []).map((childId) => renderNode(childId, config, acc))
-
-  // Resolve effective props (base + breakpoint shallow-merge for
-  // breakpointOverridable schema keys only — content props always publish
-  // their base value because HTML is a single document) and apply dynamic
-  // template bindings.
-  const effectiveProps = resolveProps(node, config.breakpointId, def.schema)
-  const dynamicProps = resolveDynamicProps(
-    effectiveProps,
-    effectiveNodeBindings(node),
-    config.templateContext,
-  )
-
-  // Resolve internal page references (`cms:page:<id>`) to the target page's
-  // CURRENT public path, so links survive slug renames. Runs before validation
-  // / escaping so the resolved URL flows through the normal href pipeline.
-  const resolvedProps = resolvePageRefProps(dynamicProps, config.site.pages)
-
-  // Coerce/default-fill authored props against the module's TypeBox schema
-  // (soft boundary — never throws; unknown injected keys survive the merge).
-  const validatedProps = validateNodeProps(def, resolvedProps)
+  const validatedProps = node.props
+  const referencedForm = node.moduleId === 'base.form-link' && validatedProps.formId ? config.formValuesById?.get(normalizeIdentifierValue(String(validatedProps.formId), 'form')) : undefined
+  if (node.moduleId === 'base.form-link' && validatedProps.formId && !referencedForm) throw new FormConfigurationError('Unknown associated form', `pages.${config.page.id}.nodes.${node.id}.formId`)
+  const formContext = node.moduleId === 'base.form'
+    ? { values: resolveInitialFormValues(config.site, config.page, node.id, config.templateContext ?? buildTemplateRenderContext(config.page, config.site, undefined)), active: true }
+    : node.moduleId === 'base.form-link' && validatedProps.formId
+      ? { values: referencedForm!, active: true }
+      : config.formContext
+  const prepared = resolveFormRenderProps(node.moduleId, validatedProps, formContext)
+  const childConfig = prepared.context === config.formContext ? config : { ...config, formContext: prepared.context }
+  const renderedChildren = def.shouldRenderChildren?.(prepared.props) === false
+    ? [] : (node.children ?? []).map((childId) => renderNode(childId, childConfig, acc))
 
   // Escape all string props (Constraint #211) before calling render(), then
   // attach derived assets that survive the escape boundary unchanged.
-  const safeProps = escapeProps(validatedProps, def.schema)
-  attachResolvedMediaByKey(safeProps, def, validatedProps, config.mediaAssets)
+  const safeProps = escapeProps(prepared.props, def.schema)
+  if (node.moduleId === 'base.loop-count' || node.moduleId === 'base.loop-conditional') {
+    const ids = readSummaryLoopIds(validatedProps.loopIds)
+    safeProps._loopTotal = ids.reduce((sum, id) => sum + (config.loopData?.get(id)?.totalItems ?? 0), 0)
+    safeProps._loopLoaded = ids.reduce((sum, id) => sum + (config.loopData?.get(id)?.items.length ?? 0), 0)
+  }
+  if (node.moduleId === 'base.loop-more') {
+    const loop = config.loopData?.get(String(validatedProps.loopId))
+    safeProps._loopTotal = loop?.totalItems ?? 0; safeProps._loopLoaded = loop?.items.length ?? 0; safeProps._loopHasMore = loop?.hasMore ?? false
+  }
+  attachResolvedMediaByKey(safeProps, def, validatedProps, config.mediaAssets, config.templateContext)
   attachResolvedAutoSizes(safeProps, def, node, config)
 
   const output = def.render(safeProps as never, renderedChildren)
 
-  // CSS dedup — one entry per moduleId. Sanitize before storage to neutralise
-  // any `</style` so the HTML5 RAWTEXT tokenizer cannot escape the
-  // surrounding <style> block (Constraint #228).
-  if (output.css && !acc.cssMap.has(node.moduleId)) {
-    acc.cssMap.set(node.moduleId, sanitizeModuleCSS(output.css))
-  }
-
-  // JS dedup — one entry per moduleId, mirroring CSS. No escaping needed:
-  // module JS is served as an external file (`/_instatic/module-js/<id>.js`),
-  // never inlined into the document.
-  if (output.js && !acc.jsMap.has(node.moduleId)) {
-    acc.jsMap.set(node.moduleId, output.js)
-  }
+  // Payloads are type metadata; only activation depends on this real render.
+  collectModuleAssets(def, acc, output.assetUsage)
 
   // CSP source requirements — union all sources declared by this render into
   // the per-page accumulator. Deduplication is implicit (Set). addCspSources
@@ -243,8 +240,8 @@ type SpecialRenderer = (
 
 /**
  * Publisher-side specialised-renderer IMPLEMENTATIONS, keyed by moduleId. Each
- * replaces the entire "render children → resolve props → call render() → inject
- * classes" flow because the moduleId's semantics need a different shape:
+ * replaces the "render children → call render() → inject classes" flow after
+ * the common resolved-props boundary because its semantics need a different shape:
  *
  * - `base.visual-component-ref`: inlines a Visual Component tree recursively,
  *   consuming its `base.slot-instance` children for slot fills.
@@ -316,8 +313,18 @@ export function renderNode(
     return renderHolePlaceholder(node, def, config, acc)
   }
 
-  const specialRenderer = resolveSpecialRenderer(def)
-  if (specialRenderer) return specialRenderer(node, config, acc, renderNode)
+  // One owner materializes every rendered module's props, including special
+  // renderers. Hole subtrees reach this boundary with their real request.
+  const effectiveProps = resolveProps(node, config.breakpointId, def.schema)
+  const dynamicProps = resolveDynamicProps(effectiveProps, effectiveNodeBindings(node), config.templateContext)
+  const resolvedProps = resolvePageRefProps(dynamicProps, config.site.pages)
+  const path = 'pages.' + config.page.id + '.nodes.' + node.id
+  const props = parseModuleProps(def, resolvedProps)
+  validateModulePublishInput(def, props, config.site.settings, path)
+  const materializedNode = { ...node, props }
 
-  return renderStandardNode(node, def, config, acc)
+  const specialRenderer = resolveSpecialRenderer(def)
+  if (specialRenderer) return specialRenderer(materializedNode, config, acc, renderNode)
+
+  return renderStandardNode(materializedNode, def, config, acc)
 }

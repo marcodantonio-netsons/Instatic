@@ -1,6 +1,7 @@
 import type { Page, PageNode } from '@core/page-tree'
-import { reindexNodeParents } from '@core/page-tree'
+import { reindexNodeParents, remapNodeReferenceProps } from '@core/page-tree'
 import { firstOutletId, treeHasOutlet } from './outlet'
+import { composeDocumentBody } from './documentBody'
 
 type TerminalContent =
   | { kind: 'page'; page: Page }
@@ -8,22 +9,20 @@ type TerminalContent =
 
 type Nodes = Record<string, PageNode>
 
-function hasMeaningfulBodyProps(node: PageNode): boolean {
-  return Object.keys(node.props ?? {}).length > 0
-    || Object.keys(node.breakpointOverrides ?? {}).length > 0
-}
-
 /**
  * The page-tree id a composed node came from. Composition prefixes ids
  * (`c0_` for the terminal page, then `t<i>_` per outer template, applied
  * innermost first), so a rendered `uid` reads `t0_c0_<id>`. Anything that
  * maps rendered elements back to the plan's node ids (the merge review's
  * highlights) resolves them through this, never by guessing the prefix.
- * Ids the composer invents (`<prefix>bodyprops`) come back as `bodyprops`,
- * which matches no page node, which is right.
  */
 export function composedNodeSourceId(composedId: string): string {
   return composedId.replace(/^(?:t\d+_)*c0_/, '')
+}
+
+/** Composition may reindex parents; never mutate nodes owned by a source document. */
+function cloneNodes(nodes: Nodes): Nodes {
+  return Object.fromEntries(Object.entries(nodes).map(([id, node]) => [id, { ...node, children: [...node.children] }]))
 }
 
 /** Clone a tree's nodes with every id prefixed, returning the remapped root id. */
@@ -33,7 +32,13 @@ function rekey(nodes: Nodes, rootId: string, prefix: string): { nodes: Nodes; ro
   const out: Nodes = {}
   for (const id in nodes) {
     const n = nodes[id]
-    out[map.get(id)!] = { ...n, id: map.get(id)!, children: n.children.map((c) => map.get(c) ?? c) }
+    out[map.get(id)!] = {
+      ...n,
+      id: map.get(id)!,
+      props: remapNodeReferenceProps(n.moduleId, n.props, map),
+      breakpointOverrides: Object.fromEntries(Object.entries(n.breakpointOverrides).map(([key, props]) => [key, remapNodeReferenceProps(n.moduleId, props, map)])),
+      children: n.children.map((c) => map.get(c) ?? c),
+    }
   }
   return { nodes: out, rootId: map.get(rootId)! }
 }
@@ -56,33 +61,6 @@ function locate(nodes: Nodes, childId: string): { parentId: string; index: numbe
 }
 
 /**
- * Resolve the spliced content of an inner tree, mutating `nodes` if a wrapper
- * must be created:
- *  - inner root is base.body with NO meaningful props → splice its children
- *    directly (avoid a nested <body>, no needless wrapper);
- *  - inner root is base.body WITH props/breakpointOverrides → migrate those onto
- *    a fresh base.container wrapping its children, so body styling survives;
- *  - otherwise → the root itself.
- * Returns the ids to insert at the outlet position. The dropped base.body
- * wrapper is removed from `nodes` by the caller.
- */
-function contentRootIds(nodes: Nodes, rootId: string, prefix: string): string[] {
-  const root = nodes[rootId]
-  if (root?.moduleId !== 'base.body') return [rootId]
-  if (!hasMeaningfulBodyProps(root)) return [...root.children]
-  // Migrate body-level styling onto a container so nothing is silently lost.
-  const containerId = `${prefix}bodyprops`
-  nodes[containerId] = {
-    id: containerId,
-    moduleId: 'base.container',
-    props: { ...root.props },
-    breakpointOverrides: { ...root.breakpointOverrides },
-    children: [...root.children],
-  } as PageNode
-  return [containerId]
-}
-
-/**
  * Replace the first base.outlet in `host` with `inner`'s content nodes. The
  * host is guaranteed (by the caller) to contain at least one outlet; extra
  * outlets are left untouched and render empty.
@@ -92,7 +70,11 @@ function spliceIntoOutlet(host: Nodes, hostRoot: string, inner: Nodes, innerRoot
   const at = locate(host, outletId)
   const rekeyed = rekey(inner, innerRoot, prefix)
   const merged: Nodes = { ...host, ...rekeyed.nodes }
-  const contentIds = contentRootIds(merged, rekeyed.rootId, prefix)
+  const innerBody = rekeyed.nodes[rekeyed.rootId]
+  const contentIds = innerBody.moduleId === 'base.body' ? [...innerBody.children] : [rekeyed.rootId]
+  if (innerBody.moduleId === 'base.body') {
+    merged[hostRoot] = composeDocumentBody([merged[hostRoot], innerBody])
+  }
   delete merged[outletId]
   // If the inner root was base.body, that wrapper node is now orphaned — drop it.
   if (rekeyed.nodes[rekeyed.rootId]?.moduleId === 'base.body') delete merged[rekeyed.rootId]
@@ -129,6 +111,8 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
       id: t.id,
       slug: t.slug,
       title: t.title,
+      ...(t.language ? { language: t.language } : {}),
+      ...(t.seo ? { seo: t.seo } : {}),
       ...(t.template ? { template: t.template } : {}),
       rootNodeId: t.rootNodeId,
       nodes: { ...t.nodes },
@@ -137,7 +121,7 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
 
   // Build the merged tree from the INNERMOST effective template outward.
   const innermost = effective[effective.length - 1]
-  let acc: { nodes: Nodes; rootId: string } = { nodes: { ...innermost.nodes }, rootId: innermost.rootNodeId }
+  let acc: { nodes: Nodes; rootId: string } = { nodes: cloneNodes(innermost.nodes), rootId: innermost.rootNodeId }
 
   // Innermost terminal handling.
   if (terminal.kind === 'page') {
@@ -148,7 +132,7 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
   // Wrap with each outer template, inner-most-but-one first.
   for (let i = effective.length - 2; i >= 0; i--) {
     const outer = effective[i]
-    acc = spliceIntoOutlet({ ...outer.nodes }, outer.rootNodeId, acc.nodes, acc.rootId, `t${i}_`)
+    acc = spliceIntoOutlet(cloneNodes(outer.nodes), outer.rootNodeId, acc.nodes, acc.rootId, `t${i}_`)
   }
 
   // The merged tree rekeys node ids (prefixing) and splices subtrees across
@@ -164,7 +148,14 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
     // wrapping template's title is chrome, never `<title>` content. Entry
     // terminals have no Page here; their caller overrides `title` from the
     // published row after composing.
+    ...(terminal.kind === 'page' && terminal.page.translationGroup
+      ? { translationGroup: terminal.page.translationGroup } : {}),
     title: terminal.kind === 'page' ? terminal.page.title : innermost.title,
+    ...((terminal.kind === 'page' ? terminal.page.language : innermost.language)
+      ? { language: terminal.kind === 'page' ? terminal.page.language : innermost.language }
+      : {}),
+    ...((terminal.kind === 'page' ? terminal.page.seo : innermost.seo)
+      ? { seo: terminal.kind === 'page' ? terminal.page.seo : innermost.seo } : {}),
     // Carry the innermost template's `template` config. `assetScopeAppliesToPage`
     // gates its `templates` branch on `Boolean(page.template)`, so dropping it
     // here meant a stylesheet scoped to an entry template never applied to that

@@ -19,12 +19,19 @@
  * and the `plugins.install` / `plugins.lifecycle` mutation surface.
  */
 import type { DbClient } from '../../db/client'
+import { FormConfigurationError } from '@core/forms'
+import { LocalizationError } from '@core/localization'
+import { PageTranslationError } from '@core/page-tree'
+import { LoopScopeConfigurationError, ScrollNavigationConfigurationError } from '@core/publisher'
+import { VisualComponentParameterError } from '@core/visualComponents'
 import { isMainScope, type BranchScope } from '../../branches/scope'
 import { requireCapability, requireStepUp } from '../../auth/authz'
 import { createAuditEvent } from '../../repositories/audit'
 import { getDraftPublishStatus } from '../../repositories/publish'
 import { publishDraftSite } from '../../publish/publishSite'
 import { RuntimeScriptBuildError } from '../../publish/runtime/buildError'
+import { PublicAssetValidationError } from '@core/files/publicAssets'
+import { ModulePublishValidationError } from '@core/module-engine'
 import { jsonResponse, methodNotAllowed } from '../../http'
 import type { CmsHandlerOptions } from './shared'
 import { requestAuditContext } from './shared'
@@ -58,7 +65,7 @@ export async function handlePublishRoutes(
     try {
       result = await publishDraftSite(db, user.id, options.uploadsDir)
     } catch (err) {
-      if (err instanceof RuntimeScriptBuildError) {
+      if (err instanceof FormConfigurationError || err instanceof RuntimeScriptBuildError || err instanceof ModulePublishValidationError || err instanceof LocalizationError || err instanceof PageTranslationError || err instanceof PublicAssetValidationError || err instanceof LoopScopeConfigurationError || err instanceof ScrollNavigationConfigurationError || err instanceof VisualComponentParameterError) {
         return jsonResponse({ error: err.message }, { status: 422 })
       }
       throw err

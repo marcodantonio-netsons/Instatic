@@ -41,7 +41,7 @@ async function publishOnce(db: DbClient, pageIds: string[], n: number): Promise<
     serializedImportmap: null,
     pages,
     publishedByUserId: 'owner_1',
-  })
+  }, async () => { /* This repository-only fixture has no disk generation to activate. */ })
   return pages.map((page) => page.versionId)
 }
 

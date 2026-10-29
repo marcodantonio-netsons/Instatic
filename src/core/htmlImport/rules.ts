@@ -63,6 +63,7 @@ const TEXT_INPUT_TYPES = [
   'tel',
   'url',
   'number',
+  'range',
   'date',
   'time',
   'datetime-local',
@@ -374,6 +375,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
           autocomplete: attr(el, 'autocomplete'),
           min: attr(el, 'min'),
           max: attr(el, 'max'),
+          step: attr(el, 'step'),
           minLength: numberAttr(el, 'minlength'),
           maxLength: numberAttr(el, 'maxlength'),
           pattern: attr(el, 'pattern'),
@@ -464,12 +466,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
   // A non-submit button that WRAPS element children (icon + span label, an
   // `<img>` thumbnail) recurses into a container tagged `button`, because
   // base.button is `canHaveChildren: false` and would keep only the text.
-  // Submit buttons stay on base.submit even when compound: `core/forms`
-  // identifies a form's submit control by that module id, so re-tagging one as
-  // a container would leave the form without a submit. base.submit accepts
-  // children, so a compound submit recurses too and its content (an icon-only
-  // `<svg>`, an icon-font `<i>`, an `<img>`) survives as child nodes; `label`
-  // stays as the childless fallback, the base.link contract.
+  // Submit buttons remain base.submit and preserve their authored children.
   {
     match: 'button',
     map: (el) => {
@@ -614,12 +611,18 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
         attr(el, 'src')
         || el.querySelector('source')?.getAttribute('src')
         || ''
+      const authoredPreload = normalizedAttr(el, 'preload')
+      const preload = authoredPreload === 'none' || authoredPreload === 'metadata' || authoredPreload === 'auto'
+        ? authoredPreload
+        : el.hasAttribute('preload') ? 'auto' : 'metadata'
 
       return {
         moduleId: 'base.video',
         props: {
           videoUrl,
           poster: attr(el, 'poster'),
+          preload,
+          title: attr(el, 'title'),
           autoplay: el.hasAttribute('autoplay'),
           loop: el.hasAttribute('loop'),
           muted: el.hasAttribute('muted'),

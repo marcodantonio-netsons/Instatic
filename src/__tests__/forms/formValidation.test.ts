@@ -35,6 +35,13 @@ const controls = [
 ]
 
 describe('validateFormSubmission', () => {
+  it('normalizes explicitly trimmed text before server validation without changing other fields', () => {
+    const values = { email: 'ai@example.com', name: '  Ada  ' }
+    const result = validateFormSubmission({ table, controls: controls.map(control => control.fieldId === 'name' ? { ...control, trimOnSubmit: true } : control), values })
+    expect(result.ok).toBe(true)
+    if (result.ok) expect(result.cells.name).toBe('Ada')
+    expect(values.name).toBe('  Ada  ')
+  })
   it('coerces valid submitted values into data row cells', () => {
     const result = validateFormSubmission({
       table,

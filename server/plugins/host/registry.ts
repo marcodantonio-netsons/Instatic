@@ -60,15 +60,17 @@ function matchingContentAccessEntries(
 
 /**
  * Whether `table` is covered by any `contentAccess[]` entry, regardless of
- * mode. Drives result filtering in `tables.list` / `search`, which show
- * every declared table (same as always — mode narrowing applies to the
- * per-table operations, not to list membership).
+ * mode when omitted. Table listings use membership; readers such as search
+ * pass their operation mode so write-only declarations never trigger reads.
+ * Both forms use the same slug/creator matcher as per-table authorization.
  */
 export function hasContentTableAccess(
   manifest: PluginManifest,
   table: DataTable,
+  mode?: ContentAccessMode,
 ): boolean {
-  return matchingContentAccessEntries(manifest, table).length > 0
+  return matchingContentAccessEntries(manifest, table)
+    .some(row => mode === undefined || row.modes.includes(mode))
 }
 
 /**

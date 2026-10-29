@@ -34,7 +34,7 @@ import { nanoid } from 'nanoid'
 import {
   isSiteDocId,
   parseCollabDocId,
-  projectSiteDoc,
+  projectSiteRosters,
   siteDocId,
 } from '@core/collab'
 import type { DbClient } from '../db/client'
@@ -444,12 +444,12 @@ export function createCollabRelay(
           clearTimeout(siteEntry.persistTimer)
           siteEntry.persistTimer = null
         }
-        const projected = projectSiteDoc(siteEntry.doc)
+        const rosters = projectSiteRosters(siteEntry.doc)
         const sweep = siteEntry.persistChain.then(() =>
           persistence.serializeMutation(() =>
             persistence.sweepRosterDeletions(
               branchId,
-              projected.rosters,
+              rosters,
               invalidations.get(affectedSiteDocId) ?? invalidation.cutoff(),
               new Set(affected),
             ),

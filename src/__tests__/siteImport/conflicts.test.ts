@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'bun:test'
 import { detectConflicts, applyConflictResolutions, buildImportPlan } from '@core/siteImport'
 import { makeSinglePageFileMap } from './fixtures'
+import { generateClassCSS } from '@core/publisher'
 import type {
   ImportPlan,
   PagePlan,
@@ -525,8 +526,12 @@ describe('detectConflicts — rename targets avoid the import\'s own names', () 
       { slug: 'bg-3', value: '#111' },
       { slug: 'bg-2', value: '#222' },
     ])
-    const u = result.styleRules.find((r) => r.selector === '.u')
-    expect(u?.styles).toMatchObject({ color: 'var(--bg-2)', background: 'var(--bg-3)' })
+    const emittedCss = generateClassCSS(Object.fromEntries(result.styleRules.map((rule, index) => {
+      const id = String(index)
+      return [id, { ...rule, id, createdAt: 0, updatedAt: 0 }]
+    })), [], result.conditions)
+    expect(emittedCss).toContain('.u {\n  color: var(--bg-2);\n}')
+    expect(emittedCss).toContain('.u {\n  background: var(--bg-3);\n}')
   })
 })
 

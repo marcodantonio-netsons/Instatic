@@ -33,6 +33,7 @@
  * Runtime: returns a `PluginModuleDefinition` ready to be re-exported from
  * a `modules/index.{ts,js}` plugin entrypoint.
  */
+import type { ModuleAssets } from '@core/module-engine-schema'
 import type {
   PluginEditorRuntime,
   PluginModuleDefinition,
@@ -40,6 +41,7 @@ import type {
   PluginPropertyControl,
   PluginRenderOutput,
 } from '../modules'
+import type { TSchema } from '@core/utils/typeboxHelpers'
 
 interface DefineModuleConfig<TDefaults extends Record<string, unknown>> {
   id: string
@@ -50,6 +52,11 @@ interface DefineModuleConfig<TDefaults extends Record<string, unknown>> {
   defaults: TDefaults
   /** Property controls — keys must match `defaults`. */
   schema: { [K in keyof TDefaults]: PluginPropertyControl }
+  /** Declarative TypeBox props/defaulting and resolved publish requirements. */
+  propsSchema?: TSchema
+  publishSchema?: TSchema
+  /** Invariant type assets, independent of render props. */
+  assets?: ModuleAssets
   /** Whether the module can hold child modules. */
   canHaveChildren?: boolean
   /** Optional concrete root tag for layer/DOM tree display. */
@@ -99,7 +106,10 @@ export function defineModule<const TDefaults extends Record<string, unknown>>(
     version: config.version ?? '1.0.0',
     defaults: config.defaults as Record<string, unknown>,
     schema: config.schema as Record<string, PluginPropertyControl>,
+    ...(config.propsSchema ? { propsSchema: config.propsSchema } : {}),
+    ...(config.publishSchema ? { publishSchema: config.publishSchema } : {}),
     canHaveChildren: config.canHaveChildren,
+    ...(config.assets ? { assets: config.assets } : {}),
     htmlTag: config.htmlTag,
     ...(config.dependencies ? { dependencies: config.dependencies } : {}),
     ...(config.editorRuntime ? { editorRuntime: config.editorRuntime } : {}),

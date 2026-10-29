@@ -28,14 +28,14 @@
 import type { DynamicPropBinding } from '@core/page-tree'
 import { renderMarkdownToHtml } from '@core/markdown/renderMarkdown'
 import { isRichtextPropKey, RICHTEXT_CONTENT_CONFIG, sanitizeRichtext } from '@core/sanitize'
+import { mapJsonStrings } from '@core/utils/jsonStrings'
 import type { TemplateRenderDataContext } from './renderDataContext'
 
 export type { TemplateRenderDataContext } from './renderDataContext'
 import {
   containsTokens,
   interpolateTokens,
-  readFrame,
-  walkFieldPath,
+  readFrameField,
 } from './tokenInterpolation'
 
 /**
@@ -63,10 +63,7 @@ function resolveBindingValue(
   binding: DynamicPropBinding,
   context: TemplateRenderDataContext,
 ): unknown {
-  const frame = readFrame(binding.source, context)
-  if (!frame) return undefined
-
-  const value = walkFieldPath(frame, binding.field)
+  const value = readFrameField(binding.source, binding.field, context)
 
   // Markdown shim: when a binding targets the `body` cell (post-type rows)
   // or any `richText` field stored as markdown and the binding requests
@@ -120,6 +117,25 @@ export function effectiveNodeBindings(node: {
   return node.dynamicBindings
 }
 
+/** Effective values after whole-prop bindings, before inline token interpolation. */
+export function resolveBoundProps(
+  staticProps: Record<string, unknown>,
+  bindings: Record<string, DynamicPropBinding> | undefined,
+  context: TemplateRenderDataContext | undefined,
+): Record<string, unknown> {
+  if (!context || !bindings) return staticProps
+  const resolved = { ...staticProps }
+  for (const [propKey, binding] of Object.entries(bindings)) {
+    const value = resolveBindingValue(binding, context)
+    if (value === undefined || value === null) {
+      if (binding.fallback === 'empty') resolved[propKey] = ''
+      continue
+    }
+    resolved[propKey] = value
+  }
+  return resolved
+}
+
 export function resolveDynamicProps(
   staticProps: Record<string, unknown>,
   bindings: Record<string, DynamicPropBinding> | undefined,
@@ -133,18 +149,8 @@ export function resolveDynamicProps(
 
   // Step 1: structured whole-prop binding overrides (for non-string props, this
   // is the only way a prop gets a dynamic value).
-  let resolved: Record<string, unknown> | null = null
-  if (bindings) {
-    resolved = { ...staticProps }
-    for (const [propKey, binding] of Object.entries(bindings)) {
-      const value = resolveBindingValue(binding, context)
-      if (value === undefined || value === null) {
-        if (binding.fallback === 'empty') resolved[propKey] = ''
-        continue
-      }
-      resolved[propKey] = value
-    }
-  }
+  const boundProps = resolveBoundProps(staticProps, bindings, context)
+  let resolved: Record<string, unknown> | null = boundProps === staticProps ? null : boundProps
 
   // Step 2: token interpolation for every string-typed prop value. Both
   // the original static props and any string overwritten by step 1 are
@@ -174,22 +180,16 @@ export function resolveDynamicProps(
   for (const key of Object.keys(target)) {
     const v = target[key]
 
-    // `htmlAttributes` is the one prop that holds strings a level down, and
-    // its values are authored the same way every other string prop is — an
-    // `href` written on a link interpolates, so a `src` written on a custom
-    // tag has to as well. Without this the token ships to the browser as
-    // literal text and the attribute silently points nowhere.
-    if (key === HTML_ATTRIBUTES_PROP_KEY) {
-      if (!isStringRecord(v)) continue
-      const withTokens = Object.entries(v).filter(([, av]) => containsTokens(av))
-      if (withTokens.length === 0) continue
-      ensureCopy()
-      const attrs = { ...v }
-      for (const [attrName, attrValue] of withTokens) {
-        // Never markdown-rendered: an attribute value is a value, not a body.
-        attrs[attrName] = interpolateTokens(attrValue, context)
-      }
-      resolved![key] = attrs
+    // Structured authoring (attributes, expressions, nested module settings)
+    // uses the same token frames as scalar props, without interpreting data
+    // strings as richtext. The shared JSON walker also drives request detection.
+    // Component arguments are a deferred bag: their values become props in
+    // the instantiated tree, where interpolation happens once. Resolving the
+    // bag here would remove escapes before the actual destination sees them.
+    if (key === 'propOverrides') continue
+    if (v && typeof v === 'object') {
+      const mapped = mapJsonStrings(v, (value) => containsTokens(value) ? interpolateTokens(value, context) : value)
+      if (mapped !== v) { ensureCopy(); resolved![key] = mapped }
       continue
     }
 
@@ -218,12 +218,4 @@ export function resolveDynamicProps(
   }
 
   return resolved ?? staticProps
-}
-
-/** Prop holding author-set HTML attributes — see the loop in `resolveDynamicProps`. */
-const HTML_ATTRIBUTES_PROP_KEY = 'htmlAttributes'
-
-function isStringRecord(value: unknown): value is Record<string, string> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
-  return Object.values(value).every((entry) => typeof entry === 'string')
 }

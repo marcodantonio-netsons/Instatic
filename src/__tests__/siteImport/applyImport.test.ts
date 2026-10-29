@@ -27,6 +27,7 @@ import type {
 } from '@core/siteImport'
 import type { FontEntry } from '@core/fonts'
 import type { ImportFragment } from '@core/htmlImport'
+import { generateClassCSS } from '@core/publisher'
 import { makeSampleFileMap, makeEmptySiteDocument, makeMockSiteDocument } from './mockSite'
 import { makeSinglePageFileMap } from './fixtures'
 import type { FileMap } from '@core/siteImport'
@@ -210,7 +211,9 @@ describe('buildImportPlan — structure', () => {
 
     expect(hero).toBeDefined()
     expect(hero!.styles.minHeight).toBe('640px')
-    expect(hero!.styles.backgroundImage).toContain(`url('css/img/hero.png')`)
+    const heroImage = p.styleRules.find((r) => r.selector === '.hero' && r.styles.backgroundImage)
+    expect(heroImage?.styles.backgroundImage).toContain(`url('css/img/hero.png')`)
+    expect(p.styleRuleSources[p.styleRules.indexOf(heroImage!)]).toBe('css/components/hero.css')
     expect(p.styleRuleSources[p.styleRules.indexOf(hero!)]).toBe('css/components/hero.css')
     expect(p.assets.some((asset) => asset.sourcePath === 'css/img/hero.png')).toBe(true)
     expect(p.unusedCss).not.toContain('css/components/hero.css')
@@ -422,9 +425,12 @@ describe('buildImportPlan — structure', () => {
       p.conflicts.crossSheetClasses,
     )
     const rowRules = resolved.styleRules.filter((rule) => rule.selector === '.row')
-    expect(rowRules).toHaveLength(2)
+    expect(rowRules).toHaveLength(3)
     expect(rowRules.filter((rule) => rule.kind === 'class')).toHaveLength(1)
-    expect(rowRules.filter((rule) => rule.kind === 'ambient')).toHaveLength(1)
+    expect(rowRules.filter((rule) => rule.kind === 'ambient')).toHaveLength(2)
+    expect(rowRules.map((rule) => rule.styles)).toEqual([
+      { display: 'flex' }, { flexWrap: 'wrap' }, { '--bs-gutter-x': '30px' },
+    ])
     expect(resolved.styleRules.find((rule) => rule.selector === '.row > *')?.kind).toBe('ambient')
     expect(resolved.styleRules.find((rule) => rule.selector === '.col-xl-3')?.kind).toBe('class')
     expect(resolved.styleRules.find((rule) => rule.selector === '.align-items-stretch')?.kind).toBe('class')
@@ -614,10 +620,12 @@ describe('buildImportPlan — structure', () => {
 
     expect(p.colors).toEqual([{ slug: 'font-accent', value: '#fc834b' }])
     expect(p.fontTokens.map((t) => t.variable)).toEqual(['font-accent-2'])
-    expect(p.styleRules.find((r) => r.selector === 'h1')?.styles).toMatchObject({
-      color: 'var(--font-accent)',
-      fontFamily: 'var(--font-accent-2)',
-    })
+    const emittedCss = generateClassCSS(Object.fromEntries(p.styleRules.map((rule, index) => {
+      const id = String(index)
+      return [id, { ...rule, id, createdAt: 0, updatedAt: 0 }]
+    })), [], p.conditions)
+    expect(emittedCss).toContain('h1 {\n  color: var(--font-accent);\n}')
+    expect(emittedCss).toContain('h1 {\n  font-family: var(--font-accent-2);\n}')
   })
 
   it('plans Google Fonts @import as installed font requests', () => {
@@ -663,10 +671,11 @@ describe('buildImportPlan — structure', () => {
       },
     ])
     expect('fontImportUrl' in p).toBe(false)
-    expect(p.styleRules.find((rule) => rule.selector === ':root')?.styles).toMatchObject({
-      '--title-font': '"Plus Jakarta Sans", serif',
-      '--body-font': '"Manrope", sans-serif',
-    })
+    expect(p.styleRules.filter((rule) => rule.selector === ':root').map((rule) => rule.styles))
+      .toEqual(expect.arrayContaining([
+        { '--title-font': '"Plus Jakarta Sans", serif' },
+        { '--body-font': '"Manrope", sans-serif' },
+      ]))
   })
 })
 

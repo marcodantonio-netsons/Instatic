@@ -15,11 +15,13 @@ import type { PageNode } from '@core/page-tree'
 import {
   ENTRY_FIELD_FILTER_KEY,
   ENTRY_FIELD_SOURCE_ID,
+  LOOP_LOADING_LABEL_DEFAULTS,
   resolveEntryFieldItems,
+  readLoopQueryBindings,
   type EntryFieldMedia,
   type LoopItem,
 } from '@core/loops'
-import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
+import type { TemplateRenderDataContext } from '@core/templates'
 import { resolveHtmlTag } from '@core/htmlAttributes'
 import { htmlAttributesAttr } from './htmlAttributesEmit'
 import { injectNodeClassIds, injectNodeId, injectNodeInlineStyles } from './classInjection'
@@ -52,7 +54,9 @@ import type { RenderConfig, RenderAccumulators, RenderNodeFn } from './renderCon
  *   - 'infinite': items emitted, plus a `data-instatic-loop-id` sentinel and the
  *     loop's nodeId is added to `acc.infiniteLoopIds` so the publisher can
  *     inject the runtime script. The runtime fetches subsequent pages from
- *     `/_instatic/loop/<loopId>?page=N` and appends rendered HTML.
+ *     `/_instatic/loop/<loopId>?page=N&pagePath=<path-and-query>&v=<version>`
+ *     and appends rendered HTML. Authored labels are resolved here and carried
+ *     as text attributes, so the runtime uses the page's native language.
  *
  * The loop's own `classIds` are injected onto a wrapping `<div>` so author-
  * applied classes (e.g. grid layout) actually take effect.
@@ -75,9 +79,6 @@ export function renderLoop(
   const variants = node.children ?? []
   if (variants.length === 0) {
     return '<!-- instatic: loop has no child template -->'
-  }
-  if (data.items.length === 0) {
-    return ''
   }
 
   // The base template context (page/site/route frames + the outer entry stack)
@@ -108,13 +109,38 @@ export function renderLoop(
   // registers the loop's id so publishPage() can decide whether to emit
   // the runtime script.
   const props = node.props
-  const isInfinite = props.pagination === 'infinite'
+  const queryBindings = readLoopQueryBindings(props.queryBindings)
+  if (!data.items.length && !queryBindings.length && node.props.pagination !== 'infinite') return ''
+  // Source configuration is authored before prefetch; resolving text labels
+  // must not activate a different mode or slice after data has been fetched.
+  const isInfinite = node.props.pagination === 'infinite'
   let attrs = ` data-instatic-loop="${escapeHtml(loopId)}"`
   attrs += ` data-instatic-loop-page="${data.pageNumber}"`
+  attrs += ` data-instatic-loop-total="${data.totalItems}"`
+  attrs += ` data-instatic-loop-loaded="${data.items.length}"`
+  if (queryBindings.length) attrs += ` data-instatic-loop-query-bindings="${escapeHtml(JSON.stringify(queryBindings))}"`
+  if (queryBindings.length) {
+    const initial: Record<string, string> = {}
+    for (const binding of queryBindings) {
+      const value = config.formValuesById?.get(binding.formId)?.[binding.fieldName]
+      if (value !== undefined) initial[binding.queryParameter] = binding.valueType === 'stringArray' ? JSON.stringify(value) : value === null ? '' : String(value)
+    }
+    attrs += ` data-instatic-loop-query-initial="${escapeHtml(JSON.stringify(initial))}"`
+  }
+  if (typeof props.emptyLabel === 'string' && props.emptyLabel) attrs += ` data-instatic-loop-empty-label="${escapeHtml(props.emptyLabel)}"`
   if (isInfinite) {
     attrs += ` data-instatic-loop-mode="infinite"`
     attrs += ` data-instatic-loop-has-more="${data.hasMore ? 'true' : 'false'}"`
-    attrs += ` data-instatic-loop-page-size="${typeof props.pageSize === 'number' ? Math.floor(props.pageSize) : 10}"`
+    attrs += ` data-instatic-loop-page-size="${typeof node.props.pageSize === 'number' ? Math.floor(node.props.pageSize) : 10}"`
+    attrs += ` data-instatic-loop-offset="${typeof node.props.offset === 'number' ? node.props.offset : 0}"`
+    attrs += ` data-instatic-loop-version="${escapeHtml(config.snapshotHash ?? '')}"`
+    for (const key of Object.keys(LOOP_LOADING_LABEL_DEFAULTS)) {
+      // The common dispatcher already parsed this native string property;
+      // only the module schema supplies defaults for missing authored fields.
+      const label = props[key] as string
+      const attribute = key === 'loadMoreLabel' ? 'load-more' : key === 'loadingLabel' ? 'loading' : 'retry'
+      attrs += ` data-instatic-loop-${attribute}-label="${escapeHtml(label)}"`
+    }
     acc.infiniteLoopIds.add(loopId)
   }
 

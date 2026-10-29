@@ -294,6 +294,8 @@ export function isRichtextPropKey(key: string): boolean {
  */
 const SVG_CONFIG: Config = {
   USE_PROFILES: { svg: true, svgFilters: true },
+  // DOMPurify's SVG profile omits this standard text-positioning attribute.
+  ADD_ATTR: ['dominant-baseline'],
   // Defence in depth: no HTML embedding (`foreignObject`), no script, no nested
   // anchors, and no `<style>` — DOMPurify keeps `<style>` in the svg profile but
   // does not strip `@import url(javascript:…)` from its CSS, and untrusted SVG

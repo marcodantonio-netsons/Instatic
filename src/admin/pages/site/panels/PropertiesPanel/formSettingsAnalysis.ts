@@ -1,6 +1,7 @@
 import type { CreateDataTableInput, DataField, DataTable, DataSelectOption } from '@core/data/schemas'
 import type { ImportFragment } from '@core/htmlImport'
 import { createNode, flattenSubtree, getParent, type Page, type PageNode } from '@core/page-tree'
+import { normalizeIdentifierValue } from '@core/utils/identifier'
 import { formDisplayName, humanizeIdentifier, slugifyFormTableName } from './formSettingsNaming'
 
 export { formDisplayName } from './formSettingsNaming'
@@ -72,7 +73,7 @@ interface FormSettingsWarning {
 export interface FormContextSummary {
   nodeId: string
   formId: string
-  mode: 'cms' | 'custom'
+  mode: 'cms' | 'custom' | 'request' | 'local'
   targetTableId: string
 }
 
@@ -284,7 +285,7 @@ export function fieldBindingPatch(field: DataField, moduleId: string): Record<st
       return {
         ...base,
         id: `${field.id}-checkbox`,
-        value: 'on',
+        value: field.type === 'multiSelect' ? field.options[0]?.value ?? '' : 'on',
       }
     case 'base.radio':
       return {
@@ -305,7 +306,7 @@ function fieldCompatibleWithNode(field: DataField, moduleId: string): boolean {
     case 'base.select':
       return SELECT_FIELD_TYPES.has(field.type)
     case 'base.checkbox':
-      return field.type === 'boolean'
+      return field.type === 'boolean' || field.type === 'multiSelect'
     case 'base.radio':
       return field.type === 'select' || field.type === 'boolean'
     default:
@@ -340,8 +341,8 @@ function settingsKind(moduleId: string): FormSettingsKind {
 function formSummary(node: PageNode): FormContextSummary {
   return {
     nodeId: node.id,
-    formId: stringProp(node, 'formId', node.id) || node.id,
-    mode: stringProp(node, 'mode', 'cms') === 'custom' ? 'custom' : 'cms',
+    formId: normalizeIdentifierValue(stringProp(node, 'formId', 'form'), 'form'),
+    mode: formMode(node),
     targetTableId: stringProp(node, 'targetTableId', ''),
   }
 }
@@ -356,6 +357,8 @@ function duplicateNameWarnings(page: Page, formNode: PageNode): FormSettingsWarn
     const name = stringProp(node, 'name', stringProp(node, 'fieldId', ''))
     if (!name) continue
     if (seen.has(name)) {
+      const previous = page.nodes[seen.get(name)!]
+      if (previous.moduleId === node.moduleId && ['base.checkbox','base.radio'].includes(node.moduleId) && previous.props.fieldId === node.props.fieldId) continue
       warnings.push({
         code: 'duplicate_name',
         message: `Two controls inside this form use the name "${name}".`,
@@ -374,10 +377,20 @@ function inferFieldsFromForm(
 ): DataField[] {
   const fields: DataField[] = []
   const usedIds = new Set<string>()
-  for (const nodeId of flattenSubtree(page, formNode.id)) {
+  const descendants = flattenSubtree(page, formNode.id), grouped = new Set<string>()
+  for (const nodeId of descendants) {
     if (nodeId === formNode.id) continue
     const node = page.nodes[nodeId]
     if (!node || !FORM_CONTROL_MODULES.has(node.moduleId)) continue
+    const name = String(node.props.name || node.props.fieldId || '')
+    const choices = ['base.checkbox','base.radio'].includes(node.moduleId) && name ? descendants.map((id) => page.nodes[id]).filter((entry) => entry?.moduleId === node.moduleId && (entry.props.name || entry.props.fieldId) === name) : []
+    if (choices.length > 1) {
+      if (grouped.has(name)) continue
+      grouped.add(name)
+      const first = inferFieldFromControl(page, node, usedIds)
+      if (first) fields.push({ id: first.id, label: first.label, type: node.moduleId === 'base.checkbox' ? 'multiSelect' : 'select', ...(choices.some((choice) => choice.props.required || Number(choice.props.minSelected) > 0) ? { required: true } : {}), options: choices.map((choice, index) => ({ id: normalizeFieldId(String(choice.props.value ?? 'on'), `option-${index}`), label: labelForControl(page, choice), value: String(choice.props.value ?? 'on') })) })
+      continue
+    }
     const field = inferFieldFromControl(page, node, usedIds)
     if (field) fields.push(field)
   }
@@ -618,4 +631,9 @@ function numberProp<TName extends string>(
     if (Number.isFinite(parsed)) return { [outKey]: parsed } as Record<TName, number>
   }
   return {}
+}
+
+function formMode(node: PageNode): FormContextSummary['mode'] {
+  const value = stringProp(node, 'mode', 'cms')
+  return value === 'request' || value === 'custom' || value === 'local' ? value : 'cms'
 }

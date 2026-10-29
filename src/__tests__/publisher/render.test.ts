@@ -173,10 +173,8 @@ describe('renderNode', () => {
     'base.text',
     {
       canHaveChildren: false,
-      render: (props, _children) => ({
-        html: `<h${props.level}>${props.text}</h${props.level}>`,
-        css: 'h1,h2,h3,h4,h5,h6 { font-family: sans-serif; }',
-      }),
+      assets: { css: 'h1,h2,h3,h4,h5,h6 { font-family: sans-serif; }' },
+      render: (props, _children) => ({ html: `<h${props.level}>${props.text}</h${props.level}>` }),
     },
   )
 
@@ -184,10 +182,8 @@ describe('renderNode', () => {
     'base.container',
     {
       canHaveChildren: true,
-      render: (props, children) => ({
-        html: `<div class="${props.className}">${children.join('')}</div>`,
-        css: '.instatic-container { display: block; }',
-      }),
+      assets: { css: '.instatic-container { display: block; }' },
+      render: (props, children) => ({ html: `<div class="${props.className}">${children.join('')}</div>` }),
     },
   )
 
@@ -673,10 +669,8 @@ describe('renderNode', () => {
 
 describe('publishPage', () => {
   const headingDef = makeModule('base.text', {
-    render: (props, _) => ({
-      html: `<h1>${(props as { text: string }).text}</h1>`,
-      css: 'h1 { color: black; }',
-    }),
+    assets: { css: 'h1 { color: black; }' },
+    render: (props, _) => ({ html: `<h1>${(props as { text: string }).text}</h1>` }),
   })
   const registry = makeRegistry({ 'base.text': headingDef })
   const site = makeSite()
@@ -747,11 +741,11 @@ describe('publishPage', () => {
     const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
     const { html } = publishPage(page, site, registry)
     // Reset rules — verify both core box-model and body baseline reach the page.
-    expect(html).toContain(':where(*, *::before, *::after) { box-sizing: border-box; }')
+    expect(html).toContain(':where(*), ::before, ::after { box-sizing: border-box; }')
     expect(html).toContain(':where(*) { margin: 0; padding: 0; }')
     expect(html).toContain('font-family: system-ui')
     // Cascade order: reset must appear before module CSS so module rules win.
-    const resetIndex = html.indexOf(':where(*, *::before, *::after)')
+    const resetIndex = html.indexOf(':where(*), ::before, ::after')
     const moduleIndex = html.indexOf('h1 { color: black; }')
     expect(resetIndex).toBeGreaterThan(-1)
     expect(moduleIndex).toBeGreaterThan(resetIndex)
@@ -958,10 +952,8 @@ describe('publishPage', () => {
     // and inject a <script>. After sanitization, </style> is removed, so the <script>
     // text remains INSIDE the <style> block where it is harmless raw text (not parsed as HTML).
     const evilModuleDef = makeModule('evil.module', {
-      render: (_props, _children) => ({
-        html: '<p>hello</p>',
-        css: 'p { color: red; } </style><script>alert(1)</script><style>',
-      }),
+      assets: { css: 'p { color: red; } </style><script>alert(1)</script><style>' },
+      render: (_props, _children) => ({ html: '<p>hello</p>' }),
     })
     const reg = makeRegistry({ 'evil.module': evilModuleDef })
     const page = makePage({ root: { moduleId: 'evil.module', props: {} } })

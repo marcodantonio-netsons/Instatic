@@ -11,13 +11,10 @@
  * document's own nodes stay fully editable (selection, hover, DnD), so every
  * existing editor subsystem keeps operating on the unchanged active-page tree.
  *
- * Body ownership mirrors the publisher: the published `<body>` is the OUTERMOST
- * wrapper's body element (the inner document's `base.body` is dropped and its
- * children spliced in — inner body classes are not preserved). So in the wrapped
- * case we apply the outermost wrapper body's classes, inline styles, and safe
- * HTML attributes to the iframe `<body>` and render the active document as its
- * body CHILDREN, rather than letting the inner body claim presentation the
- * published page would not carry.
+ * Body ownership mirrors the publisher: every template/page body contributes
+ * presentation to the one real document body. The outermost body owns the
+ * structural identity; attributes and inline styles are merged with the
+ * closest inner document winning conflicts, and class IDs are deduplicated.
  *
  * When nothing wraps the document (editing the `everywhere` layout itself, or a
  * site with no matching template), it renders exactly as before — a plain
@@ -29,13 +26,14 @@
 import { use, useEffect, type ReactNode } from 'react'
 import type { BaseNode, Page } from '@core/page-tree'
 import { classNamesForClassIds } from '@core/page-tree'
+import { composeDocumentBody, resolveDynamicProps, effectiveNodeBindings } from '@core/templates'
 import { useEditorStore } from '@site/store/store'
 import { ReadOnlyNodeTree } from '@modules/base/utils/ReadOnlyNodeTree'
-import { htmlAttributesForReact } from '@core/htmlAttributes'
+import { normalizeHtmlAttributes } from '@core/htmlAttributes'
 import { useResponsiveBackgroundStyle } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
 import { NodeRenderer } from './NodeRenderer'
 import { resolveEditorWrapperTemplates } from './canvasComposition'
-import { CanvasDocumentContext, CanvasTemplateContext } from './CanvasContexts'
+import { CanvasDocumentContext, CanvasTemplateContext, CanvasNodeTreeContext } from './CanvasContexts'
 import { applyIframeBodyPresentation } from './iframeBodyPresentation'
 
 const NO_WRAPPERS: Page[] = []
@@ -54,12 +52,11 @@ export function CanvasComposedTree({ page }: CanvasComposedTreeProps) {
   // Templates wrapping the active document (outermost-first). A Visual
   // Component edit surface is never a published route, so it is never wrapped.
   const wrappers = !isVcMode && site ? resolveEditorWrapperTemplates(site, page) : NO_WRAPPERS
-  const outerBody = wrappers[0]?.nodes[wrappers[0].rootNodeId]
 
   // No wrapping templates → render the document exactly as before; its own
   // base.body claims the iframe <body>.
   if (wrappers.length === 0) {
-    return <NodeRenderer nodeId={page.rootNodeId} />
+    return <CanvasNodeTreeContext.Provider value={page.nodes}><NodeRenderer nodeId={page.rootNodeId} /></CanvasNodeTreeContext.Provider>
   }
 
   // Editable content = the active document's body children, rendered editable.
@@ -72,7 +69,7 @@ export function CanvasComposedTree({ page }: CanvasComposedTreeProps) {
 
   // Nest the read-only wrappers from innermost outward; each wrapper's outlet
   // hosts the next inner layer, the innermost hosting the editable content.
-  let composed: ReactNode = <>{editableContent}</>
+  let composed: ReactNode = <CanvasNodeTreeContext.Provider value={page.nodes}>{editableContent}</CanvasNodeTreeContext.Provider>
   for (let i = wrappers.length - 1; i >= 0; i--) {
     const wrapper = wrappers[i]
     composed = (
@@ -87,18 +84,18 @@ export function CanvasComposedTree({ page }: CanvasComposedTreeProps) {
     )
   }
 
-  // Mirror the outermost wrapper body's classes + inline styles onto the
-  // iframe <body>, exactly as the published document would carry them.
-  const bodyClassName = outerBody
-    ? classNamesForClassIds(styleRules, outerBody.classIds).join(' ')
-    : ''
+  // Merge through the same body composer as publication, without rekeying
+  // editable content or introducing an element around template outlets.
+  const documentBody = composeDocumentBody([...wrappers.map(wrapper => wrapper.nodes[wrapper.rootNodeId]), bodyNode])
+  const bodyClassName = classNamesForClassIds(styleRules, documentBody.classIds).join(' ')
+  const bodyProps = resolveDynamicProps(documentBody.props, effectiveNodeBindings(documentBody), templateContext)
 
   return (
     <>
       <IframeBodyPresentationOwner
         className={bodyClassName}
-        inlineStyles={outerBody?.inlineStyles}
-        htmlAttributes={outerBody?.props.htmlAttributes}
+        inlineStyles={documentBody.inlineStyles}
+        htmlAttributes={bodyProps.htmlAttributes}
       />
       {composed}
     </>
@@ -106,7 +103,7 @@ export function CanvasComposedTree({ page }: CanvasComposedTreeProps) {
 }
 
 /**
- * Apply the outer body's presentation to the host iframe's `<body>` while
+ * Apply the composed document body's presentation to the host iframe's `<body>` while
  * mounted (and restore it on unmount). The frame supplies its final srcDoc
  * through context, so this owner contributes no editor-only body child. Only
  * used in the wrapped case, where no `base.body` editor runs to own the body.
@@ -128,7 +125,7 @@ function IframeBodyPresentationOwner({
     return applyIframeBodyPresentation(body, {
       className,
       style,
-      attributes: htmlAttributesForReact(htmlAttributes),
+      attributes: normalizeHtmlAttributes(htmlAttributes),
     })
   }, [className, htmlAttributes, iframeDocument, style])
   return null

@@ -16,6 +16,9 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import React from 'react'
 import { cleanup, render } from '@testing-library/react'
 import type { BaseNode } from '@core/page-tree'
+import { StyleRuleSchema } from '@core/page-tree'
+import { Value } from '@sinclair/typebox/value'
+import { registry } from '@core/module-engine'
 import { bagToReactStyle, type RenderResolvedMedia } from '@core/publisher'
 import { responsiveBackgroundReactStyle } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
 import { ReadOnlyNodeTree } from '@modules/base/utils/ReadOnlyNodeTree'
@@ -120,6 +123,27 @@ describe('ReadOnlyNodeTree — inline styles', () => {
 })
 
 describe('ReadOnlyNodeTree — dynamic preview context', () => {
+  it('isolates nested tree resources and contexts while updating an outer class registry', () => {
+    const innerNodes = { h1: textNode('h1', { props: { text: '{site.name}', tag: 'h1', htmlAttributes: {} }, classIds: ['shared'] }) }
+    const classRule = (name: string) => ({ ...Value.Create(StyleRuleSchema), id: 'shared', kind: 'class' as const, name, selector: '.' + name })
+    const innerClasses = { shared: classRule('innerClass') }
+    const moduleId = 'test.nested-read-only-scope'
+    registry.registerOrReplace({ ...registry.get('base.text')!, id: moduleId, component: ({ children }) => <section>
+      <ReadOnlyNodeTree nodes={innerNodes} rootNodeId="h1" classes={innerClasses} templateContext={{ entryStack: [], site: { id: 'inner', name: 'Inner' } }} />
+      {children}
+    </section> })
+    try {
+      const nodes = {
+        nested: textNode('nested', { moduleId, props: {}, children: ['h1'] }),
+        h1: textNode('h1', { props: { text: '{site.name}', tag: 'h1', htmlAttributes: {} }, classIds: ['shared'] }),
+      }
+      const view = render(<ReadOnlyNodeTree nodes={nodes} rootNodeId="nested" classes={{ shared: classRule('outerClass') }} templateContext={{ entryStack: [], site: { id: 'outer', name: 'Outer' } }} />)
+      expect(Array.from(view.container.querySelectorAll('h1'), (node) => [node.textContent, node.className])).toEqual([['Inner', 'innerClass'], ['Outer', 'outerClass']])
+      view.rerender(<ReadOnlyNodeTree nodes={nodes} rootNodeId="nested" classes={{ shared: classRule('updatedClass') }} templateContext={{ entryStack: [], site: { id: 'outer', name: 'Updated' } }} />)
+      expect(Array.from(view.container.querySelectorAll('h1'), (node) => [node.textContent, node.className])).toEqual([['Inner', 'innerClass'], ['Updated', 'updatedClass']])
+    } finally { registry.unregister(moduleId) }
+  })
+
   it('resolves currentEntry tokens in read-only template previews', () => {
     const nodes: Record<string, BaseNode> = {
       h1: textNode('h1', {

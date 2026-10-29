@@ -12,7 +12,7 @@
  *  - Walk the VC's flat tree (vc.tree.nodes) starting from vc.tree.rootNodeId
  *  - Apply propBindings: for each node.propBindings[propKey] = { paramId },
  *    substitute node.props[propKey] with the effective param value
- *    (propOverrides[paramId] ?? param.defaultValue)
+ *    (an own override, including null/empty, or the declared default)
  *  - Expand slot outlets: base.slot-outlet nodes are replaced with
  *    slotInstancesByName[slotName] content (if provided) or the slot param's
  *    defaultValue (if set), or kept as a placeholder.
@@ -23,7 +23,7 @@
  */
 
 import { Type } from '@sinclair/typebox'
-import type { BaseNode } from '@core/page-tree-schema'
+import type { BaseNode, PageNode } from '@core/page-tree-schema'
 import { compiledCheck } from '@core/utils/typeboxCompiler'
 import type { VisualComponent, VCNode } from './schemas'
 import { VCNodeSchema } from './schemas'
@@ -40,6 +40,8 @@ const VCNodeArraySchema = Type.Array(VCNodeSchema)
  * instantiateVCAtRef call and exist solely for canvas selection utilities.
  */
 export interface InstantiatedVCNode extends VCNode {
+  /** Consumer slot fills retain their page-level template bindings. */
+  dynamicBindings?: PageNode['dynamicBindings']
   /** ID of the page-level base.visual-component-ref node that owns this inlined node */
   _owningRefId: string
   /**
@@ -50,11 +52,15 @@ export interface InstantiatedVCNode extends VCNode {
   _fromSlotContent: boolean
 }
 
-interface InstantiatedVC {
+export interface InstantiatedVC {
   /** Flat map of all nodes in the rendered instance */
   nodes: Record<string, InstantiatedVCNode>
   /** ID of the root node — entry point for VCInlineTree */
   rootNodeId: string
+  /** Authored effective values; interpolation remains owned by the node renderer. */
+  parameterValues: ReadonlyMap<string, unknown>
+  /** Actual roots expanded at each visible outlet, keyed by native slot name. */
+  slotContentByName: Readonly<Record<string, readonly string[]>>
 }
 
 // ---------------------------------------------------------------------------
@@ -83,6 +89,7 @@ export function instantiateVCAtRef(
   refId: string,
 ): InstantiatedVC {
   const nodes: Record<string, InstantiatedVCNode> = {}
+  const slotContentByName: Record<string, string[]> = {}
 
   // Build a paramId → effectiveValue map for O(1) lookups during tree walk.
   const paramValues = new Map<string, unknown>()
@@ -123,6 +130,13 @@ export function instantiateVCAtRef(
     const node = vc.tree.nodes[nodeId]
     if (!node) return []
 
+    // Keep hidden nodes opaque, including outlets: expanding a hidden outlet
+    // would discard its visibility flag and expose its slot content.
+    if (node.hidden) {
+      nodes[node.id] = { ...node, _owningRefId: refId, _fromSlotContent: false }
+      return [node.id]
+    }
+
     // ── Slot outlet expansion ──────────────────────────────────────────────
     if (node.moduleId === 'base.slot-outlet') {
       const slotName =
@@ -132,12 +146,14 @@ export function instantiateVCAtRef(
 
       // Check slot-instance children from the consumer's page tree first.
       const instanceChildIds = slotInstancesByName[slotName]
-      if (instanceChildIds && instanceChildIds.length > 0) {
+      if (instanceChildIds !== undefined) {
         // Register all slot content nodes and their descendants.
         for (const childId of instanceChildIds) {
           registerSlotContentNode(childId)
         }
-        return instanceChildIds
+        const roots = instanceChildIds.filter((id) => nodes[id] && !nodes[id].hidden)
+        slotContentByName[slotName] = roots
+        return instanceChildIds.filter((id) => nodes[id])
       }
 
       // Fall back to slot param defaultValue (VCNode[] format).
@@ -154,6 +170,8 @@ export function instantiateVCAtRef(
         for (const defaultNode of defaultContent) {
           registerDefaultVCNode(defaultNode)
         }
+        const roots = defaultContent.map((n) => n.id).filter((id) => nodes[id] && !nodes[id].hidden)
+        slotContentByName[slotName] = roots
         return defaultContent.map((n) => n.id)
       }
 
@@ -217,5 +235,5 @@ export function instantiateVCAtRef(
 
   processNode(vc.tree.rootNodeId)
 
-  return { nodes, rootNodeId: vc.tree.rootNodeId }
+  return { nodes, rootNodeId: vc.tree.rootNodeId, parameterValues: paramValues, slotContentByName }
 }

@@ -3,7 +3,10 @@
  * Fake DbClient intercepts the published-snapshot query — same pattern as
  * holeRouteHandler.test.ts.
  */
-import { beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import type { DbClient, DbResult } from '../../../server/db'
 import {
   handleModuleJsAssetRequest,
@@ -12,6 +15,17 @@ import {
 import { resetForTests } from '../../../server/publish/renderCache'
 import { makeModule } from '../publisher/helpers'
 import { registry } from '../../core/module-engine/registry'
+import { moduleJsAssetPath } from '../../../server/publish/moduleJsBundle'
+import { prepareInactiveSlot, swapSlot, writeStaticAsset } from '../../../server/publish/staticArtefact'
+import { createFakeDb } from './dbTestFake'
+
+let uploadsDir: string | undefined
+afterEach(async () => {
+  if (uploadsDir) await rm(uploadsDir, { recursive: true, force: true })
+  uploadsDir = undefined
+})
+
+const noSnapshotReads = createFakeDb(async () => { throw new Error('Static module assets must not read the database') })
 
 function makeSnapshot() {
   return {
@@ -107,7 +121,8 @@ beforeEach(() => {
   )
   registry.registerOrReplace(
     makeModule('test.jsy', {
-      render: () => ({ html: '<div></div>', js: '(function(){/* test runtime */})();' }),
+      assets: { js: '(function(){/* test runtime */})();' },
+      render: () => ({ html: '<div></div>' }),
     }),
   )
 })
@@ -122,12 +137,58 @@ describe('isModuleJsAssetPath', () => {
 })
 
 describe('handleModuleJsAssetRequest', () => {
-  it('serves a known module with text/javascript and a 1h public cache', async () => {
+  it('serves the active generation after a process-cache reset without reading the site or registry', async () => {
+    uploadsDir = await mkdtemp(join(tmpdir(), 'module-js-route-'))
+    const prepared = await prepareInactiveSlot(uploadsDir)
+    const path = moduleJsAssetPath('test.jsy')
+    await writeStaticAsset(prepared.slotDir, path, new TextEncoder().encode('PUBLISHED_GENERATION'))
+    await swapSlot(uploadsDir, prepared.slot)
+    resetForTests()
+    registry.unregister('test.jsy')
+    const [req, url] = moduleJsRequest(path + '?v=1')
+    const response = await handleModuleJsAssetRequest(req, url, { db: noSnapshotReads, uploadsDir })
+    expect(response.status).toBe(200)
+    expect(await response.text()).toBe('PUBLISHED_GENERATION')
+    expect(response.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
+    expect(response.headers.get('cache-control')).toBe('public, no-cache')
+    const same = new Request(url, { headers: { 'if-none-match': response.headers.get('etag')! } })
+    const revalidated = await handleModuleJsAssetRequest(same, url, { db: noSnapshotReads, uploadsDir })
+    expect(revalidated.status).toBe(304)
+    expect(await revalidated.text()).toBe('')
+
+    // A missing script is authoritative when disk publication is enabled.
+    const [unknown, unknownUrl] = moduleJsRequest(moduleJsAssetPath('test.unknown'))
+    expect((await handleModuleJsAssetRequest(unknown, unknownUrl, { db: noSnapshotReads, uploadsDir })).status).toBe(404)
+    const [invalid, invalidUrl] = moduleJsRequest('/_instatic/module-js/%E0%A4%A.js')
+    expect((await handleModuleJsAssetRequest(invalid, invalidUrl, { db: noSnapshotReads, uploadsDir })).status).toBe(404)
+  })
+
+  it('serves changed module bytes only after activating the next complete slot', async () => {
+    uploadsDir = await mkdtemp(join(tmpdir(), 'module-js-swap-'))
+    const path = moduleJsAssetPath('test.jsy')
+    const initial = await prepareInactiveSlot(uploadsDir)
+    await writeStaticAsset(initial.slotDir, path, new TextEncoder().encode('OLD'))
+    await swapSlot(uploadsDir, initial.slot)
+    const next = await prepareInactiveSlot(uploadsDir)
+    await writeStaticAsset(next.slotDir, path, new TextEncoder().encode('NEW'))
+    const [req, url] = moduleJsRequest(path + '?v=1')
+    const old = await handleModuleJsAssetRequest(req, url, { db: noSnapshotReads, uploadsDir })
+    expect(await old.text()).toBe('OLD')
+    await swapSlot(uploadsDir, next.slot)
+    resetForTests() // A restarted server can publish the same process-local version.
+    const reusingVersion = new Request(url, { headers: { 'if-none-match': old.headers.get('etag')! } })
+    const changed = await handleModuleJsAssetRequest(reusingVersion, url, { db: noSnapshotReads, uploadsDir })
+    expect(changed.status).toBe(200)
+    expect(changed.headers.get('etag')).not.toBe(old.headers.get('etag'))
+    expect(await changed.text()).toBe('NEW')
+  })
+
+  it('serves a known module with text/javascript and mandatory cache revalidation', async () => {
     const [req, url] = moduleJsRequest('/_instatic/module-js/test.jsy.js?v=0')
     const res = await handleModuleJsAssetRequest(req, url, { db: makeFakeDb(makeSnapshot()) })
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
-    expect(res.headers.get('cache-control')).toBe('public, max-age=3600')
+    expect(res.headers.get('cache-control')).toBe('public, no-cache')
     expect(await res.text()).toContain('test runtime')
   })
 
@@ -144,6 +205,7 @@ describe('handleModuleJsAssetRequest', () => {
       '/_instatic/module-js/no-namespace.js',
       '/_instatic/module-js/test.jsy', // missing .js extension
       '/_instatic/module-js/',
+      '/_instatic/module-js/%E0%A4%A.js', // invalid URI encoding
     ]) {
       const [req, url] = moduleJsRequest(path)
       const res = await handleModuleJsAssetRequest(req, url, { db: makeFakeDb(makeSnapshot()) })

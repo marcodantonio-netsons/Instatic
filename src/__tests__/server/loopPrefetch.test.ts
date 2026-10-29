@@ -11,6 +11,7 @@ import {
   readLoopProps,
 } from '../../../server/publish/loopPrefetch'
 import type { DbResult } from '../../../server/db'
+import type { DataField, PublishedDataRow } from '@core/data/schemas'
 import { createFakeDb } from './dbTestFake'
 import { makePage, makeSite } from '../publisher/helpers'
 
@@ -26,6 +27,7 @@ describe('loopPrefetch', () => {
       tableId: 'posts',
       tableSlug: 'posts',
       tableKind: 'postType',
+      tableFields: [],
       tableRouteBase: '/posts',
       versionNumber: 1,
       cells: {
@@ -86,6 +88,7 @@ describe('loopPrefetch', () => {
       tableSlug: 'projects',
       tableKind: 'postType',
       tableRouteBase: '/projects',
+      tableFields: [],
       versionNumber: 1,
       cells: { title: 'Project', slug: 'project', hero: 'media_hero', gallery: ['media_a', 'media_gone'] },
       slug: 'project',
@@ -108,6 +111,57 @@ describe('loopPrefetch', () => {
     expect(item.fields.hero).toBe('/uploads/hero.jpg')
     expect(item.fields.gallery).toEqual(['/uploads/a.jpg'])
     expect(item.fields.title).toBe('Project')
+  })
+
+  it('projects localized entry repeater text and media together without changing stored cells', async () => {
+    const fields: DataField[] = [
+      { id: 'heading', label: 'Heading', type: 'localizedText' },
+      { id: 'cards', label: 'Cards', type: 'repeater', fields: [
+        { id: 'caption', label: 'Caption', type: 'localizedText' },
+        { id: 'image', label: 'Image', type: 'media', mediaKind: 'image' },
+        { id: 'gallery', label: 'Gallery', type: 'media', allowMultiple: true },
+      ] },
+      { id: 'notes', label: 'Notes', type: 'repeater', fields: [
+        { id: 'caption', label: 'Caption', type: 'localizedText' },
+      ] },
+    ]
+    const row: PublishedDataRow = {
+      id: 'entry-version', rowId: 'entry', tableId: 'projects', tableSlug: 'projects',
+      tableKind: 'postType', tableRouteBase: '/projects', tableFields: fields,
+      versionNumber: 1, slug: 'project',
+      cells: {
+        heading: { key: 'project.heading' },
+        ordinary: '{site.translations.project.heading}',
+        cards: [{ id: 'card-1', cells: {
+          caption: { key: 'project.caption' }, image: 'media_hero', gallery: ['media_a', 'missing'],
+        } }],
+        notes: [{ id: 'note-1', cells: { caption: { key: 'project.caption' } } }],
+      },
+      featuredMediaId: null, featuredMediaPath: null,
+      authorUserId: null, authorName: null, authorRoleSlug: null, authorRoleName: null,
+      publishedByUserId: null, publishedByName: null, publishedByRoleSlug: null, publishedByRoleName: null,
+      publishedAt: '2026-05-01T10:02:00.000Z', createdAt: '2026-05-01T10:02:00.000Z',
+    }
+    const before = structuredClone(row)
+    let mediaQueries = 0
+    const db = createFakeDb(async () => {
+      mediaQueries++
+      return { rows: [
+        { id: 'media_hero', public_path: '/uploads/hero.jpg' },
+        { id: 'media_a', public_path: '/uploads/a.jpg' },
+      ], rowCount: 2 }
+    })
+    const item = await publishedDataRowToEntryItem(db, row, fields, {
+      language: 'de', translations: { project: { heading: 'Projekt', caption: 'Bildunterschrift' } },
+    })
+    expect(item.fields.heading).toBe('Projekt')
+    expect(item.fields.cards).toEqual([{ id: 'card-1', cells: {
+      caption: 'Bildunterschrift', image: '/uploads/hero.jpg', gallery: ['/uploads/a.jpg'],
+    } }])
+    expect(item.fields.notes).toEqual([{ id: 'note-1', cells: { caption: 'Bildunterschrift' } }])
+    expect(item.fields.ordinary).toBe('{site.translations.project.heading}')
+    expect(mediaQueries).toBe(1)
+    expect(row).toEqual(before)
   })
 
   it('readLoopProps coerces missing/invalid props into safe defaults', () => {

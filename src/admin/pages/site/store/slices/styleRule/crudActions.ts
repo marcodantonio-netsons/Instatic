@@ -5,7 +5,7 @@
  */
 
 import { nanoid } from 'nanoid'
-import type { StyleRule } from '@core/page-tree'
+import type { StyleRule, CSSRuleGroup } from '@core/page-tree'
 import { classKindSelector } from '@core/page-tree'
 import { isGeneratedClassLocked } from '@core/page-tree'
 import { assertValidCssClassName } from '@core/page-tree'
@@ -15,7 +15,13 @@ import type { NewStyleRule } from '@core/siteImport'
 import { isValidCssSelector } from '../../styleRuleRename'
 import type { SiteSliceHelpers } from '../site/types'
 import type { StyleRuleSlice } from './types'
-import { nextRuleOrder, hasStylePatchChanges } from './helpers'
+import { nextRuleOrder, ruleOrderAfter, hasStylePatchChanges, removeStyleRuleReferences } from './helpers'
+import { remapImportedRuleGroups } from '../site/importLinking'
+import { splitRuleContextFragments } from './contextFragments'
+import {
+  clonePriorityBag, cloneContextPriorities, payloadFromRule, payloadEqual,
+  emptyPayload, writePayload, type PriorityBag, type RulePayload,
+} from './rulePayload'
 
 type CrudActions = Pick<
   StyleRuleSlice,
@@ -28,228 +34,29 @@ type CrudActions = Pick<
   | 'removeCssRuleProperties'
 >
 
-type PriorityBag = Record<string, 'important'>
-
-interface RulePayload {
-  styles: Record<string, unknown>
-  contextStyles: Record<string, Record<string, unknown>>
-  stylePriorities?: PriorityBag
-  contextStylePriorities?: Record<string, PriorityBag>
-  rawCss?: string
+function groupIdentity(group: CSSRuleGroup): unknown[] {
+  return group.kind === 'context'
+    ? ['context', group.contextId]
+    : ['layer', group.name ?? null, group.name === undefined ? group.id : null]
 }
 
-function clonePriorityBag(priorities: PriorityBag | undefined): PriorityBag | undefined {
-  if (!priorities || Object.keys(priorities).length === 0) return undefined
-  return { ...priorities }
+function ruleIdentity(rule: StyleRule | NewStyleRule): string {
+  return JSON.stringify([
+    styleRuleSelector(rule),
+    (rule.grouping ?? []).map(groupIdentity),
+    rule.atRule?.kind ?? null,
+    rule.atRule?.kind === 'group' ? groupIdentity(rule.atRule.group) : null,
+  ])
 }
 
-function cloneContextStyles(
-  contexts: Record<string, Record<string, unknown>> | undefined,
-): Record<string, Record<string, unknown>> {
-  return Object.fromEntries(
-    Object.entries(contexts ?? {}).map(([contextId, styles]) => [contextId, { ...styles }]),
-  )
-}
-
-function cloneContextPriorities(
-  contexts: Record<string, PriorityBag> | undefined,
-): Record<string, PriorityBag> | undefined {
-  if (!contexts) return undefined
-  const cloned = Object.fromEntries(
-    Object.entries(contexts)
-      .filter(([, priorities]) => Object.keys(priorities).length > 0)
-      .map(([contextId, priorities]) => [contextId, { ...priorities }]),
-  )
-  return Object.keys(cloned).length > 0 ? cloned : undefined
-}
-
-function payloadFromRule(rule: StyleRule | NewStyleRule): RulePayload {
-  return {
-    styles: { ...rule.styles },
-    contextStyles: cloneContextStyles(rule.contextStyles),
-    stylePriorities: clonePriorityBag(rule.stylePriorities),
-    contextStylePriorities: cloneContextPriorities(rule.contextStylePriorities),
-    ...(rule.rawCss !== undefined ? { rawCss: rule.rawCss } : {}),
-  }
-}
-
-function orderedBagEqual(
-  left: Record<string, unknown>,
-  right: Record<string, unknown>,
-): boolean {
-  const leftEntries = Object.entries(left)
-  const rightEntries = Object.entries(right)
-  if (leftEntries.length !== rightEntries.length) return false
-  return leftEntries.every(([key, value], index) => {
-    const rightEntry = rightEntries[index]
-    return rightEntry?.[0] === key && Object.is(rightEntry[1], value)
-  })
-}
-
-function priorityBagEqual(left: PriorityBag | undefined, right: PriorityBag | undefined): boolean {
-  const leftEntries = Object.entries(left ?? {})
-  const rightEntries = Object.entries(right ?? {})
-  if (leftEntries.length !== rightEntries.length) return false
-  return leftEntries.every(([key, value]) => right?.[key] === value)
-}
-
-function contextStylesEqual(
-  left: Record<string, Record<string, unknown>>,
-  right: Record<string, Record<string, unknown>>,
-): boolean {
-  const leftKeys = Object.keys(left)
-  const rightKeys = Object.keys(right)
-  if (leftKeys.length !== rightKeys.length) return false
-  return leftKeys.every((contextId) => {
-    const rightBag = right[contextId]
-    return rightBag !== undefined && orderedBagEqual(left[contextId], rightBag)
-  })
-}
-
-function contextPrioritiesEqual(
-  left: Record<string, PriorityBag> | undefined,
-  right: Record<string, PriorityBag> | undefined,
-): boolean {
-  const leftContexts = left ?? {}
-  const rightContexts = right ?? {}
-  const leftKeys = Object.keys(leftContexts)
-  const rightKeys = Object.keys(rightContexts)
-  if (leftKeys.length !== rightKeys.length) return false
-  return leftKeys.every((contextId) => priorityBagEqual(leftContexts[contextId], rightContexts[contextId]))
-}
-
-function payloadEqual(left: RulePayload, right: RulePayload): boolean {
-  return orderedBagEqual(left.styles, right.styles)
-    && contextStylesEqual(left.contextStyles, right.contextStyles)
-    && priorityBagEqual(left.stylePriorities, right.stylePriorities)
-    && contextPrioritiesEqual(left.contextStylePriorities, right.contextStylePriorities)
-    && Object.is(left.rawCss, right.rawCss)
-}
-
-/**
- * Merge one declaration layer while moving every touched declaration to the
- * end in the incoming authored order. Object.assign keeps an existing key in
- * its old position, which can leave a longhand before a later shorthand and
- * make an apparently successful CSS repair lose in the emitted rule.
- */
-function mergeLayer(
-  current: Record<string, unknown>,
-  currentPriorities: PriorityBag | undefined,
-  patch: Record<string, unknown>,
-  patchPriorities: PriorityBag | undefined,
-  respectExistingImportant: boolean,
-): { styles: Record<string, unknown>; priorities?: PriorityBag } {
-  const acceptedPatchKeys = new Set<string>()
-  for (const key of Object.keys(patch)) {
-    if (
-      respectExistingImportant
-      && currentPriorities?.[key] === 'important'
-      && patchPriorities?.[key] !== 'important'
-    ) {
-      continue
-    }
-    acceptedPatchKeys.add(key)
-  }
-
-  const styles: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(current)) {
-    if (!acceptedPatchKeys.has(key)) styles[key] = value
-  }
-  for (const [key, value] of Object.entries(patch)) {
-    if (acceptedPatchKeys.has(key)) styles[key] = value
-  }
-
-  const priorities: PriorityBag = {}
-  for (const [key, priority] of Object.entries(currentPriorities ?? {})) {
-    if (!acceptedPatchKeys.has(key)) priorities[key] = priority
-  }
-  for (const key of acceptedPatchKeys) {
-    if (patchPriorities?.[key] === 'important') priorities[key] = 'important'
-  }
-
-  return {
-    styles,
-    ...(Object.keys(priorities).length > 0 ? { priorities } : {}),
-  }
-}
-
-function mergePayload(
-  current: RulePayload,
-  patch: RulePayload,
-  respectExistingImportant: boolean,
-): RulePayload {
-  const base = mergeLayer(
-    current.styles,
-    current.stylePriorities,
-    patch.styles,
-    patch.stylePriorities,
-    respectExistingImportant,
-  )
-  const contextStyles = cloneContextStyles(current.contextStyles)
-  const contextStylePriorities = cloneContextPriorities(current.contextStylePriorities) ?? {}
-
-  for (const [contextId, patchStyles] of Object.entries(patch.contextStyles)) {
-    const merged = mergeLayer(
-      contextStyles[contextId] ?? {},
-      contextStylePriorities[contextId],
-      patchStyles,
-      patch.contextStylePriorities?.[contextId],
-      respectExistingImportant,
-    )
-    contextStyles[contextId] = merged.styles
-    if (merged.priorities) contextStylePriorities[contextId] = merged.priorities
-    else delete contextStylePriorities[contextId]
-  }
-
-  return {
-    styles: base.styles,
-    contextStyles,
-    ...(base.priorities ? { stylePriorities: base.priorities } : {}),
-    ...(Object.keys(contextStylePriorities).length > 0 ? { contextStylePriorities } : {}),
-    ...(patch.rawCss !== undefined
-      ? { rawCss: patch.rawCss }
-      : current.rawCss !== undefined
-        ? { rawCss: current.rawCss }
-        : {}),
-  }
-}
-
-function writePayload(target: StyleRule, payload: RulePayload): void {
-  target.styles = payload.styles
-  target.contextStyles = payload.contextStyles
-  if (payload.stylePriorities) target.stylePriorities = payload.stylePriorities
-  else delete target.stylePriorities
-  if (payload.contextStylePriorities) {
-    target.contextStylePriorities = payload.contextStylePriorities
-  } else {
-    delete target.contextStylePriorities
-  }
-  if (payload.rawCss !== undefined) target.rawCss = payload.rawCss
-  else delete target.rawCss
-}
-
-interface ConsolidatedRule {
-  selector: string
-  source: NewStyleRule
-  payload: RulePayload
-}
-
-function consolidateIncomingRules(rules: NewStyleRule[]): ConsolidatedRule[] {
-  const bySelector = new Map<string, ConsolidatedRule>()
-  for (const rule of rules) {
-    const selector = styleRuleSelector(rule)
-    const existing = bySelector.get(selector)
-    if (!existing) {
-      const item = { selector, source: rule, payload: payloadFromRule(rule) }
-      bySelector.set(selector, item)
-      continue
-    }
-    // Multiple authored blocks with the same selector collapse exactly as the
-    // CSS cascade would: a prior important value beats a later normal one;
-    // otherwise the later declaration wins and moves to the end.
-    existing.payload = mergePayload(existing.payload, payloadFromRule(rule), true)
-  }
-  return [...bySelector.values()]
+/** Replace addresses a selector's complete condition cascade within its layer path. */
+function ruleLayerIdentity(rule: StyleRule | NewStyleRule): string {
+  return JSON.stringify([
+    styleRuleSelector(rule),
+    (rule.grouping ?? []).filter((group) => group.kind === 'layer').map(groupIdentity),
+    rule.atRule?.kind ?? null,
+    rule.atRule?.kind === 'group' ? groupIdentity(rule.atRule.group) : null,
+  ])
 }
 
 function rulesBySelector(rules: Record<string, StyleRule>): Map<string, StyleRule[]> {
@@ -283,7 +90,11 @@ function deletePriorityKeys(priorities: PriorityBag | undefined, keys: readonly 
   for (const key of keys) delete priorities[key]
 }
 
-export function createCrudActions({ get, mutateSite }: SiteSliceHelpers): CrudActions {
+export function createCrudActions({
+  get,
+  mutateSite,
+  mutateSiteState,
+}: SiteSliceHelpers): CrudActions {
   return {
     createClass(name, styles = {}) {
       const { site } = get()
@@ -330,7 +141,7 @@ export function createCrudActions({ get, mutateSite }: SiteSliceHelpers): CrudAc
       // Default display name to the selector text. Unlike class-kind rules,
       // ambient rule names are not required to be globally unique — multiple
       // rules can share a selector (cascade resolves by `order`).
-      const name = (input.name && input.name.trim().length > 0) ? input.name.trim() : selector
+      const name = input.name && input.name.trim().length > 0 ? input.name.trim() : selector
 
       const now = Date.now()
       const newRule: StyleRule = {
@@ -406,8 +217,8 @@ export function createCrudActions({ get, mutateSite }: SiteSliceHelpers): CrudAc
           delete draftClass.contextStylePriorities?.[contextId]
         }
         if (
-          draftClass.contextStylePriorities
-          && Object.keys(draftClass.contextStylePriorities).length === 0
+          draftClass.contextStylePriorities &&
+          Object.keys(draftClass.contextStylePriorities).length === 0
         ) {
           delete draftClass.contextStylePriorities
         }
@@ -419,7 +230,15 @@ export function createCrudActions({ get, mutateSite }: SiteSliceHelpers): CrudAc
     applyCssRules(rules, conditions, mode) {
       const { site } = get()
       if (!site) return { created: 0, updated: 0, blockedSelectors: [] }
-      const incoming = consolidateIncomingRules(rules)
+      const allConditions = [...(site.conditions ?? []), ...conditions]
+      const incoming = remapImportedRuleGroups(rules.flatMap((rule) =>
+        splitRuleContextFragments(rule, site.breakpoints, allConditions),
+      )).map((source) => ({
+        selector: styleRuleSelector(source),
+        source,
+        payload: payloadFromRule(source),
+        identity: ruleIdentity(source),
+      }))
       const existingBySelector = rulesBySelector(site.styleRules)
       const blockedSelectors = incoming
         .filter(({ selector }) =>
@@ -433,7 +252,7 @@ export function createCrudActions({ get, mutateSite }: SiteSliceHelpers): CrudAc
       let created = 0
       let updated = 0
 
-      mutateSite((site) => {
+      mutateSiteState((state, site) => {
         let mutated = false
 
         // Register referenced reusable conditions before their context bags.
@@ -448,44 +267,181 @@ export function createCrudActions({ get, mutateSite }: SiteSliceHelpers): CrudAc
           }
         }
 
-        const targetBySelector = rulesBySelector(site.styleRules)
-        let maxOrder = -1
-        for (const rule of Object.values(site.styleRules)) {
-          if (typeof rule.order === 'number' && rule.order > maxOrder) maxOrder = rule.order
+        // Compact editor rules can carry base and responsive bags together.
+        // Materialize their existing emission sequence before inserting a new
+        // declaration, so a base patch cannot jump after its own overrides.
+        const selectors = new Set(incoming
+          .filter((item) => mode === 'replace' || !emptyPayload(item.payload))
+          .map((item) => item.selector))
+        const now = Date.now()
+        for (const rule of Object.values(site.styleRules).sort((a, b) => a.order - b.order)) {
+          if (!selectors.has(styleRuleSelector(rule))) continue
+          const fragments = splitRuleContextFragments(rule, site.breakpoints, site.conditions ?? [])
+          if (fragments.length === 1 && payloadEqual(payloadFromRule(rule), payloadFromRule(fragments[0]))) continue
+          writePayload(rule, payloadFromRule(fragments[0]))
+          rule.updatedAt = now
+          updated++
+          mutated = true
+          let anchor = rule
+          for (const fragment of fragments.slice(1)) {
+            const id = nanoid()
+            const companion: StyleRule = {
+              ...fragment, id, order: ruleOrderAfter(site.styleRules, anchor),
+              createdAt: now, updatedAt: now,
+            }
+            site.styleRules[id] = companion
+            anchor = companion
+            created++
+          }
         }
 
-        const now = Date.now()
+        const targetByIdentity = new Map<string, StyleRule[]>()
+        for (const target of Object.values(site.styleRules).sort((a, b) => a.order - b.order)) {
+          const identity = ruleIdentity(target)
+          const matches = targetByIdentity.get(identity) ?? []
+          matches.push(target)
+          targetByIdentity.set(identity, matches)
+        }
+        const itemsByIdentity = new Map<string, typeof incoming>()
         for (const item of incoming) {
-          const targets = targetBySelector.get(item.selector) ?? []
-          if (targets.length > 0) {
-            for (const target of targets) {
-              const current = payloadFromRule(target)
-              const next = mode === 'replace'
-                ? item.payload
-                : mergePayload(current, item.payload, false)
-              if (payloadEqual(current, next)) continue
-              writePayload(target, next)
-              target.updatedAt = now
-              updated++
-              mutated = true
+          if (mode === 'merge' && emptyPayload(item.payload) && existingBySelector.has(item.selector)) continue
+          const items = itemsByIdentity.get(item.identity) ?? []
+          items.push(item)
+          itemsByIdentity.set(item.identity, items)
+        }
+        const payloads = new Map<string, RulePayload>()
+        const slotsByIdentity = new Map<string, StyleRule[]>()
+        for (const [identity, items] of itemsByIdentity) {
+          const candidates = targetByIdentity.get(identity) ?? []
+          const baseKeys = new Set(items.flatMap((item) => Object.keys(item.payload.styles)))
+          const contextKeys = new Map<string, Set<string>>()
+          for (const item of items) {
+            for (const [context, bag] of Object.entries(item.payload.contextStyles)) {
+              const keys = contextKeys.get(context) ?? new Set<string>()
+              for (const key of Object.keys(bag)) keys.add(key)
+              contextKeys.set(context, keys)
             }
+          }
+          const addressed: StyleRule[] = []
+          for (const candidate of candidates) {
+            const payload = payloadFromRule(candidate)
+            let touched = mode === 'replace' || !!candidate.atRule || candidate.rawCss !== undefined
+            if (mode === 'merge') {
+              for (const key of baseKeys) {
+                if (key in payload.styles) touched = true
+                delete payload.styles[key]
+                delete payload.stylePriorities?.[key]
+              }
+              for (const [context, keys] of contextKeys) {
+                for (const key of keys) {
+                  if (key in (payload.contextStyles[context] ?? {})) touched = true
+                  delete payload.contextStyles[context]?.[key]
+                  delete payload.contextStylePriorities?.[context]?.[key]
+                }
+              }
+              payload.stylePriorities = clonePriorityBag(payload.stylePriorities)
+              payload.contextStylePriorities = cloneContextPriorities(payload.contextStylePriorities)
+            }
+            payloads.set(candidate.id, payload)
+            if (touched) addressed.push(candidate)
+          }
+          const slots = addressed.length ? addressed : candidates.slice(-1)
+          // A one-property upsert replaces its last source occurrence. A full
+          // declaration program retains each occurrence instead of collapsing
+          // repeated selectors across intervening competing rules.
+          slotsByIdentity.set(identity, mode === 'replace' ? slots.slice(0, items.length) : slots.slice(-items.length))
+        }
+        const positions = new Map<string, number>()
+        const anchors = new Map<string, StyleRule>()
+        const addressedLayers = new Set(incoming.map((item) => ruleLayerIdentity(item.source)))
+        const retained = new Set<string>()
+        const classByName = new Map(
+          Object.values(site.styleRules)
+            .filter((rule) => rule.kind === 'class')
+            .map((rule) => [rule.name, rule]),
+        )
+        for (const item of incoming) {
+          if (mode === 'merge' && emptyPayload(item.payload) && existingBySelector.has(item.selector)) continue
+          const candidates = slotsByIdentity.get(item.identity) ?? []
+          const position = positions.get(item.identity) ?? 0
+          positions.set(item.identity, position + 1)
+          const binding =
+            item.source.kind === 'class' ? classByName.get(item.source.name) : undefined
+          if (
+            mode === 'replace' && binding && !retained.has(binding.id) &&
+            addressedLayers.has(ruleLayerIdentity(binding)) &&
+            candidates[position]?.id !== binding.id
+          ) {
+            // Keep the binding as an empty anchor at its own source position;
+            // conditional declarations retain their existing later position.
+            const bindingPayload = payloadFromRule(binding)
+            bindingPayload.styles = {}
+            bindingPayload.contextStyles = {}
+            delete bindingPayload.stylePriorities
+            delete bindingPayload.contextStylePriorities
+            payloads.set(binding.id, bindingPayload)
+            retained.add(binding.id)
+            if (!candidates.length) anchors.set(item.identity, binding)
+          }
+          const target = candidates[position]
+          const current = target && payloads.get(target.id)
+          const reusable = target && current && (
+            mode === 'replace' || target.atRule || target.rawCss !== undefined ||
+            (Object.keys(current.styles).length === 0 &&
+              Object.values(current.contextStyles).every((bag) => Object.keys(bag).length === 0))
+          )
+          if (target && current && reusable) {
+            const patch = { ...item.payload, grouping: current.grouping }
+            if (patch.atRule?.kind === 'group' && current.atRule?.kind === 'group') {
+              patch.atRule = { ...patch.atRule, group: current.atRule.group }
+            }
+            payloads.set(target.id, patch)
+            retained.add(target.id)
+            anchors.set(item.identity, target)
             continue
           }
 
           const id = nanoid()
+          const anchor = targetByIdentity.has(item.identity)
+            ? target ?? anchors.get(item.identity) ?? candidates.at(-1)
+            : undefined
           const newRule: StyleRule = {
             ...item.source,
             ...item.payload,
             id,
-            order: (maxOrder += 1),
+            order: anchor ? ruleOrderAfter(site.styleRules, anchor) : nextRuleOrder(site.styleRules),
             createdAt: now,
             updatedAt: now,
+            kind: binding ? 'ambient' : item.source.kind,
           }
           site.styleRules[id] = newRule
-          targetBySelector.set(item.selector, [newRule])
+          retained.add(id)
+          anchors.set(item.identity, newRule)
+          if (newRule.kind === 'class') classByName.set(newRule.name, newRule)
           created++
           mutated = true
         }
+
+        const removedClassIds = new Set<string>()
+        for (const rule of Object.values(site.styleRules)) {
+          const payload = payloads.get(rule.id)
+          const emptyAmbient = mode === 'merge' && payload && !retained.has(rule.id) &&
+            rule.kind === 'ambient' && !payload.atRule && payload.rawCss === undefined &&
+            Object.keys(payload.styles).length === 0 &&
+            Object.values(payload.contextStyles).every((bag) => Object.keys(bag).length === 0)
+          if (emptyAmbient || (mode === 'replace' && !retained.has(rule.id) &&
+            addressedLayers.has(ruleLayerIdentity(rule)))) {
+            if (rule.kind === 'class') removedClassIds.add(rule.id)
+            delete site.styleRules[rule.id]
+            mutated = true
+          } else if (payload && !payloadEqual(payloadFromRule(rule), payload)) {
+            writePayload(rule, payload)
+            rule.updatedAt = now
+            updated++
+            mutated = true
+          }
+        }
+        removeStyleRuleReferences(state, site, removedClassIds)
 
         return mutated
       })
@@ -500,8 +456,8 @@ export function createCrudActions({ get, mutateSite }: SiteSliceHelpers): CrudAc
       }
       const requested = [...new Set(selectors.map((selector) => selector.trim()))]
       const existingBySelector = rulesBySelector(site.styleRules)
-      const missingSelectors = requested.filter((selector) =>
-        (existingBySelector.get(selector) ?? []).length === 0,
+      const missingSelectors = requested.filter(
+        (selector) => (existingBySelector.get(selector) ?? []).length === 0,
       )
       const blockedSelectors = requested.filter((selector) =>
         (existingBySelector.get(selector) ?? []).some(isGeneratedClassLocked),
@@ -531,24 +487,27 @@ export function createCrudActions({ get, mutateSite }: SiteSliceHelpers): CrudAc
       const requestedSelectors = [...new Set(selectors.map((selector) => selector.trim()))]
       const requestedProperties = [...new Set(properties.map((property) => property.trim()))]
       const existingBySelector = rulesBySelector(site.styleRules)
-      const missingSelectors = requestedSelectors.filter((selector) =>
-        (existingBySelector.get(selector) ?? []).length === 0,
+      const missingSelectors = requestedSelectors.filter(
+        (selector) => (existingBySelector.get(selector) ?? []).length === 0,
       )
       const blockedSelectors = requestedSelectors.filter((selector) =>
         (existingBySelector.get(selector) ?? []).some(isGeneratedClassLocked),
       )
-      const targets = requestedSelectors.flatMap((selector) => existingBySelector.get(selector) ?? [])
+      const targets = requestedSelectors.flatMap(
+        (selector) => existingBySelector.get(selector) ?? [],
+      )
       const propertyKeys = new Map(
         requestedProperties.map((property) => [property, storageKeysForProperty(property)]),
       )
-      const missingProperties = requestedProperties.filter((property) =>
-        !targets.some((rule) => ruleHasAnyProperty(rule, propertyKeys.get(property) ?? [])),
+      const missingProperties = requestedProperties.filter(
+        (property) =>
+          !targets.some((rule) => ruleHasAnyProperty(rule, propertyKeys.get(property) ?? [])),
       )
 
       if (
-        missingSelectors.length > 0
-        || blockedSelectors.length > 0
-        || missingProperties.length > 0
+        missingSelectors.length > 0 ||
+        blockedSelectors.length > 0 ||
+        missingProperties.length > 0
       ) {
         return {
           updated: 0,
@@ -590,7 +549,9 @@ export function createCrudActions({ get, mutateSite }: SiteSliceHelpers): CrudAc
             deletePriorityKeys(priorities, keys)
           }
           if (draftRule.contextStylePriorities) {
-            for (const [contextId, priorities] of Object.entries(draftRule.contextStylePriorities)) {
+            for (const [contextId, priorities] of Object.entries(
+              draftRule.contextStylePriorities,
+            )) {
               if (Object.keys(priorities).length === 0) {
                 delete draftRule.contextStylePriorities[contextId]
               }

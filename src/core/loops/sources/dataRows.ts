@@ -21,15 +21,19 @@
 
 import { MAIN_BRANCH_ID, physicalId } from '@core/branches'
 import type { LoopEntitySource, LoopFetchResult, LoopItem, LoopSourceDb } from '@core/loops/types'
-import { cellFilterSql, cellOrderSql, parseCellFilter, parseCellOrder, type CellFilter } from '../cellFilter'
+import { cellFilterSql, cellOrderSql, matchesCellFilter, parseCellFilter, parseCellOrder, type CellFilter } from '../cellFilter'
+import { canUseCellSearchSql, cellSearchSql, scoreCellSearch, parseCellSearch, type CellSearch } from '../cellSearch'
 import { isoDate } from '../../utils/isoDate'
 import { firstImagePathFromMarkdown } from '@core/markdown/renderMarkdown'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { publicDataUserFromParts } from '@core/data/publicDataUser'
 import { normalizeDataTableFields } from '@core/data/fields'
+import { LocalizationError } from '@core/localization'
+import { hasLocalizedDataFields, projectLocalizedDataCells, compareDataCellValues, type DataLocalizationContext } from '@core/data/localizedCells'
 import { readFeaturedMediaCell } from '@core/data/cells'
 import type { DataField, DataRowCells } from '@core/data/schemas'
 import { collectMediaIds, resolveMediaIdsToPaths, resolvedMediaOverlay } from './dataRowsMedia'
+import { parseValue, Type } from '../../utils/typeboxHelpers'
 
 // ---------------------------------------------------------------------------
 // Internal SQL row shape
@@ -82,6 +86,19 @@ const ALLOWED_ORDER_BY: ReadonlySet<OrderColumn> = new Set([
  */
 function positionalParam(db: LoopSourceDb, index: number): string {
   return db.dialect === 'postgres' ? `$${index}` : '?'
+}
+
+function rowPredicate(input: { filter: CellFilter | null; search: CellSearch | null; dialect: 'postgres' | 'sqlite'; column: string; nextParamIndex: number }): { sql: string; params: unknown[] } | null {
+  const parts: string[] = [], params: unknown[] = []
+  if (input.filter) {
+    const condition = cellFilterSql({ ...input, filter: input.filter })
+    parts.push(condition.sql); params.push(...condition.params)
+  }
+  if (input.search) {
+    const condition = cellSearchSql({ ...input, search: input.search, nextParamIndex: input.nextParamIndex + params.length })
+    parts.push(condition.sql); params.push(...condition.params)
+  }
+  return parts.length ? { sql: parts.map((part) => '(' + part + ')').join(' and '), params } : null
 }
 
 // ---------------------------------------------------------------------------
@@ -183,16 +200,14 @@ async function fetchPage(
   db: LoopSourceDb,
   orderBy: OrderColumn,
   direction: 'asc' | 'desc',
-  opts: { tableId: string; limit: number; offset: number; filter: CellFilter | null; orderCell: { field: string; numeric: boolean } | null },
+  opts: { tableId: string; limit: number; offset: number; filter: CellFilter | null; search?: CellSearch | null; orderCell: { field: string; numeric: boolean } | null },
 ): Promise<PublishedDataRowSqlRow[]> {
   const { tableId, limit, offset, filter, orderCell } = opts
   const column = 'data_row_versions.cells_json'
   // SQLite binds `?` by POSITION IN THE TEXT, so the parameter list must follow
   // the clause order: tableId, the cell condition (WHERE), the ordering cell
   // (ORDER BY), then limit/offset. Postgres indices are numbered to match.
-  const cell = filter
-    ? cellFilterSql({ filter, dialect: db.dialect, column, nextParamIndex: 2 })
-    : null
+  const cell = rowPredicate({ filter, search: opts.search ?? null, dialect: db.dialect, column, nextParamIndex: 2 })
   const cellParams = cell?.params ?? []
   const order = orderCell
     ? cellOrderSql({ ...orderCell, dialect: db.dialect, column, paramIndex: 2 + cellParams.length })
@@ -346,6 +361,7 @@ async function fetchDataKindPage(
     limit: number
     offset: number
     filter: CellFilter | null
+    search?: CellSearch | null
     orderCell: { field: string; numeric: boolean } | null
     /** Post-type drafts (a branch): skip rows explicitly taken offline. */
     excludeUnpublished: boolean
@@ -356,9 +372,7 @@ async function fetchDataKindPage(
     orderBy === 'updatedAt' ? 'updatedAt' : orderBy === 'slug' ? 'slug' : 'createdAt'
   const column = 'data_rows.cells_json'
   // Parameter order follows the clause order — see `fetchPage`.
-  const cell = filter
-    ? cellFilterSql({ filter, dialect: db.dialect, column, nextParamIndex: 2 })
-    : null
+  const cell = rowPredicate({ filter, search: opts.search ?? null, dialect: db.dialect, column, nextParamIndex: 2 })
   const cellParams = cell?.params ?? []
   const order = orderCell
     ? cellOrderSql({ ...orderCell, dialect: db.dialect, column, paramIndex: 2 + cellParams.length })
@@ -424,16 +438,22 @@ export async function fetchPublishedDataRowItems(
     offset: number
     /** Optional condition on one of the row's own cells. */
     cellFilter?: CellFilter | null
+    cellSearch?: CellSearch | null
+    selectedRowIds?: ReadonlySet<string>
     /**
      * Read post-type rows as DRAFTS instead of through their published
      * versions — a branch has no versions (publishing is main-only), so its
      * loops show what the branch would publish.
      */
     drafts?: boolean
+    localization?: DataLocalizationContext
+    /** Admin previews apply own/any row authorization before counting or slicing. */
+    readableRowIds?: ReadonlySet<string>
   },
 ): Promise<LoopFetchResult> {
   if (!opts.tableId) return { items: [], totalItems: 0 }
   const cellFilter = opts.cellFilter ?? null
+  const cellSearch = opts.cellSearch ?? null
 
   const { rows: tableRows } = await db<DataTableProjectionRow>`
     select kind, fields_json
@@ -445,6 +465,53 @@ export async function fetchPublishedDataRowItems(
   const table = tableRows[0]
   if (!table) return { items: [], totalItems: 0 }
   const fields = normalizeDataTableFields(table.fields_json)
+  const localized = hasLocalizedDataFields(fields)
+  if (localized && !opts.localization?.translations) throw new LocalizationError(`tables.${opts.tableId}`, 'Choose a configured content language to resolve localized data')
+  // Derived texts must be filtered and ordered before pagination. Admin row
+  // visibility uses this same sequence, so counts cannot expose hidden rows.
+  if (localized || opts.readableRowIds || opts.selectedRowIds || (cellSearch && !canUseCellSearchSql(cellSearch))) {
+    const direction = opts.direction === 'asc' ? 'asc' : 'desc'
+    const orderBy: OrderColumn = ALLOWED_ORDER_BY.has(opts.orderBy as OrderColumn) ? opts.orderBy as OrderColumn : 'publishedAt'
+    const orderCell = parseCellOrder(opts.orderBy)
+    const dataKind = table.kind === 'data' || opts.drafts === true
+    const sqlRows = dataKind
+      ? await fetchDataKindPage(db, orderBy, direction, { tableId: opts.tableId, limit: 2147483647, offset: 0, filter: null, orderCell: null, excludeUnpublished: table.kind !== 'data' })
+      : await fetchPage(db, orderBy, direction, { tableId: opts.tableId, limit: 2147483647, offset: 0, filter: null, orderCell: null })
+    const visibleRows = sqlRows.filter(row => (!opts.readableRowIds || opts.readableRowIds.has(row.row_id))
+      && (!opts.selectedRowIds || opts.selectedRowIds.has(row.row_id)))
+    const projectedRows = visibleRows.map(row => ({ ...row, cells_json: opts.localization
+      ? projectLocalizedDataCells(row.cells_json, fields, opts.localization, `rows.${row.row_id}.cells`) : row.cells_json }))
+    const scores = new Map<string, number>()
+    const matching = projectedRows.filter(row => {
+      if (cellFilter && !matchesCellFilter(row.cells_json, cellFilter)) return false
+      const score = cellSearch ? scoreCellSearch(row.cells_json, cellSearch) : 1
+      scores.set(row.row_id, score)
+      return score > 0
+    })
+    if (orderCell) {
+      // Preserve numeric field semantics from cellOrderSql when projection or
+      // row authorization requires the same ordering in memory.
+      const numeric = fields.some(field => field.id === orderCell.field && field.type === 'number')
+      const orderValue = (value: unknown) => numeric
+        ? typeof value === 'number' && Number.isFinite(value) ? value : null
+        : value ?? ''
+      matching.sort((a, b) => compareDataCellValues(orderValue(a.cells_json[orderCell.field]), orderValue(b.cells_json[orderCell.field]), opts.localization?.language, direction)
+        || a.row_id.localeCompare(b.row_id))
+    }
+    // Stable sorting retains the configured source order for equal scores.
+    if (cellSearch?.configuration.rank === 'score') {
+      const tieField = cellSearch.configuration.tieBreakField
+      matching.sort((a, b) => scores.get(b.row_id)! - scores.get(a.row_id)!
+        || (tieField ? String(a.cells_json[tieField] ?? '').localeCompare(String(b.cells_json[tieField] ?? ''), opts.localization?.language) : 0))
+    }
+    const page = matching.slice(opts.offset, opts.offset + opts.limit)
+    const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds(page, fields))
+    return {
+      items: page.map(row => dataKind ? dataKindRowToLoopItem(row as DataKindRowSqlRow, mediaPathMap, fields) : rowToLoopItem(row as PublishedDataRowSqlRow, mediaPathMap, fields)),
+      totalItems: matching.length,
+    }
+  }
+
 
   // `orderBy` is either one of the whitelisted columns or `cell:<fieldId>`,
   // in which case the sort runs on the row's own cell (the field name binds
@@ -463,9 +530,7 @@ export async function fetchPublishedDataRowItems(
   if (table.kind === 'data' || opts.drafts) {
     // The count must apply the same condition, or pagination advertises rows
     // the page query filters out.
-    const dataCountCell = cellFilter
-      ? cellFilterSql({ filter: cellFilter, dialect: db.dialect, column: 'data_rows.cells_json', nextParamIndex: 2 })
-      : null
+    const dataCountCell = rowPredicate({ filter: cellFilter, search: cellSearch, dialect: db.dialect, column: 'data_rows.cells_json', nextParamIndex: 2 })
     const { rows: countRows } = await db.unsafe<{ total: number }>(
       `select count(*) as total
        from data_rows
@@ -483,6 +548,7 @@ export async function fetchPublishedDataRowItems(
       limit: opts.limit,
       offset: opts.offset,
       filter: cellFilter,
+      search: cellSearch,
       orderCell,
       excludeUnpublished,
     })
@@ -494,9 +560,7 @@ export async function fetchPublishedDataRowItems(
   }
 
   // Post-type path (default): only published rows, joined to active version.
-  const postCountCell = cellFilter
-    ? cellFilterSql({ filter: cellFilter, dialect: db.dialect, column: 'data_row_versions.cells_json', nextParamIndex: 2 })
-    : null
+  const postCountCell = rowPredicate({ filter: cellFilter, search: cellSearch, dialect: db.dialect, column: 'data_row_versions.cells_json', nextParamIndex: 2 })
   const { rows: countRows } = await db.unsafe<{ total: number }>(
     `select count(*) as total
      from data_rows
@@ -515,6 +579,7 @@ export async function fetchPublishedDataRowItems(
     limit: opts.limit,
     offset: opts.offset,
     filter: cellFilter,
+    search: cellSearch,
     orderCell,
   })
   const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds(sqlRows, fields))
@@ -533,6 +598,7 @@ export const DataRowsSource: LoopEntitySource = {
   id: 'data.rows',
   label: 'Data rows',
   description: 'Loop published rows in a data table (posts, products, etc.).',
+  queryFilterKeys: ['searchText', 'cellValue', 'rowIds'],
 
   filterSchema: {
     tableId: {
@@ -567,6 +633,7 @@ export const DataRowsSource: LoopEntitySource = {
       type: 'text',
       label: 'Value',
     },
+    searchText: { type: 'text', label: 'Search text' },
   },
 
   orderByOptions: [
@@ -607,6 +674,9 @@ export const DataRowsSource: LoopEntitySource = {
       limit: ctx.limit,
       offset: ctx.offset,
       cellFilter: parseCellFilter(ctx.filters),
+      cellSearch: parseCellSearch(ctx.filters, ctx.localization?.language),
+      selectedRowIds: ctx.filters.rowIds === undefined ? undefined : new Set(parseValue(Type.Array(Type.String({ maxLength: 256 }), { maxItems: 1000 }), ctx.filters.rowIds)),
+      localization: ctx.localization,
     })
   },
 
@@ -614,9 +684,8 @@ export const DataRowsSource: LoopEntitySource = {
     // Editor-side preview is handled by the canvas via `useLoopPreviewItems`:
     // it first calls the admin endpoint `/data/tables/:id/loop-preview` to
     // fetch real published rows via `fetchPublishedDataRowItems` (this file),
-    // and falls back to synthetic preview items from `dataTablePreviewToLoopItem`
-    // when there are no published rows. This source's synchronous `preview()`
-    // returns [] so no synthetic placeholder data leaks from the server source.
+    // using the canonical page language. Empty sources have no real entries;
+    // this synchronous contract never manufactures representative row values.
     return []
   },
 }
