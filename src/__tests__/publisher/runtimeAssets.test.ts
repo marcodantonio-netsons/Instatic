@@ -117,6 +117,25 @@ describe('publishPage runtime assets', () => {
     expect(html).not.toContain('<script async')
   })
 
+  it('uses the shared HTML escaping rule for generated runtime attributes', () => {
+    const runtimeAssets: PublishedPageRuntimeAssets = {
+      scripts: [{
+        fileId: `runtime&"'<>`,
+        src: '/runtime.js?x=a&y=b',
+        integrity: `sha384-a&"'<>`,
+        placement: 'body-end',
+        timing: 'immediate',
+        priority: 10,
+      }],
+    }
+
+    const { html } = publishPage(page, site, registry, { runtimeAssets })
+
+    expect(html).toContain(
+      '<script type="module" src="/runtime.js?x=a&amp;y=b" data-instatic-runtime-script="runtime&amp;&quot;&#x27;&lt;&gt;" integrity="sha384-a&amp;&quot;&#x27;&lt;&gt;" crossorigin="anonymous"></script>',
+    )
+  })
+
   it('does not inject external or unsafe runtime asset URLs', () => {
     const runtimeAssets: PublishedPageRuntimeAssets = {
       scripts: [

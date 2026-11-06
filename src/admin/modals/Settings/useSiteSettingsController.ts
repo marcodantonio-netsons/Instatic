@@ -248,7 +248,7 @@ export const useSettingsDraftStore = create<SettingsDraftState>((set, get) => {
 })
 
 /** Uniform view of the site-level settings consumed by the modal sections. */
-export interface SiteSettingsController {
+interface SiteSettingsController {
   /** `null` while loading or on error — sections render a skeleton / alert. */
   site: { name: string; settings: SiteSettings } | null
   error: string | null

@@ -41,6 +41,26 @@ describe('native public-file binding preflight', () => {
     expect(() => assertSitePublicFileBindings(site)).toThrow(PublicAssetValidationError)
   })
 
+  it('preflights file references nested in translated SEO metadata', () => {
+    const { page, site } = fixture()
+    const language = 'en'
+    const languageFileId = 'locale-en'
+    site.settings.language = language
+    site.settings.localization = { catalogues: [{ language, fileId: languageFileId }] }
+    site.files.push({
+      id: languageFileId,
+      path: 'locales/en.json',
+      type: 'config',
+      content: JSON.stringify({ language, messages: { seo: { title: 'Image: {file.missing-image.url}' } } }),
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    page.seo = { title: '{site.translations.seo.title}' }
+
+    expect(() => assertSitePublicFileBindings(site)).toThrow(PublicAssetValidationError)
+    expect(() => assertSitePublicFileBindings(site)).toThrow('file.missing-image.url')
+  })
+
   it('validates only effective overrides/filled slots, preserving their native structured bindings', () => {
     const { site } = fixture()
     const page = makePage({

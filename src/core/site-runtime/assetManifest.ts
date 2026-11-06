@@ -5,6 +5,7 @@ import type {
   SiteScriptPlacement,
 } from './schemas'
 import { normalizeResourceOrigins } from './resourceOrigins'
+import { escapeHtml } from '@core/html-sanitize'
 
 /** Only scripts that actually emit a tag may grant resource origins. */
 export function publishedRuntimeResourceOrigins(runtimeAssets: PublishedPageRuntimeAssets | undefined) {
@@ -13,15 +14,6 @@ export function publishedRuntimeResourceOrigins(runtimeAssets: PublishedPageRunt
       const origins = normalizeResourceOrigins(asset.resourceOrigins)
       return origins ? [origins] : []
     }))
-}
-
-function escapeAttribute(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#x27;')
 }
 
 function isSelfHostedRuntimeAssetUrl(src: string): boolean {
@@ -58,13 +50,13 @@ export function scriptTagsForRuntimeAssets(
   return collectPublishedRuntimeScripts(runtimeAssets, placement)
     .map((asset) => {
       const integrity = asset.integrity
-        ? ` integrity="${escapeAttribute(asset.integrity)}" crossorigin="anonymous"`
+        ? ` integrity="${escapeHtml(asset.integrity)}" crossorigin="anonymous"`
         : ''
       const type = asset.format === 'classic' ? '' : ' type="module"'
       // Native defer keeps classic files in global scope and priority order,
       // while waiting for the document to finish parsing.
       const defer = asset.format === 'classic' && asset.timing === 'dom-ready' ? ' defer' : ''
-      return `  <script${type}${defer} src="${escapeAttribute(asset.src.trim())}" data-instatic-runtime-script="${escapeAttribute(asset.fileId)}"${integrity}></script>`
+      return `  <script${type}${defer} src="${escapeHtml(asset.src.trim())}" data-instatic-runtime-script="${escapeHtml(asset.fileId)}"${integrity}></script>`
     })
     .join('\n')
 }

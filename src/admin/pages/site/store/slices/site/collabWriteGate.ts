@@ -16,7 +16,7 @@
  * This module owns only the gate registry. `collabBinding` owns the docs.
  */
 
-export interface ProviderGate {
+interface ProviderGate {
   synced: boolean
   /** Resolves after this doc's first sync has reached the editor store. */
   whenSynced: Promise<unknown>

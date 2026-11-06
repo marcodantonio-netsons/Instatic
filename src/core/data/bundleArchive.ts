@@ -10,7 +10,7 @@
  * media entries to disk. The embedded-byte `SiteBundle` JSON shape remains the
  * internal direct-import format.
  */
-
+import { BundlePublicationSchema } from './bundlePublication'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { DataRowSchema, DataTableSchema } from './schemas'
 import { SiteShellSchema } from '@core/page-tree'
@@ -21,7 +21,7 @@ import {
 } from './bundleSchema'
 
 export const BUNDLE_ARCHIVE_MANIFEST_PATH = '.instatic/site-bundle.json'
-export const BUNDLE_ARCHIVE_MEDIA_PREFIX = 'media/'
+const BUNDLE_ARCHIVE_MEDIA_PREFIX = 'media/'
 
 export function mediaArchivePath(storagePath: string): string {
   return `${BUNDLE_ARCHIVE_MEDIA_PREFIX}${storagePath}`
@@ -34,6 +34,7 @@ export const SiteBundleArchiveManifestSchema = Type.Object({
   site: Type.Optional(SiteShellSchema),
   tables: Type.Array(DataTableSchema),
   rows: Type.Array(DataRowSchema),
+  publication: Type.Optional(BundlePublicationSchema),
   media: Type.Optional(Type.Array(MediaAssetMetadataSchema)),
   mediaFolders: Type.Optional(Type.Array(BundleMediaFolderSchema)),
   redirects: Type.Optional(Type.Array(BundleRedirectSchema)),

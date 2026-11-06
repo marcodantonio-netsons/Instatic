@@ -1,5 +1,11 @@
 import type { Page, PageNode, SiteDocument } from '@core/page-tree'
-import { parseTokenString, publishedRenderScopes } from '@core/templates'
+import {
+  buildSiteFrame,
+  containsTokens,
+  publishedRenderScopes,
+  visitExpandedTokenReferences,
+  type TemplateRenderDataContext,
+} from '@core/templates'
 import { walkRenderTree } from '@core/visualComponents'
 import { mapJsonStrings } from '@core/utils/jsonStrings'
 import { readLoopQueryBindings, resolveLoopQueryFilters, readSummaryLoopIds, LoopQueryConfigurationError } from '@core/loops'
@@ -10,17 +16,18 @@ export interface LoopRenderScope {
   node: PageNode
   nodes: Readonly<Record<string, PageNode>>
   nested: boolean
+  contexts: readonly TemplateRenderDataContext[]
 }
 
 const SOURCE_CONFIGURATION_KEYS = ['sourceId', 'filters', 'orderBy', 'direction', 'limit', 'offset', 'pagination', 'pageSize', 'loadMoreMode', 'queryBindings'] as const
-type LoopScopeIssue = { kind: 'nested' | 'duplicate' } | { kind: 'binding'; propKey: typeof SOURCE_CONFIGURATION_KEYS[number]; property: 'props' | 'dynamicBindings' }
+type LoopScopeIssue = { kind: 'nested' | 'duplicate' } | { kind: 'binding'; propKey: typeof SOURCE_CONFIGURATION_KEYS[number]; property: 'props' | 'dynamicBindings'; translatedDependency?: string }
 
 export class LoopScopeConfigurationError extends Error {
   readonly path: string
 
   constructor(page: Page, scope: LoopRenderScope, issue: LoopScopeIssue) {
     const detail = issue.kind === 'binding'
-      ? `has a dynamic binding on authored source configuration "${issue.propKey}"; source configuration is fixed before prefetch`
+      ? `has a dynamic binding on authored source configuration "${issue.propKey}"${issue.translatedDependency ? ` (translation references "${issue.translatedDependency}")` : ''}; source configuration is fixed before prefetch`
       : issue.kind === 'nested'
       ? 'is inside another loop; infinite loading requires a route-level entry context'
       : 'has multiple instances on the same public page; infinite loading requires a unique loop id'
@@ -35,9 +42,16 @@ export class LoopScopeConfigurationError extends Error {
 /** The effective native tree owns both publication checks and fragment lookup. */
 export function collectLoopRenderScopes(page: Page, site: SiteDocument): LoopRenderScope[] {
   const result: LoopRenderScope[] = []
+  const languages = page.template?.enabled && site.settings.localization
+    ? site.settings.localization.catalogues.map((catalogue) => catalogue.language)
+    : [page.language]
+  const contexts = languages.map((language) => ({
+    entryStack: [],
+    site: buildSiteFrame(site, language),
+  }))
   walkRenderTree(page.nodes, page.rootNodeId, site.visualComponents, (node, frame) => {
     if (node.moduleId !== 'base.loop') return
-    result.push({ node, nodes: frame.nodes, nested: frame.ancestors.some((ancestor) => ancestor.moduleId === 'base.loop') })
+    result.push({ node, nodes: frame.nodes, nested: frame.ancestors.some((ancestor) => ancestor.moduleId === 'base.loop'), contexts })
   })
   return result
 }
@@ -52,7 +66,20 @@ export function assertLoopRenderScopes(page: Page, scopes: readonly LoopRenderSc
         throw new LoopScopeConfigurationError(page, scope, { kind: 'binding', propKey, property: 'dynamicBindings' })
       }
       mapJsonStrings(scope.node.props[propKey], value => {
-        if (parseTokenString(value).some((segment) => segment.kind === 'token')) throw new LoopScopeConfigurationError(page, scope, { kind: 'binding', propKey, property: 'props' })
+        if (!containsTokens(value)) return value
+        let hasToken = false
+        let translatedDependency: string | undefined
+        for (const context of scope.contexts) {
+          visitExpandedTokenReferences(value, context, (token, translationStack) => {
+            hasToken = true
+            if (
+              !translatedDependency &&
+              translationStack.length > 0 &&
+              (token.source === 'currentEntry' || token.source === 'parentEntry')
+            ) translatedDependency = `${token.source}.${token.field}`
+          })
+        }
+        if (hasToken) throw new LoopScopeConfigurationError(page, scope, { kind: 'binding', propKey, property: 'props', ...(translatedDependency ? { translatedDependency } : {}) })
         return value
       })
     }

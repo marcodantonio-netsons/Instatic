@@ -10,7 +10,7 @@ import { hashMcpSecret } from './connectors/token'
 import { findOAuthAccessGrant } from './oauth/store'
 import { mcpProtectedResourceMetadataUrl, mcpResource, MCP_OAUTH_SCOPE } from './oauth/protocol'
 
-export type McpAuthResult =
+type McpAuthResult =
   | { ok: true; connectorId: string; userId: string; capabilities: readonly CoreCapability[] }
   | { ok: false }
 

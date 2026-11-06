@@ -11,6 +11,7 @@
 import { Type, type Static, withFallback } from '@core/utils/typeboxHelpers'
 import {
   BaseNodeSchema,
+  DynamicBindingConfigurationError,
   NodeTreeSchema,
   asPlainObject,
   parseBaseNodeFields,
@@ -45,15 +46,14 @@ const VC_PARAM_TYPE_VALUES: VCParamType[] = [
 //
 // VCNode uses the same flat-map structure as PageNode.
 // The VC tree is stored as a NodeTree<VCNode> = { nodes: Record<string, VCNode>, rootNodeId }.
-// Unlike PageNode, VCNode carries no `dynamicBindings` — that field is exclusive
-// to CMS template pages.
+// Both node kinds retain runtime bindings in the same shared schema.
 // ---------------------------------------------------------------------------
 
 /**
  * A node inside a Visual Component tree.
  *
- * Structurally identical to BaseNode — no nested child objects, no
- * `dynamicBindings`. The VC tree uses the same flat-map shape as Page.nodes,
+ * Structurally identical to BaseNode, including runtime prop bindings.
+ * The VC tree uses the same flat-map shape as Page.nodes,
  * stored in VisualComponent.tree: NodeTree<VCNode>.
  */
 export const VCNodeSchema = BaseNodeSchema
@@ -137,7 +137,8 @@ function parseVCNode(raw: unknown): VCNode | null {
   if (!r) return null
   try {
     return parseBaseNodeFields(r, 'node')
-  } catch (_err) {
+  } catch (err) {
+    if (err instanceof DynamicBindingConfigurationError) throw err
     // Tolerant drop: a node missing a required field is omitted from the VC
     // tree rather than rejecting the whole VisualComponent.
     return null

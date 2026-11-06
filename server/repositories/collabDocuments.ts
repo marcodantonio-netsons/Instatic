@@ -13,7 +13,7 @@ import { encodeCollabDocId, siteDocId } from '@core/collab'
 import { placeholder, type DbClient } from '../db/client'
 import { nowIso } from '@core/utils/isoDate'
 
-export interface StoredCollabDocument {
+interface StoredCollabDocument {
   state: Uint8Array
   /** '' for rows written before migration 023 — the relay mints one on open. */
   generation: string

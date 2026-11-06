@@ -1,7 +1,7 @@
 import { Type, type Static } from '@sinclair/typebox'
 import type { DynamicPropBinding } from '@core/page-tree-schema'
 import { isSafeUrl } from '@core/html-sanitize'
-import { parseTokenString, readFrame, resolveDynamicProps, type TemplateRenderDataContext } from '@core/templates'
+import { parseTokenString, readFrame, resolveDynamicProps, visitExpandedTokenReferences, type TemplateRenderDataContext } from '@core/templates'
 import type { InstantiatedVC } from './instantiate'
 import type { VisualComponent, VCParam } from './schemas'
 
@@ -70,8 +70,13 @@ export function inspectVCRequiredParameters(
     } else {
       const value = instance.parameterValues.get(param.id)
       const tokens = typeof value === 'string' ? parseTokenString(value) : []
-      const missingFrame = (overridesBinding && (!context || !readFrame(overridesBinding.source, context)))
-        || tokens.some((token) => token.kind === 'token' && (!context || !readFrame(token.source, context)))
+      let missingTokenFrame = !context && tokens.some((token) => token.kind === 'token')
+      if (context && typeof value === 'string') {
+        visitExpandedTokenReferences(value, context, (token) => {
+          if (!readFrame(token.source, context)) missingTokenFrame = true
+        })
+      }
+      const missingFrame = (overridesBinding && (!context || !readFrame(overridesBinding.source, context))) || missingTokenFrame
       if (missingFrame) {
         reason = 'unresolved'
       } else {

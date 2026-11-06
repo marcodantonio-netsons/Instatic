@@ -69,6 +69,26 @@ describe('language-file static rendering', () => {
     expect(buildPageFrame(page, site).language).toBe('en')
   })
 
+  it('preflights and publishes only effective VC params and overrides on the static path', () => {
+    const { site, page, component } = languageFixture()
+    component.params = [
+      { id: 'label-param', name: 'Label', type: 'string', required: false, defaultValue: '{site.translations.header.missing-default}' },
+      { id: 'unused-param', name: 'Unused', type: 'string', required: false, defaultValue: '{site.translations.header.missing-unused-default}' },
+    ]
+    component.tree.nodes.label!.props.text = '{site.translations.header.missing-definition}'
+    component.tree.nodes.label!.propBindings = { text: { paramId: 'label-param' } }
+    page.nodes.ref!.props.propOverrides = {
+      'label-param': 'Effective label',
+      'unused-param': '{site.translations.header.missing-unused-override}',
+    }
+
+    expect(() => assertSiteTranslations(site)).not.toThrow()
+    expect(findDynamicNodeIds(page, site, registry).size).toBe(0)
+    const html = publishPage(page, site, registry).html
+    expect(html).toContain('<h2 title="Contact &amp; support">Effective label</h2>')
+    expect(html).not.toContain('<instatic-hole')
+  })
+
   it('keeps terminal page language inside an outer template and preserves language on duplication', () => {
     const { site, page } = languageFixture()
     const template = makePage({ id: 'layout', language: 'it', nodes: {
@@ -99,15 +119,251 @@ describe('language-file static rendering', () => {
   })
 })
 
+describe('language-file translation templates', () => {
+  it('resolves nested translation templates against the active entry context', () => {
+    const { site } = languageFixture()
+    site.files = site.files.map((file) => file.id === 'en'
+      ? { ...file, content: JSON.stringify({ language: 'en', messages: {
+        header: { contact: '{site.translations.common.download}' },
+        common: { download: 'Download {currentEntry.extension}' },
+      } }) }
+      : file)
+    const context = {
+      entryStack: [{ id: 'product-1', fields: { extension: '.zip' } }],
+      site: buildSiteFrame(site, 'en'),
+    }
+
+    expect(interpolateTokens('{site.translations.header.contact}', context)).toBe('Download .zip')
+  })
+
+  it('throws typed errors with the translation path for cycles and excessive nesting', () => {
+    const { site } = languageFixture()
+    site.files = site.files.map((file) => file.id === 'en'
+      ? { ...file, content: JSON.stringify({ language: 'en', messages: {
+        header: { contact: '{site.translations.header.contact}' },
+      } }) }
+      : file)
+    const cycleContext = { entryStack: [], site: buildSiteFrame(site, 'en') }
+    let cycleError: unknown
+    try {
+      interpolateTokens('{site.translations.header.contact}', cycleContext)
+    } catch (error) {
+      cycleError = error
+    }
+    expect(cycleError).toBeInstanceOf(LocalizationError)
+    expect((cycleError as LocalizationError).path).toBe('translations.header.contact')
+
+    const messages: Record<string, { value: string }> = {}
+    for (let level = 0; level <= 32; level++) {
+      messages[`level${level}`] = {
+        value: level === 32 ? 'end' : `{site.translations.level${level + 1}.value}`,
+      }
+    }
+    site.files = site.files.map((file) => file.id === 'en'
+      ? { ...file, content: JSON.stringify({ language: 'en', messages }) }
+      : file)
+    const depthContext = { entryStack: [], site: buildSiteFrame(site, 'en') }
+    let depthError: unknown
+    try {
+      interpolateTokens('{site.translations.level0.value}', depthContext)
+    } catch (error) {
+      depthError = error
+    }
+    expect(depthError).toBeInstanceOf(LocalizationError)
+    expect((depthError as LocalizationError).path).toBe('translations.level32.value')
+  })
+
+  it('keeps escaped tokens literal and inserts arbitrary entry strings only once', () => {
+    const { site } = languageFixture()
+    site.files = site.files.map((file) => file.id === 'en'
+      ? { ...file, content: JSON.stringify({ language: 'en', messages: {
+        header: { contact: 'Literal \\{currentEntry.extension}' },
+      } }) }
+      : file)
+    const context = {
+      entryStack: [{ id: 'product-1', fields: { extension: '.zip', description: 'Data {currentEntry.extension}' } }],
+      site: buildSiteFrame(site, 'en'),
+    }
+
+    expect(interpolateTokens('{site.translations.header.contact}', context)).toBe('Literal {currentEntry.extension}')
+    expect(interpolateTokens('{currentEntry.description}', context)).toBe('Data {currentEntry.extension}')
+  })
+
+  it('renders translation templates through nested attributes and SEO interpolation', () => {
+    const { site, page } = languageFixture()
+    site.files = site.files.map((file) => file.id === 'en'
+      ? { ...file, content: JSON.stringify({ language: 'en', messages: {
+        header: { contact: 'Download {currentEntry.extension}' },
+      } }) }
+      : file)
+    page.nodes.root.props.htmlAttributes = {
+      ...page.nodes.root.props.htmlAttributes,
+      'data-label': '{site.translations.header.contact}',
+    }
+    site.settings.metaTitle = '{site.translations.header.contact}'
+    const html = publishPage(page, site, registry, {
+      dynamicNodes: 'inline',
+      templateContext: { entryStack: [{ id: 'product-1', fields: { extension: '.zip' } }] },
+    }).html
+
+    expect(html).toContain('<body data-label="Download .zip" data-language="en">')
+    expect(html).toContain('<h2 title="Download .zip">Download .zip</h2>')
+    expect(html).toContain('<title>Download .zip</title>')
+  })
+
+  it('classifies translated route-query dependencies for VC overrides and structured Site bindings', () => {
+    const { site, page, component } = languageFixture()
+    site.files = site.files.map((file) => ({
+      ...file,
+      content: JSON.stringify({ language: file.id, messages: {
+        header: { contact: file.id === 'en' ? 'Contact' : 'Contatti' },
+        product: { download: file.id === 'en' ? 'Download {route.query.format}' : 'Scarica' },
+      } }),
+    }))
+    component.params = [{ id: 'label', name: 'Label', type: 'string', required: false, defaultValue: '' }]
+    component.tree.nodes.label.propBindings = { text: { paramId: 'label' } }
+    page.nodes.ref.props.propOverrides = { label: '{site.translations.product.download}' }
+    page.nodes.root.children.push('structured')
+    page.nodes.structured = makeNode({ id: 'structured', moduleId: 'base.text', props: { text: '' }, dynamicBindings: {
+      text: { source: 'site', field: 'translations.product.download' },
+    } })
+
+    page.language = 'it'
+    const italianIds = findDynamicNodeIds(page, site, registry)
+    expect(italianIds.has('ref')).toBe(false)
+    expect(italianIds.has('structured')).toBe(false)
+
+    page.language = 'en'
+    const englishIds = findDynamicNodeIds(page, site, registry)
+    expect(englishIds.has('ref')).toBe(true)
+    expect(englishIds.has('structured')).toBe(true)
+
+    page.language = 'it'
+    page.template = { enabled: true, target: { kind: 'postTypes', tableSlugs: ['products'] }, priority: 1 }
+    const entryTemplateIds = findDynamicNodeIds(page, site, registry)
+    expect(entryTemplateIds.has('ref')).toBe(true)
+    expect(entryTemplateIds.has('structured')).toBe(true)
+
+    page.language = 'en'
+    const staticHtml = publishPage(page, site, registry).html
+    expect(staticHtml).toContain('<instatic-hole')
+    expect(staticHtml).not.toContain('Download {route.query.format}')
+    const requestHtml = publishPage(page, site, registry, {
+      dynamicNodes: 'inline',
+      templateContext: {
+        entryStack: [],
+        route: { path: '/it/listing?format=pdf', slug: 'listing', segments: ['it', 'listing'], query: { format: 'pdf' } },
+      },
+    }).html
+    expect(requestHtml).toContain('<h2 title="Contact">Download pdf</h2>')
+    expect(requestHtml).toContain('<p>Download pdf</p>')
+  })
+
+  it('classifies request dependencies inside number format language templates', () => {
+    const { site, page } = languageFixture()
+    site.files = site.files.map((file) => ({
+      ...file,
+      content: JSON.stringify({ language: file.id, messages: {
+        header: { contact: file.id === 'en' ? 'Contact' : 'Contatti' },
+        pricing: { monthly: file.id === 'en' ? '€{value} {route.query.currency}' : '{value} €' },
+      } }),
+    }))
+    page.nodes.root.children.push('price')
+    page.nodes.price = makeNode({
+      id: 'price',
+      moduleId: 'base.text',
+      props: { text: '' },
+      dynamicBindings: {
+        text: {
+          source: 'currentEntry',
+          field: 'price',
+          format: 'number',
+          numberFormat: { templateKey: 'pricing.monthly' },
+        },
+      },
+    })
+
+    expect(findDynamicNodeIds(page, site, registry).has('price')).toBe(true)
+    page.language = 'it'
+    expect(findDynamicNodeIds(page, site, registry).has('price')).toBe(false)
+  })
+})
+
 describe('language catalogue validation', () => {
+  it('preflights used number templates and ignores unused component defaults', () => {
+    const { site, page, component } = languageFixture()
+    site.files = site.files.map((file) => ({
+      ...file,
+      content: JSON.stringify({ language: file.id, messages: {
+        header: { contact: file.id === 'en' ? 'Contact' : 'Contatti' },
+        pricing: { monthly: file.id === 'en' ? '€{value}{site.translations.common.suffix}' : '{value} €' },
+        common: { suffix: file.id === 'en' ? ' / month' : ' al mese' },
+      } }),
+    }))
+    component.tree.nodes.label.dynamicBindings = {
+      text: {
+        source: 'currentEntry',
+        field: 'price',
+        format: 'number',
+        numberFormat: { templateKey: 'pricing.monthly' },
+      },
+    }
+    site.visualComponents.push(makeVC({
+      id: 'unused-price-card',
+      name: 'Unused price card',
+      tree: makeVCTree('unused-price', [makeNode({
+        id: 'unused-price',
+        moduleId: 'base.text',
+        props: { text: '' },
+        dynamicBindings: {
+          text: {
+            source: 'currentEntry',
+            field: 'price',
+            format: 'number',
+            numberFormat: { templateKey: 'pricing.unused' },
+          },
+        },
+      })]),
+    }))
+
+    expect(() => assertSiteTranslations(site)).not.toThrow()
+
+    site.files = site.files.map((file) => file.id === 'en'
+      ? { ...file, content: JSON.stringify({ language: 'en', messages: {
+        header: { contact: 'Contact' },
+        pricing: { monthly: '€{value}{site.translations.common.suffix}' },
+      } }) }
+      : file)
+    let error: unknown
+    try {
+      assertSiteTranslations(site)
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(LocalizationError)
+    expect((error as LocalizationError).path).toBe('translations.common.suffix')
+
+    site.files = site.files.map((file) => file.id === 'en'
+      ? { ...file, content: JSON.stringify({ language: 'en', messages: { header: { contact: 'Contact' } } }) }
+      : file)
+    let missingKeyError: unknown
+    try {
+      assertSiteTranslations(site)
+    } catch (caught) {
+      missingKeyError = caught
+    }
+    expect(missingKeyError).toBeInstanceOf(LocalizationError)
+    expect((missingKeyError as LocalizationError).path).toBe('translations.pricing.monthly')
+  })
+
   it('preflights shared defaults, instance params, attributes, structured bindings and SEO using native token syntax', () => {
     const { site, page, component } = languageFixture()
     expect(() => assertSiteTranslations(site)).not.toThrow()
     component.params = [{ id: 'param', name: 'Text', type: 'string', required: true, defaultValue: '{site.translations.header.missing}' }]
     component.tree.nodes.label.propBindings = { text: { paramId: 'param' } }
     expect(() => assertSiteTranslations(site)).toThrow('translations.header.missing')
-    component.params = []
-    delete component.tree.nodes.label.propBindings
+    component.params = [{ id: 'Text', name: 'Text', type: 'string', required: false, defaultValue: 'safe default' }]
+    component.tree.nodes.label.propBindings = { text: { paramId: 'Text' } }
     page.nodes.ref.props.propOverrides = { Text: '{site.translations.header.missing}' }
     expect(() => assertSiteTranslations(site)).toThrow('translations.header.missing')
     delete page.nodes.ref.props.propOverrides
@@ -128,6 +384,38 @@ describe('language catalogue validation', () => {
     const context = { entryStack: [], site: buildSiteFrame(site, 'en') }
     expect(() => interpolateTokens('{site.translations.header.missing|Fallback}', context)).toThrow(LocalizationError)
     expect(() => resolveDynamicProps({ text: 'Fallback' }, { text: { source: 'site', field: 'translations.header.missing', fallback: 'static' } }, context)).toThrow(LocalizationError)
+  })
+
+  it('preflights nested translation keys before publication work begins', () => {
+    const { site } = languageFixture()
+    site.files = site.files.map((file) => file.id === 'en'
+      ? { ...file, content: JSON.stringify({ language: 'en', messages: {
+        header: { contact: '{site.translations.product.download}' },
+      } }) }
+      : file)
+
+    let error: unknown
+    try {
+      assertSiteTranslations(site)
+    } catch (caught) {
+      error = caught
+    }
+    expect(error).toBeInstanceOf(LocalizationError)
+    expect((error as LocalizationError).path).toBe('translations.product.download')
+
+    site.files = site.files.map((file) => file.id === 'en'
+      ? { ...file, content: JSON.stringify({ language: 'en', messages: {
+        header: { contact: '{site.translations.header.contact}' },
+      } }) }
+      : file)
+    let cycleError: unknown
+    try {
+      assertSiteTranslations(site)
+    } catch (caught) {
+      cycleError = caught
+    }
+    expect(cycleError).toBeInstanceOf(LocalizationError)
+    expect((cycleError as LocalizationError).path).toBe('translations.header.contact')
   })
 
   it('checks language-specific slot fills without inventing absent paragraphs', () => {

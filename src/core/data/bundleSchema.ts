@@ -31,7 +31,7 @@
  * original bytes and metadata; the publisher falls back to the original until a
  * later upload/replace path regenerates variants.
  */
-
+import { BundlePublicationSchema } from './bundlePublication'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { BRANCH_ID_PATTERN } from '@core/branches'
 import { DataTableSchema, DataRowSchema, DataTableKindSchema } from './schemas'
@@ -170,7 +170,7 @@ export type ImportStrategy = Static<typeof ImportStrategySchema>
  * (all rows); `rowIds` present = only those rows. A table not listed in
  * `ExportRequest.tables` is excluded entirely.
  */
-export const TableSelectionSchema = Type.Object({
+const TableSelectionSchema = Type.Object({
   tableId: Type.String(),
   /** Restrict to these row ids. Omit to include every row in the table. */
   rowIds: Type.Optional(Type.Array(Type.String())),
@@ -178,13 +178,12 @@ export const TableSelectionSchema = Type.Object({
 
 export type TableSelection = Static<typeof TableSelectionSchema>
 
-export const RowSlugOverrideSchema = Type.Object({
+const RowSlugOverrideSchema = Type.Object({
   tableId: Type.String(),
   rowId: Type.String(),
   slug: Type.String(),
 })
 
-export type RowSlugOverride = Static<typeof RowSlugOverrideSchema>
 
 /**
  * Request body accepted by `POST /admin/api/cms/export` (and query string
@@ -298,7 +297,7 @@ const BundlePreviewTableEntrySchema = Type.Object({
   currentLocal: Type.Number(),
 })
 
-export const BundleRowConflictSchema = Type.Object({
+const BundleRowConflictSchema = Type.Object({
   tableId: Type.String(),
   tableName: Type.String(),
   rowId: Type.String(),
@@ -376,6 +375,7 @@ export const SiteBundleSchema = Type.Object({
   tables: Type.Array(DataTableSchema),
   /** All (or selected) non-deleted data rows. */
   rows: Type.Array(DataRowSchema),
+  publication: Type.Optional(BundlePublicationSchema),
   /** Non-deleted media assets with embedded bytes (optional — may be omitted to keep bundle small). */
   media: Type.Optional(Type.Array(MediaAssetExportSchema)),
   /** Media-library folder tree (optional). Asset membership rides on `media[].folderIds`. */

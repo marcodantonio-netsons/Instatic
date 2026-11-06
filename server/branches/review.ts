@@ -41,7 +41,7 @@ export class NoOpenMergeRequestError extends Error {
  * One hash over every entity of the branch. A request records it; when the
  * branch's hash differs later, the request is about an older draft.
  */
-export async function branchContentHash(db: DbClient, branchId: string): Promise<string> {
+async function branchContentHash(db: DbClient, branchId: string): Promise<string> {
   const entities = await collectBranchEntities(db, { branchId })
   const digest = createHash('sha256')
   for (const key of [...entities.keys()].sort()) {

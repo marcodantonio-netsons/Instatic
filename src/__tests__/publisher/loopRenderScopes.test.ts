@@ -51,6 +51,21 @@ describe('native infinite-loop publication scopes', () => {
     }
   })
 
+  it.each(['currentEntry', 'parentEntry'] as const)('expands translated %s dependencies while checking fixed loop source configuration', (source) => {
+    const site = publishedLoopSite()
+    site.visualComponents[0].tree.nodes['shared-loop'].props.sourceId = '{site.translations.loop.source}'
+    site.files = site.files.map((file) => file.type === 'config'
+      ? { ...file, content: JSON.stringify({ language: file.id, messages: {
+        loop: { more: `${file.id} more`, loading: `${file.id} loading`, retry: `${file.id} retry`, card: `${file.id} card`, source: `data.rows {${source}.sourceId}` },
+      } }) }
+      : file)
+
+    expect(() => assertSiteLoopScopes(site)).toThrow(LoopScopeConfigurationError)
+    try { assertSiteLoopScopes(site) } catch (error) {
+      expect(error).toHaveProperty('message', expect.stringContaining(`translation references "${source}.sourceId"`))
+    }
+  })
+
   it('allows the same component in nine separate routes and preserves an entry route seed', () => {
     const site = publishedLoopSite()
     expect(() => assertSiteLoopScopes(site)).not.toThrow()

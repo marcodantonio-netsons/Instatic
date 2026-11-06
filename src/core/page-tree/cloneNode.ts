@@ -66,7 +66,10 @@ export function cloneNodeWithRemap(
   }
   if (node.dynamicBindings) {
     cloned.dynamicBindings = Object.fromEntries(
-      Object.entries(node.dynamicBindings).map(([k, v]) => [k, { ...v }]),
+      Object.entries(node.dynamicBindings).map(([k, v]) => [k, {
+        ...v,
+        ...(v.numberFormat ? { numberFormat: { ...v.numberFormat } } : {}),
+      }]),
     )
   }
 

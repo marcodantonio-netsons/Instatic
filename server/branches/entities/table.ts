@@ -27,8 +27,8 @@ const TableContentSchema = Type.Object({
   primaryFieldId: Type.String(),
   fields: Type.Array(DataFieldSchema),
 })
-export type TableContent = Static<typeof TableContentSchema>
-export type TableEntity = BranchEntityOf<'table', TableContent>
+type TableContent = Static<typeof TableContentSchema>
+type TableEntity = BranchEntityOf<'table', TableContent>
 
 function tableContent(table: DataTable): TableContent {
   return {

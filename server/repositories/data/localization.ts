@@ -1,5 +1,5 @@
 import type { DbClient } from '../../db/client'
-import type { BranchScope } from '../../branches/scope'
+import { isMainScope, type BranchScope } from '../../branches/scope'
 import { canReadDataRow, canReadTable, canSeeAllDataRows, type DataPrincipal } from '../../auth/dataAccess'
 import { userHasCapability } from '../../auth/authz'
 import { findUserById, type AuthUser } from '../users'
@@ -190,5 +190,28 @@ export async function assertLocalizedDataImport(db: DbClient, scope: BranchScope
       await assertLocalizedDataWrite(db, scope, table.fields, row.cells, user.id, null, path, site)
     }
     await assertLocalizedDataHistory(db, scope, row.id, table.fields, user.id, path, site)
+  }
+  if (bundle.publication && isMainScope(scope)) {
+    const incomingRows = new Map(bundle.rows.map(row => [row.id, row]))
+    const snapshots = new Map(bundle.publication.snapshots.map(snapshot => [snapshot.id, snapshot.site]))
+    for (const publishedRow of bundle.publication.rows) {
+      if (strategy === 'merge-add' && existingRows.has(publishedRow.rowId)) continue
+      const row = incomingRows.get(publishedRow.rowId)
+      const table = row && tables.get(row.tableId)
+      if (!row || !table) throw new LocalizationError(`rows.${publishedRow.rowId}.tableId`, 'The imported data table is missing')
+      for (const version of publishedRow.versions) {
+        const versionSite = version.siteSnapshotId ? snapshots.get(version.siteSnapshotId) : undefined
+        await assertLocalizedDataWrite(
+          db,
+          scope,
+          table.fields,
+          version.cells,
+          user.id,
+          null,
+          `tables.${table.id}.versions.cells`,
+          versionSite ?? site,
+        )
+      }
+    }
   }
 }

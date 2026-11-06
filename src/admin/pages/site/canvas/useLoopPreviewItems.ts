@@ -39,13 +39,16 @@ import { useEditorStore } from '@site/store/store'
 import { loopSourceRegistry } from '@core/loops/registry'
 import {
   ENTRY_FIELD_FILTER_KEY,
+  ENTRY_FIELD_ITEM_ID_FILTER_KEY,
   ENTRY_FIELD_SOURCE_ID,
   filterPagesForLoop,
   readDataPivotConfiguration, projectDataPivot,
   pageToLoopItem,
+  readEntryFieldItemIdFilter,
   resolveEntryFieldItems,
   type EntryFieldMedia,
   type LoopItem,
+  type ResolveEntryFieldItemsOptions,
 } from '@core/loops'
 import type { Page, PageNode } from '@core/page-tree'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
@@ -154,6 +157,17 @@ function mediaAssetToLoopItem(asset: CmsMediaAsset): LoopItem {
       createdAt: asset.createdAt,
     },
   }
+}
+
+/** Canvas adapter for the shared entry-field projection. */
+export function selectEntryFieldPreviewItems(
+  value: unknown,
+  filters: Record<string, unknown>,
+  options: ResolveEntryFieldItemsOptions,
+  itemIdPath: string,
+): LoopItem[] {
+  const itemId = readEntryFieldItemIdFilter(filters[ENTRY_FIELD_ITEM_ID_FILTER_KEY], itemIdPath)
+  return resolveEntryFieldItems(value, { ...options, itemId }).items
 }
 
 // `pageToLoopItem` and `filterPagesForLoop` are imported from `@core/loops`
@@ -332,7 +346,11 @@ export function useLoopPreviewItems(
 
     if (sourceId === ENTRY_FIELD_SOURCE_ID) {
       const fieldId = filters[ENTRY_FIELD_FILTER_KEY]
-      if (typeof fieldId !== 'string' || !fieldId) return EMPTY_ITEMS
+      const itemIdPath = `nodes.${node.id}.props.filters.${ENTRY_FIELD_ITEM_ID_FILTER_KEY}`
+      if (typeof fieldId !== 'string' || !fieldId) {
+        selectEntryFieldPreviewItems(undefined, filters, { offset, limit, direction }, itemIdPath)
+        return EMPTY_ITEMS
+      }
       const stack = templateContext?.entryStack ?? []
       const entry = stack[stack.length - 1]
       const mediaByReference = new Map<string, EntryFieldMedia>()
@@ -340,12 +358,12 @@ export function useLoopPreviewItems(
         mediaByReference.set(asset.id, asset)
         mediaByReference.set(asset.publicPath, asset)
       }
-      return resolveEntryFieldItems(entry?.fields[fieldId], {
+      return selectEntryFieldPreviewItems(entry?.fields[fieldId], filters, {
         offset,
         limit,
         direction,
         mediaByReference,
-      }).items
+      }, itemIdPath)
     }
 
     if (sourceId === 'site.pages') return sitePagesItems

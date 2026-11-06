@@ -10,7 +10,7 @@
  */
 import type { BuiltRuntimeAssetFile } from './runtime/bundleScripts'
 
-export const BRANCH_PREVIEW_ASSET_PREFIX = '/_instatic/assets/preview/'
+const BRANCH_PREVIEW_ASSET_PREFIX = '/_instatic/assets/preview/'
 const MAX_BUILDS = 32
 
 interface PreviewAsset {
@@ -46,9 +46,4 @@ export function readPreviewAsset(publicPath: string): PreviewAsset | null {
   if (!publicPath.startsWith(BRANCH_PREVIEW_ASSET_PREFIX)) return null
   const buildId = publicPath.slice(BRANCH_PREVIEW_ASSET_PREFIX.length).split('/')[0]
   return builds.get(buildId ?? '')?.get(publicPath) ?? null
-}
-
-/** Test seam. */
-export function resetPreviewBuilds(): void {
-  builds.clear()
 }

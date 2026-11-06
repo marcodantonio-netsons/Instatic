@@ -376,7 +376,7 @@ const DataRowCellsSchema = Type.Record(Type.String(), Type.Unknown())
 
 export type DataRowCells = Static<typeof DataRowCellsSchema>
 
-export const RepeaterItemSchema = Type.Object({
+const RepeaterItemSchema = Type.Object({
   id: Type.String(),
   cells: DataRowCellsSchema,
 })

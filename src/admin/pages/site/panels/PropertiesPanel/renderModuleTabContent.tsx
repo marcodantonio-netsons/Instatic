@@ -113,6 +113,14 @@ export function renderModuleTabContent(args: ModuleTabContentArgs): React.ReactN
               control={control}
               value={resolvedPropsForBreakpoint[key]}
               isOverride={overrideKeys.has(key)}
+              dynamicBinding={dynamicBindingsEnabled && selectedNodeId ? {
+                binding: selectedNode.dynamicBindings?.[key],
+                onSet: (binding) => onSetDynamicBinding(key, binding),
+                onClear: () => onClearDynamicBinding(key),
+                availableFields: enclosingLoopSource?.fields,
+                sourceLabel: enclosingLoopSource?.label,
+                loopTableId: enclosingLoopTableId,
+              } : undefined}
               onChange={updateModuleProp}
             />
           )

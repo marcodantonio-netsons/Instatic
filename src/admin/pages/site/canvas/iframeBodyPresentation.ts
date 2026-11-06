@@ -10,7 +10,7 @@
 
 import { CANVAS_BODY_RESET_PROPERTIES } from './iframeBodyReset'
 
-export interface IframeBodyPresentation {
+interface IframeBodyPresentation {
   className?: string
   style?: Record<string, string | number>
   /** Sanitized authored attributes that publish on the real `<body>`. */

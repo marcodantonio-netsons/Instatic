@@ -39,7 +39,7 @@ import { MAIN_SCOPE } from '../branches/scope'
 import { publishPageRowLocked } from './publishSite'
 import { assertPublicAssetRouteAvailable } from './publicSiteAssets'
 
-export interface PublishDataRowResult {
+interface PublishDataRowResult {
   row: DataRow
   version: DataRowVersion
 }

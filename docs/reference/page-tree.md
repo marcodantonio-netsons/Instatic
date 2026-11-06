@@ -74,7 +74,7 @@ The rules:
 
 `inlineStyles` is the per-node **inline-style layer**: a camelCase CSS bag (same shape as a `StyleRule`'s `styles`) that the publisher emits as a literal `style="…"` attribute on the node's root element (or on `<body>` for the root `base.body` node). It is independent of `classIds` (a node can have both) and is **base-only** — like a real HTML `style=""` attribute it cannot be breakpoint- or condition-scoped. Values are sanitised at the publish boundary by `bagToInlineStyle` → `sanitiseCssValue`. Edited via the Properties panel's "Style inline" mode (store actions `setNodeInlineStyles` / `removeNodeInlineStyleProperty`); the HTML importer also writes it when it harvests an element's inline background image.
 
-`PageNode` (in `src/core/page-tree/pageNode.ts`) extends `BaseNode` with an optional `dynamicBindings` field for template data-binding. `VCNode` (in `src/core/visualComponents/schemas.ts`) is a direct re-export — `VCNode === BaseNode`.
+`PageNode` and `VCNode` share `BaseNode`, including optional runtime `dynamicBindings`. Both the page parser and the component parser preserve the same binding schema and use `parseBaseNodeFields`.
 
 ### Where each kind of tree lives
 
@@ -213,7 +213,7 @@ Gated by `src/__tests__/architecture/no-vc-mode-branches-in-mutations.test.ts`: 
 
 ### Why this is correct
 
-`PageNode` adds `dynamicBindings` to `BaseNode`. `VCNode === BaseNode`. The 11 mutations only touch fields that exist on the base — they never read `dynamicBindings`, so the cast in VC-mode is safe.
+`PageNode` and `VCNode` both use `BaseNode`, including runtime bindings. The 11 mutations operate on that common shape; component mode needs no alternate binding or mutation implementation.
 
 ---
 

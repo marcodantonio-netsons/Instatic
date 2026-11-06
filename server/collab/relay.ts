@@ -64,13 +64,13 @@ interface RelayEntry {
 
 type PersistOutcome = 'clean' | 'deferred' | 'superseded' | 'retry' | 'invalid'
 
-export type RelayUpdateListener = (
+type RelayUpdateListener = (
   docId: string,
   update: Uint8Array,
   origin: unknown,
   generation: string,
 ) => void
-export type RelayResetListener = (docId: string) => void
+type RelayResetListener = (docId: string) => void
 
 /** A doc plus the CRDT lineage the caller must stamp on its frames. */
 export interface RelayDoc {

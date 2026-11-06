@@ -117,6 +117,33 @@ describe('native page translation routes', () => {
     expect(() => assertSiteTranslations(site)).toThrow(PageTranslationError)
   })
 
+  it('preflights page alternatives nested in language-file metadata', () => {
+    const { site, en } = fixture()
+    const languages = ['it', 'en', 'pt-br']
+    const files = languages.map((language) => ({
+      id: `locale-${language}`,
+      path: `locales/${language}.json`,
+      type: 'config' as const,
+      content: JSON.stringify({ language, messages: { seo: { title: 'Read in {page.translations.fr.permalink}' } } }),
+      createdAt: 1,
+      updatedAt: 1,
+    }))
+    site.files = files
+    site.settings.language = 'en'
+    site.settings.localization = { catalogues: languages.map((language) => ({ language, fileId: `locale-${language}` })) }
+    site.settings.metaTitle = '{site.translations.seo.title}'
+
+    expect(() => assertSiteTranslations(site)).toThrow(PageTranslationError)
+    expect(() => assertSiteTranslations(site)).toThrow('page.translations.fr.permalink')
+
+    site.settings.metaTitle = 'Static page title'
+    en.nodes.root.children = ['bound']
+    en.nodes.bound = makeNode({ id: 'bound', moduleId: 'base.link', props: { href: '/' }, dynamicBindings: {
+      href: { source: 'site', field: 'translations.seo.title' },
+    } })
+    expect(() => assertSiteTranslations(site)).toThrow(PageTranslationError)
+  })
+
   it('does not require unused component route bindings, or unrelated languages for ungrouped pages', () => {
     const { site } = fixture()
     site.visualComponents = [makeVC({ params: [{ id: 'url', name: 'URL', type: 'string', required: false, defaultValue: '{page.translations.fr.permalink}' }] })]

@@ -79,7 +79,7 @@ export function cellOrderSql(input: {
 /** Operators a loop filter can use. Closed set — never interpolated raw. */
 export const CELL_FILTER_OPERATORS = ['is', 'isNot', 'isTrue', 'isFalse', 'isSet', 'isEmpty'] as const
 
-export type CellFilterOperator = (typeof CELL_FILTER_OPERATORS)[number]
+type CellFilterOperator = (typeof CELL_FILTER_OPERATORS)[number]
 
 export interface CellFilter {
   /** Field id as stored in `cells_json` (a data-table field id). */
@@ -92,7 +92,7 @@ export interface CellFilter {
 /** Operators that ignore the comparison value. */
 const VALUELESS: ReadonlySet<CellFilterOperator> = new Set(['isTrue', 'isFalse', 'isSet', 'isEmpty'])
 
-export function isCellFilterOperator(value: unknown): value is CellFilterOperator {
+function isCellFilterOperator(value: unknown): value is CellFilterOperator {
   return typeof value === 'string' && (CELL_FILTER_OPERATORS as readonly string[]).includes(value)
 }
 

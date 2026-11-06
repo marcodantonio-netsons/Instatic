@@ -99,7 +99,7 @@ export const REQUEST_ENTITY_KEY = ''
  * changed, from the diff's own per-node details; "Changed Headline" without
  * them.
  */
-export function changedNodeLine(tree: MergeTreeDiff, id: string): string {
+function changedNodeLine(tree: MergeTreeDiff, id: string): string {
   const label = tree.labels[id] ?? id
   const details = tree.details[id] ?? []
   return details.length > 0 ? `Changed ${label}: ${details.join('; ')}` : `Changed ${label}`

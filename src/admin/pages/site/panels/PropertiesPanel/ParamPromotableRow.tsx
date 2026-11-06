@@ -19,6 +19,8 @@ import { useEditorStore } from '@site/store/store'
 import { selectActiveCanvasPage } from '@site/store/store'
 import { validateParamName } from '@core/visualComponents'
 import type { PropertyControl } from '@core/module-engine'
+import type { DynamicPropBinding } from '@core/page-tree'
+import type { LoopSourceField } from '@core/loops/types'
 import { PropertyControlRenderer } from '@site/property-controls/PropertyControlRenderer'
 import { paramTypeForControl, paramTypesCompatibleWithControl } from '@site/property-controls/paramTypeCompat'
 import { ParamRow } from './ParamRow'
@@ -45,6 +47,14 @@ interface ParamPromotableRowProps {
   control: PropertyControl
   value: unknown
   isOverride?: boolean
+  dynamicBinding?: {
+    binding?: DynamicPropBinding
+    onSet: (binding: DynamicPropBinding) => void
+    onClear: () => void
+    availableFields?: LoopSourceField[]
+    sourceLabel?: string
+    loopTableId?: string | null
+  }
   onChange: (key: string, val: unknown) => void
 }
 
@@ -59,6 +69,7 @@ export function ParamPromotableRow({
   control,
   value,
   isOverride,
+  dynamicBinding,
   onChange,
 }: ParamPromotableRowProps) {
   const [exposeOpen, setExposeOpen] = useState(false)
@@ -174,6 +185,7 @@ export function ParamPromotableRow({
         value={value}
         onChange={onChange}
         isOverride={isOverride}
+        dynamicBinding={dynamicBinding}
       />
     )
   }
@@ -211,6 +223,7 @@ export function ParamPromotableRow({
           value={value}
           onChange={onChange}
           isOverride={isOverride}
+          dynamicBinding={dynamicBinding}
         />
       </div>
 

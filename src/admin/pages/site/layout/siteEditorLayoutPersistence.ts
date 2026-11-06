@@ -19,7 +19,7 @@ import {
 
 type EditorStoreApi = UseBoundStore<StoreApi<EditorStore>>
 
-export type SiteLayoutSelection = readonly [
+type SiteLayoutSelection = readonly [
   explorerOpen: boolean,
   propertiesOpen: boolean,
   selectorsOpen: boolean,
@@ -140,7 +140,7 @@ function deriveOpenLeftPanels(selection: SiteLayoutSelection): LeftSidebarPanelI
   })[panel])
 }
 
-export function siteLayoutFromSelection(
+function siteLayoutFromSelection(
   selection: SiteLayoutSelection,
 ): StoredWorkspaceLayout {
   const [

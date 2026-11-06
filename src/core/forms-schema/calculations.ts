@@ -20,7 +20,7 @@ export const FormValueExpressionSchema = Type.Recursive((Self) => Type.Union([
 export type FormValueExpression = Static<typeof FormValueExpressionSchema>
 export const FormCalculationsSchema = Type.Record(Type.String({ pattern: '^[A-Za-z][A-Za-z0-9_-]*$' }), FormValueExpressionSchema, { default: {}, maxProperties: 128 })
 export type FormCalculations = Static<typeof FormCalculationsSchema>
-export const FormValueConstraintSchema = Type.Object({
+const FormValueConstraintSchema = Type.Object({
   fieldName: Type.String({ minLength: 1 }), minValueField: Type.Optional(Type.String()), maxValueField: Type.Optional(Type.String()),
   min: Type.Optional(Type.Number()), max: Type.Optional(Type.Number()),
 }, { additionalProperties: false })

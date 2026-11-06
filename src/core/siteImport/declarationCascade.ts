@@ -28,7 +28,7 @@ export function createCascadedStyleRuleLayers(): CascadedStyleRuleLayers {
  * later value wins. Re-inserting winners also preserves their later authored
  * position relative to shorthand declarations.
  */
-export function mergeDeclarationCascade(
+function mergeDeclarationCascade(
   target: DeclarationLayer,
   incoming: DeclarationLayer,
 ): void {

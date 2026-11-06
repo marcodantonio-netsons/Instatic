@@ -23,7 +23,7 @@ export type ToolCallIcon =
 
 export type ToolCallTone = 'danger' | 'neutral' | 'read' | 'style' | 'write'
 
-export interface ToolCallDisplay {
+interface ToolCallDisplay {
   title: string
   detail: string
   icon: ToolCallIcon
@@ -158,7 +158,7 @@ function display(title: string, detail: string, icon: ToolCallIcon, tone: ToolCa
   return { title, detail, icon, tone }
 }
 
-export interface ColorSwatch {
+interface ColorSwatch {
   slug: string
   value: string
 }

@@ -5,7 +5,8 @@ import { loopSourceRegistry } from '@core/loops/registry'
 import { LoopQueryConfigurationError } from '@core/loops'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
 import { LocalizationError } from '@core/localization'
-import { PageTranslationError } from '@core/page-tree'
+import { PageTranslationError, DynamicBindingConfigurationError } from '@core/page-tree'
+import { DynamicBindingNumberFormatError } from '@core/templates'
 import { PublicAssetValidationError } from '@core/files/publicAssets'
 import { LoopScopeConfigurationError, renderNode, type RenderConfig, type RenderAccumulators, type ResolvedLoopRenderData } from '@core/publisher'
 import { jsonResponse } from '../../http'
@@ -110,7 +111,7 @@ export async function handleLoopRequest(req: Request, url: URL, ctx: LoopHandler
     return jsonResponse({ html, hasMore, pageNumber, totalItems: result.totalItems })
   } catch (err) {
     if (err instanceof LoopFragmentContextError) return jsonResponse({ error: err.message }, { status: err.status })
-    if (err instanceof LocalizationError || err instanceof PageTranslationError || err instanceof PublicAssetValidationError || err instanceof LoopScopeConfigurationError || err instanceof LoopQueryConfigurationError) {
+    if (err instanceof DynamicBindingConfigurationError || err instanceof DynamicBindingNumberFormatError || err instanceof LocalizationError || err instanceof PageTranslationError || err instanceof PublicAssetValidationError || err instanceof LoopScopeConfigurationError || err instanceof LoopQueryConfigurationError) {
       return jsonResponse({ error: err.message }, { status: 422 })
     }
     console.error('[loop] Failed to load published loop fragment:', err)

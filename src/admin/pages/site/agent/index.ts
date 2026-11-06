@@ -34,7 +34,6 @@ export {
   waitForAgentRenderFrame,
   SnapshotNodeNotFoundError,
 } from './renderEvidence'
-export type { AgentRenderFrameQuery } from './renderEvidence'
 export { renderMarkdownToHtml } from './markdown'
 
 // Store handle wiring.

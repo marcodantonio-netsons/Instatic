@@ -29,7 +29,7 @@ import styles from './cells.module.css'
 
 type RepeaterField = Extract<DataField, { type: 'repeater' }>
 
-export interface RepeaterCellProps extends CellEditorProps<RepeaterField> {
+interface RepeaterCellProps extends CellEditorProps<RepeaterField> {
   tables?: DataTable[]
 }
 

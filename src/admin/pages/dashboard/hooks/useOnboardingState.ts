@@ -75,7 +75,7 @@ export function deriveOnboardingFacts(lookups: OnboardingLookups): OnboardingFac
   }
 }
 
-export interface OnboardingStateResult {
+interface OnboardingStateResult {
   facts: OnboardingFacts
   /** Re-run the live CMS lookups (e.g. after importing the framework). */
   refresh: () => void

@@ -12,7 +12,7 @@ import {
 const JPEG_QUALITIES = [0.9, 0.82, 0.74, 0.66, 0.58] as const
 const MIN_RESIZE_SCALE = 0.5
 
-export interface AgentImageSize {
+interface AgentImageSize {
   width: number
   height: number
 }

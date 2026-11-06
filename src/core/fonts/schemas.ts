@@ -44,7 +44,7 @@ const FontFileFormatSchema = Type.Union([
 
 export type FontFileFormat = Static<typeof FontFileFormatSchema>
 
-export const FontDisplaySchema = Type.Union([
+const FontDisplaySchema = Type.Union([
   Type.Literal('auto'), Type.Literal('block'), Type.Literal('swap'),
   Type.Literal('fallback'), Type.Literal('optional'),
 ])

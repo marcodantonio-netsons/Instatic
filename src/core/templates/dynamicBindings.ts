@@ -26,6 +26,7 @@
  */
 
 import type { DynamicPropBinding } from '@core/page-tree'
+import { resolveTranslation } from '@core/localization'
 import { renderMarkdownToHtml } from '@core/markdown/renderMarkdown'
 import { isRichtextPropKey, RICHTEXT_CONTENT_CONFIG, sanitizeRichtext } from '@core/sanitize'
 import { mapJsonStrings } from '@core/utils/jsonStrings'
@@ -37,6 +38,139 @@ import {
   interpolateTokens,
   readFrameField,
 } from './tokenInterpolation'
+
+export type DynamicBindingNumberFormatErrorCode = 'invalid-value' | 'invalid-options' | 'invalid-template'
+
+/** A numeric binding could not be represented with the authored decimal options. */
+export class DynamicBindingNumberFormatError extends Error {
+  readonly path: string
+  readonly code: DynamicBindingNumberFormatErrorCode
+
+  constructor(
+    path: string,
+    code: DynamicBindingNumberFormatErrorCode,
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(`${path}: ${message}`, options)
+    this.name = 'DynamicBindingNumberFormatError'
+    this.path = path
+    this.code = code
+  }
+}
+
+function formatBoundNumber(
+  value: unknown,
+  binding: DynamicPropBinding,
+  context: TemplateRenderDataContext,
+  path: string,
+): string {
+  const number = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && value.trim() !== ''
+      ? Number(value.trim())
+      : Number.NaN
+  if (!Number.isFinite(number)) {
+    throw new DynamicBindingNumberFormatError(
+      path,
+      'invalid-value',
+      `The value bound from "${binding.source}.${binding.field}" must be a finite number`,
+    )
+  }
+
+  const numberFormat = binding.numberFormat ?? {}
+  const minimumFractionDigits = numberFormat.minimumFractionDigits
+  const maximumFractionDigits = numberFormat.maximumFractionDigits
+  for (const [option, digits] of [
+    ['minimumFractionDigits', minimumFractionDigits],
+    ['maximumFractionDigits', maximumFractionDigits],
+  ] as const) {
+    if (digits !== undefined && (!Number.isInteger(digits) || digits < 0 || digits > 20)) {
+      throw new DynamicBindingNumberFormatError(
+        path,
+        'invalid-options',
+        `${option} must be an integer between 0 and 20`,
+      )
+    }
+  }
+  if (
+    minimumFractionDigits !== undefined &&
+    maximumFractionDigits !== undefined &&
+    minimumFractionDigits > maximumFractionDigits
+  ) {
+    throw new DynamicBindingNumberFormatError(
+      path,
+      'invalid-options',
+      'minimumFractionDigits cannot exceed maximumFractionDigits',
+    )
+  }
+
+  const locale = numberFormat.locale ?? context.site?.language
+  if (!locale) {
+    throw new DynamicBindingNumberFormatError(
+      path,
+      'invalid-options',
+      'A site language or locale override is required for number formatting',
+    )
+  }
+  let formatted: string
+  try {
+    formatted = new Intl.NumberFormat(locale, {
+      style: 'decimal',
+      ...(minimumFractionDigits !== undefined ? { minimumFractionDigits } : {}),
+      ...(maximumFractionDigits !== undefined ? { maximumFractionDigits } : {}),
+      ...(numberFormat.useGrouping !== undefined ? { useGrouping: numberFormat.useGrouping } : {}),
+    }).format(number)
+  } catch (cause) {
+    throw new DynamicBindingNumberFormatError(
+      path,
+      'invalid-options',
+      `Invalid number format options for "${binding.source}.${binding.field}"`,
+      { cause },
+    )
+  }
+
+  const templateKey = numberFormat.templateKey
+  if (templateKey === undefined) return formatted
+  const templatePath = `${path}.numberFormat.templateKey`
+  const normalizedTemplateKey = templateKey.trim()
+  if (!normalizedTemplateKey) {
+    throw new DynamicBindingNumberFormatError(
+      templatePath,
+      'invalid-template',
+      'A nonempty language template key is required',
+    )
+  }
+  const language = context.site?.language
+  if (!language) {
+    throw new DynamicBindingNumberFormatError(
+      templatePath,
+      'invalid-template',
+      'An active page language is required to resolve the language template',
+    )
+  }
+
+  let template: string
+  try {
+    template = resolveTranslation(context.site?.translations, normalizedTemplateKey, language)
+  } catch (cause) {
+    throw new DynamicBindingNumberFormatError(
+      templatePath,
+      'invalid-template',
+      `Unable to resolve number format template "${normalizedTemplateKey}"`,
+      { cause },
+    )
+  }
+  const valuePlaceholders = template.match(/\{value\}/g)?.length ?? 0
+  if (valuePlaceholders !== 1) {
+    throw new DynamicBindingNumberFormatError(
+      templatePath,
+      'invalid-template',
+      'The language template must contain exactly one literal "{value}" placeholder',
+    )
+  }
+  return template.replace('{value}', formatted)
+}
 
 /**
  * Resolve a single binding to its runtime value.
@@ -62,6 +196,7 @@ import {
 function resolveBindingValue(
   binding: DynamicPropBinding,
   context: TemplateRenderDataContext,
+  path: string,
 ): unknown {
   const value = readFrameField(binding.source, binding.field, context)
 
@@ -79,6 +214,10 @@ function resolveBindingValue(
   ) {
     const interpolated = containsTokens(value) ? interpolateTokens(value, context) : value
     return renderMarkdownToHtml(interpolated)
+  }
+
+  if (binding.format === 'number' && value !== undefined && value !== null) {
+    return formatBoundNumber(value, binding, context, path)
   }
 
   return value
@@ -126,7 +265,7 @@ export function resolveBoundProps(
   if (!context || !bindings) return staticProps
   const resolved = { ...staticProps }
   for (const [propKey, binding] of Object.entries(bindings)) {
-    const value = resolveBindingValue(binding, context)
+    const value = resolveBindingValue(binding, context, `dynamicBindings.${propKey}`)
     if (value === undefined || value === null) {
       if (binding.fallback === 'empty') resolved[propKey] = ''
       continue

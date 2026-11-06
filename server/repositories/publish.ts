@@ -92,7 +92,7 @@ export interface PublishedPageVersionWrite {
   runtimeFiles: BuiltRuntimeAssetFile[]
 }
 
-export interface PersistSitePublishInput {
+interface PersistSitePublishInput {
   siteSnapshotId: string
   /** The published site document — stored ONCE, referenced by every page version. */
   site: SiteDocument

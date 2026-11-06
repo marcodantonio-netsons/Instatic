@@ -30,6 +30,7 @@ import { walkFieldPath } from '@core/templates/tokenInterpolation'
 import type { LoopSourceField } from '@core/loops/types'
 import type { DataMetaField, DataMetaTable } from '@core/data/schemas'
 import { Button } from '@ui/components/Button'
+import { Select } from '@ui/components/Select'
 import { ContextMenu } from '@ui/components/ContextMenu'
 import { EmptyState } from '@ui/components/EmptyState'
 import { SkeletonBlock } from '@ui/components/Skeleton'
@@ -119,6 +120,9 @@ export interface DataBindingPickerProps {
    * within `onPick`.
    */
   insertMode?: boolean
+  /** Permit text properties to choose whole-property binding as well as token insertion. */
+  allowStructuredBinding?: boolean
+  onModeChange?: (mode: 'token' | 'binding') => void
   /**
    * Structured bindings must match the destination control. Token insertion
    * can select any field because interpolation serializes whole media and
@@ -159,6 +163,8 @@ export function DataBindingPicker({
   systemPreviewValues,
   publicFiles,
   insertMode = false,
+  allowStructuredBinding = false,
+  onModeChange,
   fieldSelectionMode = 'compatible',
   anchorRef,
   triggerRef,
@@ -570,6 +576,23 @@ export function DataBindingPicker({
       zIndex={10000}
       menuClassName={styles.popoverMenu}
     >
+      {allowStructuredBinding && (
+        <div className={styles.bindingMode}>
+          <span>When selecting a field</span>
+          <Select
+            fieldSize="sm"
+            value={insertMode ? 'token' : 'binding'}
+            aria-label="Field selection action"
+            options={[
+              { value: 'token', label: 'Insert token' },
+              { value: 'binding', label: 'Bind whole value' },
+            ]}
+            onChange={(event) => onModeChange?.(
+              event.currentTarget.value === 'token' ? 'token' : 'binding',
+            )}
+          />
+        </div>
+      )}
       {renderBody()}
     </ContextMenu>
   )
