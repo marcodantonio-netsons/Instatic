@@ -1,7 +1,7 @@
 import type { CmsMediaAsset } from '@core/persistence/cmsMedia'
 import { targetBucket } from './mediaExplorerUtils'
 
-export type MediaCanvasModuleId = 'base.image' | 'base.video'
+type MediaCanvasModuleId = 'base.image' | 'base.video'
 
 export interface MediaCanvasInsertion {
   moduleId: MediaCanvasModuleId

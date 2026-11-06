@@ -79,7 +79,7 @@ export function mergeDerivedCells(
   return { ...merged, ...derived }
 }
 
-export type DerivedWrite = 'written' | 'incomplete' | 'invalid'
+type DerivedWrite = 'written' | 'incomplete' | 'invalid'
 type SiteRosters = ReturnType<typeof projectSiteRosters>
 
 interface RelayPersistenceHooks {
@@ -89,7 +89,7 @@ interface RelayPersistenceHooks {
   invalidationVersion(docId: string): number
 }
 
-export interface RelayPersistence {
+interface RelayPersistence {
   hasRosterSnapshot(branchId: string): boolean
   rosterContains(docId: string): boolean
   observeSiteRoster(branchId: string, doc: Y.Doc): void

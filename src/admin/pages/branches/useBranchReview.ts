@@ -19,7 +19,7 @@ import {
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { undoBranchMerge } from '@admin/state/branchStore'
 
-export interface BranchReviewData {
+interface BranchReviewData {
   plan: MergePlan | null
   review: BranchReviewState | null
   loadError: string | null

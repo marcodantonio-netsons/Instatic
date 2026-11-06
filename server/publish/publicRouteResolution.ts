@@ -48,7 +48,7 @@ export function contentRouteFromPath(pathname: string): { tableRouteBase: string
  * to the next handler (e.g. the setup-wizard redirect). `redirect` is
  * an old row-slug → new path mapping; the caller emits a 301.
  */
-export type PublicRouteResolution =
+type PublicRouteResolution =
   | { kind: 'page'; snapshot: PublishedPageSnapshot }
   | { kind: 'row'; snapshot: PublishedPageSnapshot; row: PublishedDataRow }
   | { kind: 'redirect'; location: string }

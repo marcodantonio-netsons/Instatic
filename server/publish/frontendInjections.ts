@@ -31,6 +31,7 @@ import type { DbClient } from '../db/client'
 import { listInstalledPlugins, type InstalledPluginResult } from '../repositories/plugins'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
 import { listElectedAdapters } from '../repositories/mediaStorageAdapters'
+import { escapeHtml } from '@core/html-sanitize'
 import { addCspSources, rewriteCspMeta, setCspDirective } from '@core/publisher'
 import type {
   FrontendAsset,
@@ -188,16 +189,16 @@ function renderAsset(asset: FrontendAsset, plugin: InstalledPlugin): ResolvedTag
       asset.attrs,
       strategy === 'module' ? MODULE_SCRIPT_HOST_OWNED_ATTRS : SCRIPT_HOST_OWNED_ATTRS,
     )
-    const pluginAttr = ` data-plugin-id="${escapeAttr(plugin.manifest.id)}"`
+    const pluginAttr = ` data-plugin-id="${escapeHtml(plugin.manifest.id)}"`
     return {
-      html: `<script src="${escapeAttr(url)}"${strategyAttrs}${extra}${pluginAttr}></script>`,
+      html: `<script src="${escapeHtml(url)}"${strategyAttrs}${extra}${pluginAttr}></script>`,
       placement,
     }
   }
 
   if (asset.kind === 'script-inline') {
     const extra = formatAttrs(asset.attrs, INLINE_SCRIPT_HOST_OWNED_ATTRS)
-    const pluginAttr = ` data-plugin-id="${escapeAttr(plugin.manifest.id)}"`
+    const pluginAttr = ` data-plugin-id="${escapeHtml(plugin.manifest.id)}"`
     // Inline `</script>` would close the wrapping tag. Standard escape.
     const body = asset.content.replace(/<\/script/gi, '<\\/script')
     return {
@@ -210,16 +211,16 @@ function renderAsset(asset: FrontendAsset, plugin: InstalledPlugin): ResolvedTag
     const url = resolveAssetUrl(plugin, asset.href)
     if (!url) return null
     const extra = formatAttrs(asset.attrs, STYLESHEET_HOST_OWNED_ATTRS)
-    const pluginAttr = ` data-plugin-id="${escapeAttr(plugin.manifest.id)}"`
+    const pluginAttr = ` data-plugin-id="${escapeHtml(plugin.manifest.id)}"`
     return {
-      html: `<link rel="stylesheet" href="${escapeAttr(url)}"${extra}${pluginAttr}>`,
+      html: `<link rel="stylesheet" href="${escapeHtml(url)}"${extra}${pluginAttr}>`,
       placement,
     }
   }
 
   if (asset.kind === 'style-inline') {
     const extra = formatAttrs(asset.attrs)
-    const pluginAttr = ` data-plugin-id="${escapeAttr(plugin.manifest.id)}"`
+    const pluginAttr = ` data-plugin-id="${escapeHtml(plugin.manifest.id)}"`
     const body = asset.content.replace(/<\/style/gi, '<\\/style')
     return {
       html: `<style${extra}${pluginAttr}>${body}</style>`,
@@ -229,7 +230,7 @@ function renderAsset(asset: FrontendAsset, plugin: InstalledPlugin): ResolvedTag
 
   if (asset.kind === 'link') {
     const extra = formatAttrs(asset.attrs)
-    const pluginAttr = ` data-plugin-id="${escapeAttr(plugin.manifest.id)}"`
+    const pluginAttr = ` data-plugin-id="${escapeHtml(plugin.manifest.id)}"`
     return {
       html: `<link${extra}${pluginAttr}>`,
       placement,
@@ -238,7 +239,7 @@ function renderAsset(asset: FrontendAsset, plugin: InstalledPlugin): ResolvedTag
 
   if (asset.kind === 'meta') {
     const extra = formatAttrs(asset.attrs)
-    const pluginAttr = ` data-plugin-id="${escapeAttr(plugin.manifest.id)}"`
+    const pluginAttr = ` data-plugin-id="${escapeHtml(plugin.manifest.id)}"`
     return {
       html: `<meta${extra}${pluginAttr}>`,
       placement,
@@ -298,7 +299,7 @@ function formatAttrs(
   for (const [name, value] of Object.entries(attrs)) {
     const normalizedName = name.toLowerCase()
     if (normalizedName === 'data-plugin-id' || hostOwnedAttrs.has(normalizedName)) continue
-    parts.push(`${name}="${escapeAttr(value)}"`)
+    parts.push(`${name}="${escapeHtml(value)}"`)
   }
   return parts.length === 0 ? '' : ` ${parts.join(' ')}`
 }
@@ -451,17 +452,4 @@ async function collectMediaAdapterCspOrigins(
     }
   }
   return out
-}
-
-// ---------------------------------------------------------------------------
-// Attribute escaping
-// ---------------------------------------------------------------------------
-
-function escapeAttr(value: string): string {
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
 }

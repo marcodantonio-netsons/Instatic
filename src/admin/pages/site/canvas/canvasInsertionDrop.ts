@@ -22,7 +22,7 @@ export interface CanvasDropPreview {
   label: string
 }
 
-export interface CanvasPointerInsertionDrop {
+interface CanvasPointerInsertionDrop {
   location: InsertLocation
   preview: CanvasDropPreview
   breakpointId: string
@@ -101,7 +101,7 @@ export function resolveCanvasPointerInsertionDrop({
   }
 }
 
-export function fixedPreviewForTarget(
+function fixedPreviewForTarget(
   viewport: HTMLElement,
   target: CanvasInsertionTarget,
   label: string,
@@ -118,7 +118,7 @@ export function fixedPreviewForTarget(
   }
 }
 
-export function fixedPreviewForViewport(
+function fixedPreviewForViewport(
   viewport: HTMLElement,
   position: CanvasDropPreview['position'],
   label: string,

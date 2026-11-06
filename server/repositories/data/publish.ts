@@ -89,7 +89,7 @@ export interface PreviousPublishedRoute {
   routeBase: string
 }
 
-export interface PersistDataRowPublishResult {
+interface PersistDataRowPublishResult {
   row: DataRow
   version: DataRowVersion
   /**
@@ -100,7 +100,7 @@ export interface PersistDataRowPublishResult {
   previousRoute: PreviousPublishedRoute | null
 }
 
-export interface RowTableRouteInfo {
+interface RowTableRouteInfo {
   tableRouteBase: string
   tableSlug: string
 }
@@ -482,7 +482,7 @@ export async function getDataRowRedirectByRoute(
  * Shape-compatible with `BundleRedirect` in `@core/data/bundleSchema` so the
  * export handler can pass these straight through.
  */
-export interface ExportableRedirect {
+interface ExportableRedirect {
   id: string
   tableId: string
   fromRouteBase: string

@@ -30,7 +30,7 @@ interface ResetQueueHooks {
   rosterContains(docId: string): boolean
 }
 
-export interface RelayResetQueue {
+interface RelayResetQueue {
   queueResetDocs(docIds: readonly string[]): void
   /** Wait for every queued reset; retries a failed batch once when throwing. */
   drainResetQueue(throwOnFailure?: boolean): Promise<void>

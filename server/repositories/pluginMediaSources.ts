@@ -1,7 +1,7 @@
 import type { DbClient } from '../db/client'
 import { placeholder } from '../db/client'
 
-export interface PluginMediaSource {
+interface PluginMediaSource {
   pluginId: string
   sourceKey: string
   assetId: string

@@ -32,7 +32,7 @@ export function classifyHttpError(
   return classifyHttpFailure(providerLabel, status, bodyText).message
 }
 
-export interface ProviderHttpFailure {
+interface ProviderHttpFailure {
   kind: 'replayOverflow' | 'generic'
   message: string
 }

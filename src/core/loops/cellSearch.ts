@@ -8,7 +8,7 @@ export interface CellSearch {
   language?: string
 }
 
-export function normalizeSearchText(value: string, configuration: LoopSearchConfiguration, language?: string, query = false): string {
+function normalizeSearchText(value: string, configuration: LoopSearchConfiguration, language?: string, query = false): string {
   const options = configuration.normalization
   let result = options.removeDiacritics ? value.normalize('NFD').replace(/[\u0300-\u036f]/g, '') : value
   if (options.lowercase) result = result.toLocaleLowerCase(language)

@@ -169,7 +169,7 @@ function readPeerPresences(docId: string | null): PeerPresence[] {
 }
 
 /** One entry per USER (an admin with two tabs is one person). */
-export interface SitePeer {
+interface SitePeer {
   user: EditorPresence['user']
   /** True when at least one of the user's clients is on `localDocId`. */
   onSameDoc: boolean

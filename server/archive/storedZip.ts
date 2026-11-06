@@ -27,7 +27,7 @@ const STREAM_CHUNK_BYTES = 1024 * 1024
 
 const encoder = new TextEncoder()
 
-export interface StoredZipEntrySize {
+interface StoredZipEntrySize {
   path: string
   sizeBytes: number
   usesDataDescriptor?: boolean

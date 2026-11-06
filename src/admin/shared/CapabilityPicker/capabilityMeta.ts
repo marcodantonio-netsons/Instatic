@@ -9,7 +9,7 @@
  */
 import type { CoreCapability } from '@core/capabilities'
 
-export interface CapabilityMeta {
+interface CapabilityMeta {
   /** Human-readable label rendered next to the checkbox. */
   label: string
   /** Short, plain-language description of what this capability grants. */

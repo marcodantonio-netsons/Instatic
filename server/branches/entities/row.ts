@@ -26,8 +26,8 @@ const RowContentSchema = Type.Object({
   cells: Type.Record(Type.String(), Type.Unknown()),
   slug: Type.String(),
 })
-export type RowContent = Static<typeof RowContentSchema>
-export type RowEntity = BranchEntityOf<'row', RowContent>
+type RowContent = Static<typeof RowContentSchema>
+type RowEntity = BranchEntityOf<'row', RowContent>
 
 /**
  * A cell that is absent, null, or the empty string is the same empty cell.

@@ -30,7 +30,7 @@ import type { CoreCapability } from '@core/capabilities'
 import { ForbiddenSiteChangeError, validateSiteWriteDiff } from '../writePolicy/siteDiff'
 import { validatePageWriteDiff } from '../writePolicy/pageDiff'
 
-export type UpdateGuardVerdict = { ok: true } | { ok: false; reason: string }
+type UpdateGuardVerdict = { ok: true } | { ok: false; reason: string }
 
 function hasStructure(capabilities: readonly CoreCapability[]): boolean {
   return capabilities.includes('site.structure.edit')

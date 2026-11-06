@@ -16,8 +16,8 @@ const SiteContentSchema = Type.Object({
   name: Type.String(),
   shell: Type.Record(Type.String(), Type.Unknown()),
 })
-export type SiteContent = Static<typeof SiteContentSchema>
-export type SiteEntity = BranchEntityOf<'site', SiteContent>
+type SiteContent = Static<typeof SiteContentSchema>
+type SiteEntity = BranchEntityOf<'site', SiteContent>
 
 function siteContent(shell: SiteShell): SiteContent {
   const { id: _id, name, createdAt: _createdAt, updatedAt: _updatedAt, files: _files, ...rest } = shell

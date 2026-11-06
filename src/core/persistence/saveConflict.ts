@@ -22,7 +22,7 @@
  */
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 
-export const SaveConflictSchema = Type.Object({
+const SaveConflictSchema = Type.Object({
   /** Which collection conflicted; `'site'` is the shell (rowId `'default'`). */
   table: Type.Union([
     Type.Literal('site'),

@@ -60,7 +60,6 @@ export const TurnstileConfigurationSchema = Type.Object({
   responseFieldName: Type.String({ minLength: 1 }),
 }, { additionalProperties: false })
 
-export type TurnstileConfiguration = Static<typeof TurnstileConfigurationSchema>
 
 export const FormChallengeResponseSchema = Type.Object({
   token: Type.String({ minLength: 1 }),
@@ -74,7 +73,6 @@ export const FormJsonResponseSchema = Type.Record(Type.String(), Type.Unknown())
 export const FormValidationResponseSchema = Type.Object({
   errors: Type.Array(Type.Object({ fieldId: Type.String(), code: Type.String(), message: Type.String() })),
 })
-export type FormValidationResponse = Static<typeof FormValidationResponseSchema>
 export const FormSuccessResponseSchema = Type.Object({ ok: Type.Literal(true), rowId: Type.String() })
 export const FormResponseContractSchema = Type.Object({ success: Type.Boolean(), message: Type.Optional(Type.String()) })
 export const TurnstileApiSchema = Type.Object({
@@ -112,4 +110,3 @@ export const FormConfigurationProperties = {
   minSubmitSeconds: Type.Number({ default: 2 }),
 }
 export const FormConfigurationSchema = Type.Object(FormConfigurationProperties)
-export type FormConfiguration = Static<typeof FormConfigurationSchema>

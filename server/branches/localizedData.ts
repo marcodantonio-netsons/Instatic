@@ -12,7 +12,7 @@ import { hasLocalizedDataFields, localizedDataReferences, LocalizedDataReference
 import type { DataField, DataRowCells } from '@core/data/schemas'
 import { LocalizationError } from '@core/localization'
 
-export interface LocalizedBranchWrite {
+interface LocalizedBranchWrite {
   target: EntityRef
   content: unknown | null
 }

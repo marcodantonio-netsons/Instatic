@@ -48,6 +48,16 @@ export function payloadTooLarge(message: string): Response {
   return jsonResponse({ error: message }, { status: 413 })
 }
 
+/** Read one raw cookie value, preserving any `=` characters in the value. */
+export function readCookie(req: Request, name: string): string {
+  const cookie = req.headers.get('cookie') ?? ''
+  for (const part of cookie.split(';')) {
+    const [rawKey, ...rawValue] = part.trim().split('=')
+    if (rawKey === name) return rawValue.join('=')
+  }
+  return ''
+}
+
 /**
  * Parse and validate a request body against a TypeBox schema. Returns the
  * validated value on success, or null on JSON parse failure or schema mismatch.

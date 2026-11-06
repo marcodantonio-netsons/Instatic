@@ -5,7 +5,7 @@ import { getDataRow, getDataTable } from '../repositories/data'
 import type { DataRow, DataTable } from '@core/data/schemas'
 import { canReadTable, type DataPrincipal, type RowCheck } from './dataAccess'
 
-export type RowAccess =
+type RowAccess =
   | { kind: 'ok'; row: DataRow; table: DataTable }
   /** The row does not exist, or lives in a table family the principal cannot see. Callers answer "not found" so the id leaks nothing. */
   | { kind: 'not-found' }

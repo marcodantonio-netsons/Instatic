@@ -33,7 +33,7 @@ export class BranchGoneError extends Error {
   }
 }
 
-export interface RelayBranchAdmission {
+interface RelayBranchAdmission {
   /** True when the branch exists and is not tombstoned. Reads the registry at most once per branch. */
   admits(branchId: string): Promise<boolean>
   /** True once `forget` tombstoned the branch — no registry read. */

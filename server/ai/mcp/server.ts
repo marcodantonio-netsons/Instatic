@@ -25,7 +25,7 @@ import { getEditorBridgeBranch, getEditorBridgeForUser, type EditorBridgeScope }
 import { runPublishFlush } from '../../publish/publishFlush'
 import { MAIN_SCOPE } from '../../branches/scope'
 
-export interface McpServerContext {
+interface McpServerContext {
   db: DbClient
   userId: string
   connectorId: string

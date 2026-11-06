@@ -135,7 +135,7 @@ export function syncSelectorHighlightRings(
 }
 
 /** Hide every pooled ring from index `keep` onward (they're reused, not removed). */
-export function hideSurplusRings(container: HTMLDivElement, keep: number): void {
+function hideSurplusRings(container: HTMLDivElement, keep: number): void {
   for (let i = keep; i < container.children.length; i++) {
     hideOverlayElement(container.children[i] as HTMLElement)
   }

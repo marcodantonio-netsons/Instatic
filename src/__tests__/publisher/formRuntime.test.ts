@@ -23,6 +23,11 @@ describe('stampFormPageTokens', () => {
     expect(html).toContain('data-instatic-page-id="page-home"')
   })
 
+  it('HTML-escapes stamped attributes with the shared escaping rule', () => {
+    const html = stampFormPageTokens(PAGE_WITH_CMS_FORM, `page&"'<>`)
+    expect(html).toContain('data-instatic-page-id="page&amp;&quot;&#x27;&lt;&gt;"')
+  })
+
   it('leaves non-CMS forms untouched', () => {
     const html = stampFormPageTokens(
       PAGE_WITH_CMS_FORM.replace('data-instatic-form-mode="cms"', 'data-instatic-form-mode="custom"'),

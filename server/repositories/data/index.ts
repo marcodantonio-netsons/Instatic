@@ -33,7 +33,6 @@ export {
   listDataRows,
   listDataRowIdSlugs,
   listDataRowSeqs,
-  listChangedDataRowRefsSince,
   listDataRowsWithFilter,
   searchDataRows,
   getDataRow,
@@ -59,7 +58,7 @@ export {
   applyDataRowChangesInTx,
 } from './rows'
 
-export type { ApplyDataRowChangesInput, DataRowWrite } from './rows'
+export type { DataRowWrite } from './rows'
 
 export {
   getPublishedDataRowByRoute,
@@ -70,6 +69,5 @@ export {
   nextDataRowVersionNumber,
   listDataRowVersions,
   getDataRowVersion,
-  type DataRowVersionSummary,
 } from './versions'
 export { readDataLocalization, readPluginDataLocalization, readableLocalizedDataKeys, assertLocalizedDataPrincipalWrite } from './localization'

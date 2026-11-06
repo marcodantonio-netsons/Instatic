@@ -62,7 +62,7 @@ const DATA_OWN_READ_CAPABILITIES = [
   'content.publish.own',
 ] satisfies CoreCapability[]
 
-export interface OwnedDataRow {
+interface OwnedDataRow {
   authorUserId: string | null
   createdByUserId: string | null
 }

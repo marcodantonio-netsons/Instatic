@@ -48,7 +48,7 @@ interface CaptureRegion {
   scrollHeight: number
 }
 
-export interface AgentRenderFrameQuery {
+interface AgentRenderFrameQuery {
   breakpointId?: string
   source?: 'visible' | 'transient'
   requestId?: string

@@ -1,5 +1,5 @@
 export type ProviderId = 'anthropic' | 'openai' | 'openrouter' | 'ollama' | 'openai-compatible'
-export type ProviderAuthMode = 'apiKey' | 'baseUrl'
+type ProviderAuthMode = 'apiKey' | 'baseUrl'
 
 export interface ProviderSpec {
   id: ProviderId
