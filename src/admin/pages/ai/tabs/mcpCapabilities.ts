@@ -3,7 +3,7 @@ import type { CoreCapability } from '@core/capabilities'
 import { hasCapability } from '@admin/access'
 import type { CapabilityPickerGroup } from '@admin/shared/CapabilityPicker'
 
-const MCP_CAPABILITY_GROUPS: readonly CapabilityPickerGroup[] = [
+export const MCP_CAPABILITY_GROUPS: readonly CapabilityPickerGroup[] = [
   {
     title: 'Read',
     capabilities: ['site.read', 'content.manage', 'data.custom.tables.read', 'data.system.tables.read', 'media.read'],

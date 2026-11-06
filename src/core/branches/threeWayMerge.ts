@@ -10,7 +10,7 @@
  */
 import { canonicalJson } from '@core/utils/canonicalJson'
 
-interface JsonMergeResult {
+export interface JsonMergeResult {
   value: unknown
   /** Paths (`a.b.c`) where both sides changed the same value differently. */
   conflicts: string[]

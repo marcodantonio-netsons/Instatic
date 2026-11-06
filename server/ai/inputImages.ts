@@ -22,7 +22,7 @@ export class AiImageInputError extends Error {
   }
 }
 
-interface AiUserContentPreflight {
+export interface AiUserContentPreflight {
   readonly text: string
   readonly images: readonly AiUserImageBlock[]
   readonly imageBytes: readonly Buffer[]

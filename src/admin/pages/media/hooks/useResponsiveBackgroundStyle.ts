@@ -7,7 +7,7 @@ import {
 import type { CmsMediaAsset } from '@core/persistence/cmsMedia'
 import { useCmsMediaAssetsByPath } from './useCmsMediaAssetByPath'
 
-interface ResponsiveEditorMediaAssets {
+export interface ResponsiveEditorMediaAssets {
   mediaAssets: ReadonlyMap<string, RenderResolvedMedia>
   signature: string
 }

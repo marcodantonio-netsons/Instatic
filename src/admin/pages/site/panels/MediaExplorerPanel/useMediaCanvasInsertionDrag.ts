@@ -11,7 +11,7 @@ import { useInsertModule } from '@site/hooks/useInsertModule'
 import { selectActiveCanvasPage, useEditorStore } from '@site/store/store'
 import { mediaCanvasInsertionForAsset, type MediaCanvasInsertion } from './mediaCanvasInsertion'
 
-interface MediaCanvasDragState {
+export interface MediaCanvasDragState {
   asset: CmsMediaAsset
   insertion: MediaCanvasInsertion
   x: number

@@ -92,7 +92,7 @@ export function setFrameworkUtilities(
 }
 
 /** The slice of `SiteSettings` the Core preset owns. */
-interface FrameworkPresetSettings {
+export interface FrameworkPresetSettings {
   framework?: FrameworkSettings
   fonts?: SiteFontsSettings
 }

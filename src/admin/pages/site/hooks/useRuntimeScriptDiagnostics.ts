@@ -6,7 +6,7 @@ import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import type { SiteRuntimeDiagnostic } from '@core/site-runtime'
 import { useEditorStore } from '@site/store/store'
 
-type RuntimeScriptValidationStatus =
+export type RuntimeScriptValidationStatus =
   | 'idle'
   | 'validating'
   | 'valid'

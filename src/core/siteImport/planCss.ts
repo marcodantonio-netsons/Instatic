@@ -25,7 +25,7 @@ import type { ImportColorToken, ImportFontToken, ImportWarning } from './types'
  * `buildImportPlan` run. Maps dedupe across sources (first occurrence wins,
  * matching the source cascade order the caller iterates in).
  */
-interface CssPlanState {
+export interface CssPlanState {
   warnings: ImportWarning[]
   droppedAtRules: string[]
   /** Reusable conditions discovered across all CSS sources, deduped by id. */
@@ -48,7 +48,7 @@ export function createCssPlanState(): CssPlanState {
   }
 }
 
-interface ParseCssSourceOptions {
+export interface ParseCssSourceOptions {
   breakpoints: Array<{ id: string; width: number; mediaQuery?: string }>
   mediaTolerance: number
   /** Harvests Google-font `@import` requests before they are stripped. */

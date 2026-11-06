@@ -175,7 +175,7 @@ type AgentMessageBlock =
   | AgentMessageImageBlock
   | { kind: 'toolCall'; toolCall: AgentToolCall }
 
-interface AgentMessageImageBlock {
+export interface AgentMessageImageBlock {
   kind: 'image'
   mimeType: 'image/jpeg'
   /** Data URL for a fresh local turn; authenticated lazy URL after rehydrate. */

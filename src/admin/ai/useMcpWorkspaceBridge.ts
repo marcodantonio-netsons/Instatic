@@ -35,12 +35,12 @@ const BridgeEventSchema = Type.Union([
   }),
 ])
 
-type McpWorkspaceScope = 'site' | 'content'
-type McpToolDispatcher = (
+export type McpWorkspaceScope = 'site' | 'content'
+export type McpToolDispatcher = (
   toolName: string,
   input: unknown,
 ) => Promise<AiToolOutput>
-type McpAfterSuccessfulTool = () => Promise<void>
+export type McpAfterSuccessfulTool = () => Promise<void>
 
 /**
  * Run one relayed tool and any workspace-specific persistence step. Keeping

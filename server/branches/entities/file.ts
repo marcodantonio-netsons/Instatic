@@ -13,8 +13,8 @@ import { MergeApplyError, type BranchEntityAdapter, type BranchEntityOf } from '
 import { validateMergedShell } from './shell'
 
 const FileContentSchema = Type.Omit(SiteFileSchema, ['id', 'createdAt', 'updatedAt'])
-type FileContent = Static<typeof FileContentSchema>
-type FileEntity = BranchEntityOf<'file', FileContent>
+export type FileContent = Static<typeof FileContentSchema>
+export type FileEntity = BranchEntityOf<'file', FileContent>
 
 function fileContent(file: SiteFile): FileContent {
   const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...rest } = file
