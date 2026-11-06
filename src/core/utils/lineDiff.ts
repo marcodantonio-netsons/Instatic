@@ -3,7 +3,7 @@
  * site files and plugin sources — so the O(n·m) table is fine and the
  * result stays exact. Rows come out in reading order with both line numbers.
  */
-export interface DiffLine {
+interface DiffLine {
   type: 'same' | 'add' | 'del'
   /** Line number on the before side, null for an added line. */
   before: number | null

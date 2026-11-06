@@ -23,7 +23,7 @@ import { resolveViewportUnitsInHtml } from '@core/utils/viewportUnits'
 import { prefetchLoopData } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
 
-export type ReviewRenderSide = 'main' | 'branch'
+type ReviewRenderSide = 'main' | 'branch'
 
 /**
  * HTML of the page row `rowId` as `side` holds it, or null when that side

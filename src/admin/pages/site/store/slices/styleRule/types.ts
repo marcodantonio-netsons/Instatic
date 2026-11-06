@@ -46,21 +46,21 @@ interface ClassStylesPreview {
   styles: Partial<CSSPropertyBag>
 }
 
-export type CssRuleApplyMode = 'merge' | 'replace'
+type CssRuleApplyMode = 'merge' | 'replace'
 
-export interface CssRuleApplyResult {
+interface CssRuleApplyResult {
   created: number
   updated: number
   blockedSelectors: string[]
 }
 
-export interface CssRuleDeleteResult {
+interface CssRuleDeleteResult {
   deleted: number
   missingSelectors: string[]
   blockedSelectors: string[]
 }
 
-export interface CssRulePropertyRemovalResult {
+interface CssRulePropertyRemovalResult {
   updated: number
   removed: number
   missingSelectors: string[]

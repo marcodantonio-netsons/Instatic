@@ -39,7 +39,7 @@ export const DEFAULT_SITE_PACKAGE_JSON: SitePackageJson = {
 }
 
 /** Which bucket a package is declared in, and at what range. Null when the manifest does not list it. */
-export interface DeclaredDependency {
+interface DeclaredDependency {
   range: string
   dev: boolean
 }

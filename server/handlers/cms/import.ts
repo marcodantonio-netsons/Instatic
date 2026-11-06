@@ -316,7 +316,7 @@ export function authorizeImportedShell(user: AuthUser, carriesSite: boolean): Re
   return null
 }
 
-export interface ApplySiteBundleInput {
+interface ApplySiteBundleInput {
   /** The bundle's data. Media bytes, when present, are not read here. */
   bundle: SiteBundle
   strategy: ImportStrategy
@@ -328,7 +328,7 @@ export interface ApplySiteBundleInput {
   carriesMedia: boolean
 }
 
-export interface AppliedSiteBundle {
+interface AppliedSiteBundle {
   tablesAffected: number
   rowsInserted: number
   rowsReplaced: number

@@ -104,6 +104,16 @@ describe('frontend injection — asset attributes', () => {
     ])
   })
 
+  it('uses the shared HTML escaping rule for generated asset attributes', async () => {
+    const plan = await collectFrontendInjections(frontendAssetDb([
+      { kind: 'link', attrs: { rel: 'preconnect', title: `&"'<>` } },
+    ]))
+
+    expect(plan.tags['head-end']).toEqual([
+      '<link rel="preconnect" title="&amp;&quot;&#x27;&lt;&gt;" data-plugin-id="acme.assets">',
+    ])
+  })
+
   it('keeps host-owned asset attributes authoritative', async () => {
     const plan = await collectFrontendInjections(frontendAssetDb([
       {

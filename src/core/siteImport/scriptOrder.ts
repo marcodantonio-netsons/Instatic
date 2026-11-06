@@ -24,7 +24,7 @@ export interface PageScriptSequence {
   paths: string[]
 }
 
-export interface MergedScriptOrder {
+interface MergedScriptOrder {
   /** Every script path from every sequence, in load order. */
   order: string[]
   warnings: ImportWarning[]

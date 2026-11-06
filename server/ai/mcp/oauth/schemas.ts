@@ -24,7 +24,7 @@ const AuthorizationCodeTokenRequestSchema = Type.Object({
   code_verifier: Type.String({ minLength: 43, maxLength: 128 }),
   resource: Type.String({ minLength: 1, maxLength: 4096 }),
 }, { additionalProperties: true })
-export type AuthorizationCodeTokenRequest = Static<typeof AuthorizationCodeTokenRequestSchema>
+type AuthorizationCodeTokenRequest = Static<typeof AuthorizationCodeTokenRequestSchema>
 
 const RefreshTokenRequestSchema = Type.Object({
   grant_type: Type.Literal('refresh_token'),
@@ -33,9 +33,9 @@ const RefreshTokenRequestSchema = Type.Object({
   resource: Type.String({ minLength: 1, maxLength: 4096 }),
   scope: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
 }, { additionalProperties: true })
-export type RefreshTokenRequest = Static<typeof RefreshTokenRequestSchema>
+type RefreshTokenRequest = Static<typeof RefreshTokenRequestSchema>
 
-export type OAuthTokenRequest = AuthorizationCodeTokenRequest | RefreshTokenRequest
+type OAuthTokenRequest = AuthorizationCodeTokenRequest | RefreshTokenRequest
 
 export function parseOAuthTokenRequest(params: URLSearchParams): OAuthTokenRequest | null {
   if (hasDuplicateParameters(params)) return null

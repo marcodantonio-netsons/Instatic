@@ -49,7 +49,7 @@ function shellToStorage(shell: SiteShell): StoredSitePayload {
 }
 
 /** The physical primary key of a branch's shell row. */
-export function siteRowId(scope: BranchScope): string {
+function siteRowId(scope: BranchScope): string {
   return physicalId(scope.branchId, SITE_SHELL_LOGICAL_ID)
 }
 

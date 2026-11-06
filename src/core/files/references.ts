@@ -3,13 +3,13 @@ import type { SiteFile } from './schemas'
 import { publicAssetUrl, PublicAssetValidationError } from './publicAssets'
 
 /** A passive file capability presented to a render, independent of its storage. */
-export const PublicFileReferenceSchema = Type.Object({
+const PublicFileReferenceSchema = Type.Object({
   id: Type.String(),
   path: Type.String(),
   url: Type.String(),
   mimeType: Type.String(),
 })
-export type PublicFileReference = Static<typeof PublicFileReferenceSchema>
+type PublicFileReference = Static<typeof PublicFileReferenceSchema>
 export const PublicFileReferencesSchema = Type.Record(Type.String(), PublicFileReferenceSchema)
 export type PublicFileReferences = Static<typeof PublicFileReferencesSchema>
 

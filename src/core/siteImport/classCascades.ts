@@ -87,7 +87,7 @@ const SHARED_UTILITY_CLASS_PATTERNS = [
  * multiple rules and selectors, so per-definition splitting can break a single
  * grid contract into unrelated names.
  */
-export function isSharedUtilityClassName(name: string): boolean {
+function isSharedUtilityClassName(name: string): boolean {
   return SHARED_UTILITY_CLASS_PATTERNS.some((pattern) => pattern.test(name))
 }
 

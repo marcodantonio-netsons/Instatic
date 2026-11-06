@@ -22,7 +22,7 @@ export interface ConfirmedProviderSelection {
   modelId: string | null
 }
 
-export type ProviderUpdateResult =
+type ProviderUpdateResult =
   | {
       kind: 'confirmed'
       selection: ConfirmedProviderSelection

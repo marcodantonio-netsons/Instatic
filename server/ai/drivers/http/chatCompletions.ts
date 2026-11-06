@@ -32,11 +32,11 @@ import { nanoid } from 'nanoid'
 // Provider-native chat/completions message shapes (request side)
 // ---------------------------------------------------------------------------
 
-export type ChatContentPart =
+type ChatContentPart =
   | { type: 'text'; text: string }
   | { type: 'image_url'; image_url: { url: string } }
 
-export type ChatToolCall = {
+type ChatToolCall = {
   id: string
   type: 'function'
   function: { name: string; arguments: string }
@@ -52,7 +52,7 @@ export type ChatMessage =
 // turn carries text + tool_calls in one message, but several tool results fan
 // out into several `role:'tool'` messages), so the loop's `TMessage` is a
 // message *array* and the request body flattens before sending.
-export type ChatTurn = ChatMessage[]
+type ChatTurn = ChatMessage[]
 
 // ---------------------------------------------------------------------------
 // AiMessage[] → chat/completions messages[]

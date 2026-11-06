@@ -15,7 +15,7 @@
 
 export type RowWriteKind = 'create' | 'update' | 'delete'
 
-export interface RowWriteEvent {
+interface RowWriteEvent {
   branchId: string
   /** Logical table id (`pages`, `components`, …). */
   tableId: string

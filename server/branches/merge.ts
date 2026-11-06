@@ -254,14 +254,14 @@ async function emitContentEvents(db: DbClient, notices: WriteNotices, actorUserI
   }
 }
 
-export interface ApplyMergeInput {
+interface ApplyMergeInput {
   branchId: string
   direction: MergeDirection
   resolutions: Readonly<Record<string, MergeResolution>>
   actorUserId: string | null
 }
 
-export interface ApplyMergeResult {
+interface ApplyMergeResult {
   plan: MergePlan
   /** The record `undoBranchMerge` reverses. */
   merge: BranchMergeRecord
@@ -365,13 +365,13 @@ export class MergeUndoError extends Error {
   }
 }
 
-export interface UndoMergeInput {
+interface UndoMergeInput {
   branchId: string
   direction: MergeDirection
   actorUserId: string | null
 }
 
-export interface UndoMergeResult {
+interface UndoMergeResult {
   merge: BranchMergeRecord
   /** Entities put back on the target. */
   restoredCount: number

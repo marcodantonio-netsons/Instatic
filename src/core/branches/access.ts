@@ -18,7 +18,7 @@
 import type { SiteBranch } from './schemas'
 
 /** The slice of a signed-in user the rule needs. */
-export interface BranchActor {
+interface BranchActor {
   id: string
   capabilities: readonly string[]
 }

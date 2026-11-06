@@ -16,7 +16,7 @@ import type { RowWriteKind } from '../../repositories/rowWriteEvents'
 import type { BranchScope } from '../scope'
 
 export type BranchEntityKind = MergeEntityKind
-export type MergeAction = MergeChange['action']
+type MergeAction = MergeChange['action']
 
 /** One entity of a branch, with the content projection the merge compares and hashes. */
 export interface BranchEntityOf<K extends BranchEntityKind, C> {
@@ -46,7 +46,7 @@ export interface EntitySource {
 /** What a write needs to know about the change it applies. */
 export type EntityRef = Pick<MergeChange, 'kind' | 'logicalId' | 'key' | 'label'>
 
-export interface RowNotice {
+interface RowNotice {
   kind: RowWriteKind
   tableId: string
   rowId: string

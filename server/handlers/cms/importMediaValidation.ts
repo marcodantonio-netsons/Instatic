@@ -22,7 +22,7 @@ import { sanitizeSvgBytes } from './svgSanitize'
  * The fields both import payloads carry — the archive manifest media entry and
  * the JSON `SiteBundle` media asset both satisfy this shape.
  */
-export interface ImportMediaDescriptor {
+interface ImportMediaDescriptor {
   storagePath: string
   mimeType: string
 }

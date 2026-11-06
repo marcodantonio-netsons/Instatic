@@ -9,9 +9,9 @@ import {
 export const SIDEBAR_MIN_WIDTH = 300
 export const SIDEBAR_MAX_WIDTH = 520
 export const LEFT_SIDEBAR_DEFAULT_WIDTH = 320
-export const RIGHT_SIDEBAR_DEFAULT_WIDTH = 360
+const RIGHT_SIDEBAR_DEFAULT_WIDTH = 360
 
-export interface WorkspacePanelState {
+interface WorkspacePanelState {
   collapsed: boolean
   width: number
 }

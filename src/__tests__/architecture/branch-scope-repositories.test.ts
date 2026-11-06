@@ -41,7 +41,6 @@ const SCOPED_REPOSITORY_FILES = [
 const SCOPELESS_REPOSITORY_FUNCTIONS = new Set([
   'listDuePublishSchedules', // §1
   'listDataAuthorOptions', // §2
-  'siteRowId', // helper that derives the physical shell key from a scope
 ])
 
 /**
