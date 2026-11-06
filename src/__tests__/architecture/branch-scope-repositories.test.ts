@@ -27,7 +27,6 @@ const SCOPED_REPOSITORY_FILES = [
   'server/repositories/data/rows/mutations.ts',
   'server/repositories/data/rows/bulk.ts',
   'server/repositories/data/rows/apply.ts',
-  'server/repositories/data/rows/filter.ts',
   'server/repositories/data/rows/search.ts',
   'server/repositories/data/rows/schedule.ts',
   'server/repositories/data/rows/import.ts',

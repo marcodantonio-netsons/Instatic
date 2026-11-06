@@ -83,7 +83,8 @@ export const TARGET_PERMISSIONS = {
   'cms.content.tree.read': 'cms.content.read',
   'cms.content.tree.mutate': 'cms.content.write',
   'cms.content.tree.replace': 'cms.content.write',
-  'cms.content.search': 'cms.content.read',
+  'cms.content.query': 'cms.content.read',
+  'cms.content.relations': 'cms.content.read',
   'cms.content.snapshot': 'cms.content.read',
   'cms.content.republishAll': 'cms.content.publish',
 } satisfies Partial<Record<AllowedApiTarget, PluginPermission>>

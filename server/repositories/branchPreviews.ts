@@ -63,15 +63,15 @@ export async function getActiveBranchPreview(db: DbClient, branchId: string): Pr
 }
 
 /** The branch an active token grants access to, or null. */
-export async function resolveBranchPreviewToken(db: DbClient, tokenHash: string): Promise<string | null> {
-  const { rows } = await db<{ branch_id: string }>`
-    select branch_id
+export async function resolveBranchPreviewToken(db: DbClient, tokenHash: string): Promise<BranchPreview | null> {
+  const { rows } = await db<BranchPreviewRow>`
+    select id, branch_id, created_by_user_id, created_at
     from site_branch_previews
     where token_hash = ${tokenHash}
       and revoked_at is null
     limit 1
   `
-  return rows[0]?.branch_id ?? null
+  return rows[0] ? mapPreview(rows[0]) : null
 }
 
 /** Retire every active link of a branch; returns how many were active. */

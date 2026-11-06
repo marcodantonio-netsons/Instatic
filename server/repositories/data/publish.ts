@@ -8,10 +8,7 @@
  *                                   changed) record a redirect from the
  *                                   previous public path
  *   getPublishedDataRowByRoute    — resolve a public URL to the active
- *                                   published version of a row; resolves
- *                                   `featuredMediaPath` via a second query
- *                                   against `media_assets` (app code reads the
- *                                   cell value — SQL stays dialect-naive)
+ *                                   identity of a row, before payload admission
  *   getDataRowRedirectByRoute     — resolve a public URL to a redirect target
  *                                   when the URL belongs to a
  *                                   previously-published slug
@@ -26,40 +23,25 @@
 import { nanoid } from 'nanoid'
 import { placeholder, type DbClient } from '../../db/client'
 import { MAIN_SCOPE } from '../../branches/scope'
-import { userRefColumns, userRefJoin } from './shared'
-import { normalizeDataTableFields } from '@core/data/fields'
-import type { DataRow, DataRowVersion, DataRowRedirect, PublishedDataRow } from '@core/data/schemas'
+import type { DataRow, DataRowVersion, DataRowRedirect } from '@core/data/schemas'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
-import { readFeaturedMediaCell } from '@core/data/cells'
 import { getDataRow } from './rows'
 import { nextDataRowVersionNumber } from './versions'
+import { DataRowRouteIdentitySchema, type DataRowRouteIdentity } from '@core/data-read'
+import { safeParseValue } from '@core/utils/typeboxHelpers'
 import { isoDate, nowIso } from '@core/utils/isoDate'
 
 // ---------------------------------------------------------------------------
 // Internal row shapes
 // ---------------------------------------------------------------------------
 
-interface PublishedDataRowQueryRow {
-  id: string
+interface PublishedDataRowIdentityRow {
+  version_id: string | null
+  version_number: number | string | null
   row_id: string
   table_id: string
   table_slug: string
-  table_kind: string
-  fields_json: unknown
-  table_route_base: string
-  version_number: number
-  cells_json: Record<string, unknown>
   slug: string
-  author_user_id?: string | null
-  author_display_name?: string | null
-  author_role_slug?: string | null
-  author_role_name?: string | null
-  published_by_user_id?: string | null
-  published_by_display_name?: string | null
-  published_by_role_slug?: string | null
-  published_by_role_name?: string | null
-  published_at: string | Date
-  created_at: string | Date
 }
 
 interface PreviousPublishedRouteRow {
@@ -73,10 +55,6 @@ interface DataRowRedirectRow {
   from_slug: string
   target_route_base: string
   target_slug: string
-}
-
-interface MediaAssetRow {
-  public_path: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -337,105 +315,38 @@ export async function listPublishedRowRoutes(db: DbClient): Promise<PublishedRow
   }))
 }
 
-/**
- * Resolve a public URL (tableRouteBase + rowSlug) to the active published
- * version of a data row.
- *
- * `featuredMediaPath` is resolved in app code: first we read
- * `cells.featuredMedia` (via `readFeaturedMediaCell`) from the version's
- * `cells_json`, then — only when a media id is present — we do a second
- * query against `media_assets` for the `public_path`. This keeps the primary
- * query dialect-naive (no JSON-extract functions, no PG-specific operators).
- */
+/** Resolve only the native active identity, before reading schema, cells or people. */
 export async function getPublishedDataRowByRoute(
-  db: DbClient,
-  tableRouteBase: string,
-  rowSlug: string,
-): Promise<PublishedDataRow | null> {
-  const normalizedBase = normalizeRouteBase(tableRouteBase)
-
-  // The author/publisher user-ref joins reuse the shared `userRefColumns` /
-  // `userRefJoin` fragments (the single source, also spliced by the hydrated
-  // data-row SELECT in `rows/mapper.ts`). The publisher join targets
-  // `data_row_versions.published_by_user_id` — the per-version publisher — not
-  // `data_rows.published_by_user_id`. SQL stays dialect-naive (ANSI joins,
-  // positional `placeholder()` binds).
+  db: DbClient, tableRouteBase: string, rowSlug: string,
+): Promise<DataRowRouteIdentity | null> {
   const p = (n: number) => placeholder(db.dialect, n)
-  const { rows } = await db.unsafe<PublishedDataRowQueryRow>(
-    `select data_row_versions.id,
-           data_row_versions.row_id,
-           data_rows.table_id,
-           data_tables.slug as table_slug,
-           data_tables.kind as table_kind,
-           data_tables.fields_json,
-           data_tables.route_base as table_route_base,
-           data_row_versions.version_number,
-           data_row_versions.cells_json,
-           data_row_versions.slug,
-           data_rows.author_user_id,
-           ${userRefColumns('author')},
-           data_row_versions.published_by_user_id,
-           ${userRefColumns('published_by')},
-           data_row_versions.published_at,
-           data_row_versions.created_at
-    from data_rows
-    join data_tables on data_tables.id = data_rows.table_id
-    join data_row_versions on data_row_versions.id = data_rows.active_version_id
-    ${userRefJoin('author', 'data_rows.author_user_id')}
-    ${userRefJoin('published_by', 'data_row_versions.published_by_user_id')}
-    where data_tables.route_base = ${p(1)}
-      and data_row_versions.slug = ${p(2)}
-      and data_rows.status = 'published'
-      and data_rows.deleted_at is null
-      and data_tables.deleted_at is null
-    limit 1`,
-    [normalizedBase, rowSlug],
+  const { rows } = await db.unsafe<PublishedDataRowIdentityRow>(
+    `select case when data_tables.kind = 'data' then null else data_row_versions.id end as version_id,
+            case when data_tables.kind = 'data' then null else data_row_versions.version_number end as version_number,
+            data_rows.logical_id as row_id,
+            data_tables.logical_id as table_id,
+            data_tables.slug as table_slug,
+            case when data_tables.kind = 'data' then data_rows.slug else data_row_versions.slug end as slug
+     from data_rows
+     join data_tables on data_tables.id = data_rows.table_id
+     left join data_row_versions on data_row_versions.id = data_rows.active_version_id
+     where data_tables.route_base = ${p(1)}
+       and (case when data_tables.kind = 'data' then data_rows.slug else data_row_versions.slug end) = ${p(2)}
+       and data_rows.branch_id = ${p(3)}
+       and (data_tables.kind = 'data' or (data_rows.status = 'published' and data_row_versions.id is not null))
+       and data_rows.deleted_at is null
+       and data_tables.deleted_at is null
+     limit 1`,
+    [normalizeRouteBase(tableRouteBase), rowSlug, MAIN_SCOPE.branchId],
   )
-
   if (!rows[0]) return null
-
-  const queryRow = rows[0]
-  const cells = queryRow.cells_json
-
-  // Resolve featuredMediaPath in app code: read the cell value, then do a
-  // second query only when a media id is present. This avoids any
-  // dialect-specific JSON extraction in the primary query.
-  const featuredMediaId = readFeaturedMediaCell(cells)
-  let featuredMediaPath: string | null = null
-
-  if (featuredMediaId) {
-    const { rows: mediaRows } = await db<MediaAssetRow>`
-      select public_path from media_assets
-      where id = ${featuredMediaId}
-      limit 1
-    `
-    featuredMediaPath = mediaRows[0]?.public_path ?? null
-  }
-
-  return {
-    id: queryRow.id,
-    rowId: queryRow.row_id,
-    tableId: queryRow.table_id,
-    tableSlug: queryRow.table_slug,
-    tableKind: queryRow.table_kind as PublishedDataRow['tableKind'],
-    tableFields: normalizeDataTableFields(queryRow.fields_json),
-    tableRouteBase: normalizeRouteBase(queryRow.table_route_base),
-    versionNumber: Number(queryRow.version_number),
-    cells,
-    slug: queryRow.slug,
-    featuredMediaId,
-    featuredMediaPath,
-    authorUserId: queryRow.author_user_id ?? null,
-    authorName: queryRow.author_display_name ?? null,
-    authorRoleSlug: queryRow.author_role_slug ?? null,
-    authorRoleName: queryRow.author_role_name ?? null,
-    publishedByUserId: queryRow.published_by_user_id ?? null,
-    publishedByName: queryRow.published_by_display_name ?? null,
-    publishedByRoleSlug: queryRow.published_by_role_slug ?? null,
-    publishedByRoleName: queryRow.published_by_role_name ?? null,
-    publishedAt: isoDate(queryRow.published_at),
-    createdAt: isoDate(queryRow.created_at),
-  }
+  const row = rows[0]
+  const parsed = safeParseValue(DataRowRouteIdentitySchema, {
+    tableId: row.table_id, tableSlug: row.table_slug, rowId: row.row_id, slug: row.slug,
+    version: row.version_id === null ? null : { id: row.version_id, number: Number(row.version_number) },
+  })
+  if (!parsed.ok) throw new Error('The stored public row route identity is invalid')
+  return parsed.value
 }
 
 export async function getDataRowRedirectByRoute(

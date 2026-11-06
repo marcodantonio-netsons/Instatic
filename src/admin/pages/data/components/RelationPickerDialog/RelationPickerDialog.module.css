@@ -15,12 +15,66 @@
     flex-shrink: 0;
 }
 
-.loadingState {
+.loadMore {
+    align-self: center;
+    flex-shrink: 0;
+}
+
+.selection {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--space-7xl) 0;
+    flex-direction: column;
+    gap: var(--space-xs);
+    min-width: 0;
+}
+
+.count {
+    margin: 0;
     color: var(--text-subtle);
+}
+
+.selectedList {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.selectedRow {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4xs);
+    padding: var(--space-xs);
+    border-radius: var(--editor-radius);
+    background: var(--editor-surface-2);
+    min-width: 0;
+}
+
+.selectedTitle {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-xs);
+    min-width: 0;
+}
+
+.position {
+    flex-shrink: 0;
+    color: var(--text-subtle);
+}
+
+.rowError {
+    margin: 0;
+    color: var(--text-subtle);
+    overflow-wrap: anywhere;
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-4xs);
 }
 
 .list {

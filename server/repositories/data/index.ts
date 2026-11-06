@@ -31,10 +31,11 @@ export {
 
 export {
   listDataRows,
+  readDataRowRecords,
+  readDataRowIdentity,
   listDataRowIdSlugs,
   listDataRowSeqs,
   listChangedDataRowRefsSince,
-  listDataRowsWithFilter,
   searchDataRows,
   getDataRow,
   getDataRowMany,
@@ -73,3 +74,11 @@ export {
   type DataRowVersionSummary,
 } from './versions'
 export { readDataLocalization, readPluginDataLocalization, readableLocalizedDataKeys, assertLocalizedDataPrincipalWrite } from './localization'
+export {
+  canReadDataTable, canReadDataEntry, listDataTableIdentities, readDataTableIdentities, readDataTableIdentityByRouteBase,
+  DataReadSnapshot, materializeDataRelations, readDataCollection,
+  readDataRenderTree, readRegisteredLoopSource,
+  readDataRenderView, resolveDataRenderTarget, type DataRenderTarget,
+  compilePublishedDataReadPlan, assertPublishedDataReadPlan, assertActivePublishedDataReadPlans, publishedDataScopeId,
+  type DataReadAuthority, type DataReadSnapshotOptions,
+} from './read-view'

@@ -82,6 +82,8 @@ export interface RenderConfig {
   readonly registry: IModuleRegistry
   readonly breakpointId: string | undefined
   readonly templateContext?: TemplateRenderDataContext
+  /** Canonical materialized VC-instance path; ordinary loop iterations retain it. */
+  readonly renderTreePrefix?: string
   /**
    * Pre-fetched media assets, keyed by `public_path`. Populated by
    * `server/publish/mediaPrefetch.ts` before `publishPage()` is called.
@@ -90,7 +92,7 @@ export interface RenderConfig {
    */
   readonly mediaAssets?: ReadonlyMap<string, RenderResolvedMedia>
   /**
-   * Pre-fetched loop data, keyed by loop nodeId. Populated by
+   * Pre-fetched loop data, keyed by instance path and native entry stack. Populated by
    * `server/publish/loopPrefetch.ts` before `publishPage()` is called.
    * Loops without an entry here render empty.
    */

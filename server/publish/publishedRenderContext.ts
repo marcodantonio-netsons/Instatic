@@ -1,14 +1,14 @@
 import type { Page } from '@core/page-tree'
-import type { PublishedDataRow } from '@core/data/schemas'
+import type { MaterializedDataEntry } from '@core/data-read'
 import {
   buildTemplateRenderContext,
   composeTemplateChain,
   resolveTemplateChain,
   type TemplateRenderDataContext,
+  buildRouteFrame,
 } from '@core/templates'
-import { buildRouteFrame } from '@core/templates/contextFrames'
-import type { PublishedPageSnapshot } from '../repositories/publish'
-import { publishedDataRowToLoopItem } from './loopPrefetch'
+import type { PublishedPageSnapshot } from '../repositories/publishedSnapshot'
+import { dataEntryToLoopItem } from '@core/loops'
 
 export interface PublishedRenderContext {
   page: Page
@@ -32,19 +32,16 @@ export function buildPublishedPageRenderContext(
   }
 }
 
-/** Entry routes seed the published row before any loop iteration is appended. */
+/** A certified projection seeds the actual native row before any loop iteration. */
 export function buildPublishedEntryRenderContext(
   snapshot: PublishedPageSnapshot,
-  row: PublishedDataRow,
+  entry: MaterializedDataEntry,
   url?: URL,
 ): PublishedRenderContext | null {
-  const chain = resolveTemplateChain(snapshot.site, { kind: 'entry', tableSlug: row.tableSlug })
+  const chain = resolveTemplateChain(snapshot.site, { kind: 'entry', tableSlug: entry.tableSlug })
   if (chain.length === 0) return null
-  const merged = composeTemplateChain(chain, { kind: 'entry' })
-  if (typeof row.cells.title === 'string') merged.title = row.cells.title
-  const templateContext = buildTemplateRenderContext(merged, snapshot.site, {
-    entryStack: [], ...(url ? { route: buildRouteFrame(url.toString()) } : {}),
-  })
-  const localization = templateContext.site?.language ? { language: templateContext.site.language, translations: templateContext.site.translations } : undefined
-  return { page: merged, templateContext: { ...templateContext, entryStack: [publishedDataRowToLoopItem(row, localization)] } }
+  const page = { ...composeTemplateChain(chain, { kind: 'entry' }), title: entry.title }
+  return { page, templateContext: buildTemplateRenderContext(page, snapshot.site, {
+    entryStack: [dataEntryToLoopItem(entry)], ...(url ? { route: buildRouteFrame(url.toString()) } : {}),
+  }) }
 }

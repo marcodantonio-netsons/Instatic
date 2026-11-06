@@ -173,9 +173,10 @@ export async function getDataRow(
   db: DbClient,
   scope: BranchScope,
   rowId: string,
+  visibility: { includeDeleted?: boolean } = {},
 ): Promise<DataRow | null> {
   const rows = await selectHydratedDataRows(db, scope, {
-    where: `data_rows.id = ${placeholder(db.dialect, 1)} and data_rows.deleted_at is null`,
+    where: `data_rows.id = ${placeholder(db.dialect, 1)}${visibility.includeDeleted ? '' : ' and data_rows.deleted_at is null'}`,
     params: [physicalId(scope.branchId, rowId)],
     tail: 'limit 1',
   })
@@ -183,20 +184,23 @@ export async function getDataRow(
 }
 
 /**
- * Read many non-deleted hydrated rows by id in ONE IN-list query. Rows come
+ * Read many hydrated rows by id in ONE IN-list query. Rows come
  * back in no particular order — callers index them by id; an id absent from
- * the result is missing or soft-deleted. Used by the bulk plugin-content
+ * the result is missing or, by default, soft-deleted. Internal restore/undo
+ * boundaries may explicitly include tombstones without a second mapper.
+ * Used by the bulk plugin-content
  * handlers to validate/diff a batch without one round-trip per row.
  */
 export async function getDataRowMany(
   db: DbClient,
   scope: BranchScope,
   rowIds: ReadonlyArray<string>,
+  visibility: { includeDeleted?: boolean } = {},
 ): Promise<DataRow[]> {
   if (rowIds.length === 0) return []
   const placeholders = rowIds.map((_, i) => placeholder(db.dialect, i + 1)).join(', ')
   return selectHydratedDataRows(db, scope, {
-    where: `data_rows.id in (${placeholders}) and data_rows.deleted_at is null`,
+    where: `data_rows.id in (${placeholders})${visibility.includeDeleted ? '' : ' and data_rows.deleted_at is null'}`,
     params: rowIds.map((rowId) => physicalId(scope.branchId, rowId)),
   })
 }

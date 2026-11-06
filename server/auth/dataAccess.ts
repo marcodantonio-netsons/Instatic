@@ -146,6 +146,11 @@ export function hasContentRowAccess(user: DataAccessUser): boolean {
   return userHasAnyCapability(user, DATA_ACCESS_CAPABILITIES)
 }
 
+/** A collection reader needs an own/any read grant; creation alone grants no row visibility. */
+export function canReadDataRows(user: DataAccessUser): boolean {
+  return userHasAnyCapability(user, [...DATA_ANY_VISIBILITY_CAPABILITIES, ...DATA_OWN_READ_CAPABILITIES])
+}
+
 /**
  * Cross-collection row move — `PATCH /data/rows/:id/table`. Split out
  * because moving a row to a different table changes its public URL
@@ -176,21 +181,21 @@ export function canSeeAllDataRows(user: DataAccessUser): boolean {
   return userHasAnyCapability(user, DATA_ANY_VISIBILITY_CAPABILITIES)
 }
 
-function ownsDataRow(user: DataAccessUser, row: OwnedDataRow): boolean {
-  return row.authorUserId === user.id || (!row.authorUserId && row.createdByUserId === user.id)
+export function ownsDataRow(userId: string, row: OwnedDataRow): boolean {
+  return row.authorUserId === userId || (!row.authorUserId && row.createdByUserId === userId)
 }
 
 export function canReadDataRow(user: DataAccessUser, row: OwnedDataRow): boolean {
   return canSeeAllDataRows(user) ||
-    (ownsDataRow(user, row) && userHasAnyCapability(user, DATA_OWN_READ_CAPABILITIES))
+    (ownsDataRow(user.id, row) && userHasAnyCapability(user, DATA_OWN_READ_CAPABILITIES))
 }
 
 export function canEditDataRow(user: DataAccessUser, row: OwnedDataRow): boolean {
   return userHasAnyCapability(user, ['content.edit.any', 'content.manage']) ||
-    (ownsDataRow(user, row) && userHasCapability(user, 'content.edit.own'))
+    (ownsDataRow(user.id, row) && userHasCapability(user, 'content.edit.own'))
 }
 
 export function canPublishDataRow(user: DataAccessUser, row: OwnedDataRow): boolean {
   return userHasCapability(user, 'content.publish.any') ||
-    (ownsDataRow(user, row) && userHasCapability(user, 'content.publish.own'))
+    (ownsDataRow(user.id, row) && userHasCapability(user, 'content.publish.own'))
 }

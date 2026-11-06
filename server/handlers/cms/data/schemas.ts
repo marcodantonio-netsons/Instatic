@@ -6,7 +6,7 @@
  * doesn't match before any repository code runs.
  *
  * `fields` (on table create / patch) is intentionally `Type.Unknown()`
- * because `normalizeDataTableFields` is the source of truth for that shape —
+ * because `parseDataTableFields` is the source of truth for that shape —
  * it tolerates partial / legacy payloads and coerces them into the canonical
  * `DataField[]`. Locking the schema here would force us to keep two
  * definitions in sync.

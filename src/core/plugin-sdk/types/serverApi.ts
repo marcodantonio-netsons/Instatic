@@ -7,8 +7,7 @@ import type {
   ContentEntry,
   ContentListOptions,
   ContentListResult,
-  ContentSearchOptions,
-  ContentSearchResults,
+  ContentReadOptions,
   ContentTableSchema,
   ContentTableSummary,
   ContentTreeOperation,
@@ -18,6 +17,7 @@ import type {
   TreeMutateResult,
   UpdateContentEntryInput,
 } from '../contentSchemas'
+import type { DataCollectionQuery, DataCollectionResult, DataRelationReadInput, DataRelationsReadResponse } from '@core/data-read'
 import type { ServerPluginHooksApi } from './hooks'
 import type { LoopEntitySource } from './loops'
 import type { ServerPluginMediaApi } from './media'
@@ -138,9 +138,8 @@ export interface ServerPluginApi {
      * Schema introspection lives in `content.tables`; tree mutations on
      * `pageTree`-typed fields go through `content.tree(entryId, fieldId)`
      * — the host dispatches each operation through the same engine
-     * (`applyTreeOperation`) the visual editor uses. Cross-table
-     * helpers (`search`, `getPublishedSnapshot`, `republishAll`) round
-     * out the surface.
+     * (`applyTreeOperation`) the visual editor uses. Native `query` and
+     * `relations` derive authorized content in an explicit view/language.
      *
      * Each method asserts both the granted permission (`cms.content.*`)
      * AND the table allowlist entry in the manifest's `contentAccess[]`.
@@ -174,7 +173,8 @@ export interface ServerPluginApi {
         mutate: (operations: ReadonlyArray<ContentTreeOperation>) => Promise<TreeMutateResult>
         replace: (tree: unknown) => Promise<void>
       }
-      search: (query: string, options?: ContentSearchOptions) => Promise<ContentSearchResults>
+      query: (query: DataCollectionQuery, options: ContentReadOptions) => Promise<DataCollectionResult>
+      relations: (requests: ReadonlyArray<DataRelationReadInput>, options: ContentReadOptions) => Promise<DataRelationsReadResponse>
       getPublishedSnapshot: (entryId: string) => Promise<PublishedSnapshot | null>
       republishAll: () => Promise<{ count: number }>
     }

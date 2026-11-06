@@ -13,11 +13,8 @@
 
 import type { PageNode } from '@core/page-tree'
 import {
-  ENTRY_FIELD_FILTER_KEY,
-  ENTRY_FIELD_SOURCE_ID,
   LOOP_LOADING_LABEL_DEFAULTS,
-  resolveEntryFieldItems,
-  type EntryFieldMedia,
+  loopReadKey,
   type LoopItem,
 } from '@core/loops'
 import type { TemplateRenderDataContext } from '@core/templates'
@@ -149,31 +146,5 @@ export function renderLoop(
 }
 
 function resolveLoopData(node: PageNode, config: RenderConfig) {
-  if (node.props.sourceId !== ENTRY_FIELD_SOURCE_ID) {
-    return config.loopData?.get(node.id)
-  }
-
-  const filters = node.props.filters
-  const fieldId =
-    filters && typeof filters === 'object' && !Array.isArray(filters)
-      ? (filters as Record<string, unknown>)[ENTRY_FIELD_FILTER_KEY]
-      : undefined
-  if (typeof fieldId !== 'string' || !fieldId) {
-    return { items: [], totalItems: 0, pageNumber: 1, hasMore: false }
-  }
-
-  const stack = config.templateContext?.entryStack ?? []
-  const entry = stack[stack.length - 1]
-  const value = entry?.fields[fieldId]
-  const resolved = resolveEntryFieldItems(value, {
-    offset: typeof node.props.offset === 'number' ? node.props.offset : 0,
-    limit: typeof node.props.limit === 'number' ? node.props.limit : 10,
-    direction: node.props.direction === 'desc' ? 'desc' : 'asc',
-    mediaByReference: config.mediaAssets as ReadonlyMap<string, EntryFieldMedia> | undefined,
-  })
-  return {
-    ...resolved,
-    pageNumber: 1,
-    hasMore: false,
-  }
+  return config.loopData?.get(loopReadKey(`${config.renderTreePrefix ?? ''}${node.id}`, config.templateContext?.entryStack ?? []))
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'bun:test'
+import { describe, expect, it, beforeEach, afterEach } from 'bun:test'
 import { createSqliteClient } from '../../../db/sqlite'
 import { sqliteMigrations } from '../../../db/migrations-sqlite'
 import { runMigrations } from '../../../db/runMigrations'
@@ -8,15 +8,45 @@ import {
   getDataTable,
   insertDataTableIfAbsent,
   listDataTables,
+  listDataTablesWithCounts,
   updateDataTable,
 } from '../tables'
 import { MAIN_SCOPE } from '../../../branches/scope'
+import { listDataTableIdentities } from '../read-view'
+import { DataFieldValidationError } from '@core/data/fields'
 
 async function freshDb(): Promise<DbClient> {
   const db = createSqliteClient(':memory:')
   await runMigrations(db, sqliteMigrations)
   return db
 }
+
+describe('data table identity admission', () => {
+  let db: DbClient
+
+  beforeEach(async () => { db = await freshDb() })
+  afterEach(async () => { await db.close() })
+
+  it('loads strict fields only for explicitly admitted table identities', async () => {
+    const table = await createDataTable(db, MAIN_SCOPE, {
+      id: 'readable-table', name: 'Readable', slug: 'readable-table', singularLabel: 'Entry', pluralLabel: 'Entries',
+      fields: [{ id: 'heading', label: 'Heading', type: 'text' }],
+    })
+    await db`UPDATE data_tables SET fields_json = ${[{ id: 'private-field', label: 'Private field', type: 'unknown-private-type' }]} WHERE id = ${'posts'}`
+    const identities = await listDataTableIdentities(db, MAIN_SCOPE)
+    expect(identities.find(identity => identity.id === 'posts')).toEqual({ id: 'posts', slug: 'posts', kind: 'postType', system: true })
+    expect(await listDataTables(db, MAIN_SCOPE, { tableIds: [table.id] })).toEqual([table])
+    expect(await listDataTablesWithCounts(db, MAIN_SCOPE, { tableIds: [table.id] })).toEqual([{ ...table, rowCount: 0 }])
+    await expect(listDataTables(db, MAIN_SCOPE)).rejects.toBeInstanceOf(DataFieldValidationError)
+  })
+
+  it('returns an explicitly empty admission without touching the database', async () => {
+    const closed = createSqliteClient(':memory:')
+    await closed.close()
+    expect(await listDataTables(closed, MAIN_SCOPE, { tableIds: [] })).toEqual([])
+    expect(await listDataTablesWithCounts(closed, MAIN_SCOPE, { tableIds: [] })).toEqual([])
+  })
+})
 
 describe('data_tables.system column', () => {
   let db: DbClient

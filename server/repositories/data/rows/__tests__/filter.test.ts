@@ -1,221 +1,164 @@
-import { describe, expect, it, beforeEach } from 'bun:test'
-import { createSqliteClient } from '../../../../db/sqlite'
-import { sqliteMigrations } from '../../../../db/migrations-sqlite'
-import { runMigrations } from '../../../../db/runMigrations'
-import type { DbClient } from '../../../../db/client'
-import { listDataRowsWithFilter } from '../filter'
-import { MAIN_SCOPE } from '../../../../branches/scope'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { createCapabilityTestHarness, type CapabilityTestHarness } from '../../../../../src/__tests__/helpers/capabilityHarness'
+import type { DataCollectionQuery } from '@core/data-read'
+import { RelationResolutionError, RelationValidationError } from '@core/data-read'
 import { LocalizationError } from '@core/localization'
-import type { DataLocalizationContext } from '@core/data/localizedCells'
+import type { DbClient } from '../../../../db/client'
+import { MAIN_SCOPE } from '../../../../branches/scope'
+import { createDataRow, createDataTable, getDataRow } from '../../index'
+import { DataReadSnapshot, readDataCollection, type DataReadAuthority } from '../../read-view'
+import { getDraftSiteDocument } from '../../../publish'
+import { saveDraftSite } from '../../../site'
 
-/**
- * Wrap a DbClient so every `db.unsafe()` call is counted. The hydrated SELECT
- * and the dynamic filter both run through `db.unsafe()`, so the counter is a
- * faithful proxy for "round-trips to hydrate a filtered page".
- */
-function countingDb(inner: DbClient): { db: DbClient; counts: { unsafe: number } } {
-  const counts = { unsafe: 0 }
-  const wrapped = ((strings: TemplateStringsArray, ...values: unknown[]) =>
-    inner(strings, ...values)) as DbClient
-  wrapped.unsafe = (sql: string, params?: unknown[]) => {
-    counts.unsafe++
+/** Counts actual row storage reads, retaining the authoritative adapter. */
+function countingRows(inner: DbClient) {
+  const counts = { reads: 0 }
+  const wrapped = ((strings: TemplateStringsArray, ...values: unknown[]) => inner(strings, ...values)) as DbClient
+  wrapped.unsafe = (sql, params) => {
+    if (/from\s+data_rows\b/i.test(sql)) counts.reads++
     return inner.unsafe(sql, params)
   }
-  wrapped.transaction = (cb) => inner.transaction(cb)
+  wrapped.transaction = cb => inner.transaction(cb)
   return { db: Object.assign(wrapped, { dialect: inner.dialect }), counts }
 }
 
-const USER_ID = 'user-author'
-
-async function seedUser(db: DbClient): Promise<void> {
-  await db`
-    insert into users (id, email, email_normalized, display_name, password_hash, status, role_id)
-    values (${USER_ID}, ${'author@example.com'}, ${'author@example.com'}, ${'Author Person'}, ${'x'}, ${'active'}, ${'owner'})
-  `
-}
-
-interface SeedRow {
-  id: string
-  title: string
-  status: 'draft' | 'published' | 'unpublished'
-  updatedAt: string
-  deleted?: boolean
-}
-
-async function seedRow(db: DbClient, row: SeedRow): Promise<void> {
-  await db`
-    insert into data_rows (id, table_id, cells_json, slug, status, author_user_id, created_at, updated_at, deleted_at)
-    values (
-      ${row.id},
-      ${'posts'},
-      ${{ title: row.title, slug: row.id }},
-      ${row.id},
-      ${row.status},
-      ${USER_ID},
-      ${row.updatedAt},
-      ${row.updatedAt},
-      ${row.deleted ? '2024-12-31T00:00:00.000Z' : null}
-    )
-  `
-}
-
-async function freshDb(): Promise<DbClient> {
-  const db = createSqliteClient(':memory:')
-  await runMigrations(db, sqliteMigrations)
-  await seedUser(db)
-  return db
-}
-
-describe('listDataRowsWithFilter', () => {
-  let db: DbClient
+describe('authorized native collection filtering', () => {
+  let harness: CapabilityTestHarness
+  let ownerId: string
+  let ownerEmail: string
+  const authority: DataReadAuthority = { kind: 'plugin', manifest: {
+    id: 'test.native-filter', grantedPermissions: ['cms.content.read'], contentAccess: [{ table: 'records', modes: ['read'] }],
+  } }
 
   beforeEach(async () => {
-    db = await freshDb()
-    // Four live rows + one soft-deleted row. updated_at controls default order.
-    await seedRow(db, { id: 'alpha', title: 'Alpha', status: 'published', updatedAt: '2024-01-01T00:00:00.000Z' })
-    await seedRow(db, { id: 'beta', title: 'Beta', status: 'draft', updatedAt: '2024-02-01T00:00:00.000Z' })
-    await seedRow(db, { id: 'gamma', title: 'Gamma', status: 'published', updatedAt: '2024-03-01T00:00:00.000Z' })
-    await seedRow(db, { id: 'deleted', title: 'Deleted', status: 'published', updatedAt: '2024-05-01T00:00:00.000Z', deleted: true })
-    await seedRow(db, { id: 'delta', title: 'Delta', status: 'published', updatedAt: '2024-04-01T00:00:00.000Z' })
-  })
-
-  it('returns live rows in default updated_at-desc order, excluding soft-deleted', async () => {
-    const { rows, totalCount } = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts')
-    expect(rows.map((r) => r.id)).toEqual(['delta', 'gamma', 'beta', 'alpha'])
-    expect(totalCount).toBe(4)
-  })
-
-  it('hydrates the author user reference', async () => {
-    const { rows } = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { filter: { title: 'Alpha' } })
-    expect(rows).toHaveLength(1)
-    expect(rows[0].id).toBe('alpha')
-    expect(rows[0].authorUserId).toBe(USER_ID)
-    expect(rows[0].author?.displayName).toBe('Author Person')
-    expect(rows[0].author?.email).toBe('author@example.com')
-    expect(rows[0].cells.title).toBe('Alpha')
-  })
-
-  it('paginates with limit + offset while preserving order', async () => {
-    const { rows, totalCount } = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { limit: 2, offset: 1 })
-    expect(rows.map((r) => r.id)).toEqual(['gamma', 'beta'])
-    expect(totalCount).toBe(4)
-  })
-
-  it('filters by status', async () => {
-    const { rows, totalCount } = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { status: 'published' })
-    expect(rows.map((r) => r.id)).toEqual(['delta', 'gamma', 'alpha'])
-    expect(totalCount).toBe(3)
-  })
-
-  it('filters by a cells_json field (where condition)', async () => {
-    const { rows, totalCount } = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { filter: { title: 'Gamma' } })
-    expect(rows.map((r) => r.id)).toEqual(['gamma'])
-    expect(totalCount).toBe(1)
-  })
-
-  it('returns an empty result set without error', async () => {
-    const { rows, totalCount } = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { filter: { title: 'Nonexistent' } })
-    expect(rows).toEqual([])
-    expect(totalCount).toBe(0)
-  })
-
-  it('honors custom orderBy on row-level columns', async () => {
-    const { rows } = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { orderBy: { created_at: 'asc' } })
-    expect(rows.map((r) => r.id)).toEqual(['alpha', 'beta', 'gamma', 'delta'])
-  })
-
-  it('issues a bounded number of queries that does NOT scale with row count', async () => {
-    // Small dataset.
-    const small = countingDb(db)
-    const smallResult = await listDataRowsWithFilter(small.db, MAIN_SCOPE, 'posts', { limit: 500 })
-    expect(smallResult.rows).toHaveLength(4)
-
-    // Large dataset — many more matching rows.
-    const bigDb = await freshDb()
-    for (let i = 0; i < 50; i++) {
-      await seedRow(bigDb, {
-        id: `row-${i}`,
-        title: `Row ${i}`,
-        status: 'published',
-        updatedAt: `2025-01-${String((i % 28) + 1).padStart(2, '0')}T00:00:00.000Z`,
-      })
+    harness = await createCapabilityTestHarness()
+    await harness.setupOwner()
+    const { rows: [owner] } = await harness.db<{ id: string; email: string }>`SELECT id, email FROM users`
+    ownerId = owner.id
+    ownerEmail = owner.email
+    await harness.db`UPDATE users SET display_name = ${'Author Person'} WHERE id = ${ownerId}`
+    await createDataTable(harness.db, MAIN_SCOPE, {
+      id: 'query-records', name: 'Records', slug: 'records', kind: 'data', primaryFieldId: 'title',
+      singularLabel: 'Record', pluralLabel: 'Records', fields: [
+        { id: 'title', label: 'Title', type: 'text' }, { id: 'score', label: 'Score', type: 'number' },
+        { id: 'literal', label: 'Literal', type: 'text' },
+      ],
+    })
+    for (const [id, title, score] of [['alpha', 'Alpha', 1], ['beta', 'Beta', 2], ['gamma', 'Gamma', 3], ['delta', 'Delta', 4]] as const) {
+      await createDataRow(harness.db, MAIN_SCOPE, { id, tableId: 'query-records', slug: id,
+        cells: { title, score, literal: 'entry.z' } }, ownerId)
     }
-    const big = countingDb(bigDb)
-    const bigResult = await listDataRowsWithFilter(big.db, MAIN_SCOPE, 'posts', { limit: 500 })
-    expect(bigResult.rows).toHaveLength(50)
-
-    // Two queries total: one hydrated data page + one count. Crucially the
-    // count is identical for 4 rows and 50 rows — no per-row hydration.
-    expect(small.counts.unsafe).toBe(2)
-    expect(big.counts.unsafe).toBe(2)
-    expect(big.counts.unsafe).toBe(small.counts.unsafe)
+    await createDataRow(harness.db, MAIN_SCOPE, { id: 'deleted', tableId: 'query-records', slug: 'deleted', cells: { title: 'Deleted' } }, ownerId)
+    await harness.db`UPDATE data_rows SET deleted_at = ${'2026-10-01T00:00:00.000Z'} WHERE id = ${'deleted'}`
   })
 
-  async function localizeRows() {
-    await db`UPDATE data_tables SET fields_json = ${[
-      { id: 'title', label: 'Title', type: 'text' },
-      { id: 'heading', label: 'Heading', type: 'localizedText' },
-      { id: 'literal', label: 'Literal', type: 'text' },
-      { id: 'score', label: 'Score', type: 'number' },
-    ]} WHERE id = ${'posts'}`
-    for (const [id, key, score] of [['alpha', 'entry.z', 1], ['beta', 'entry.a', 2], ['gamma', 'entry.m', 3], ['delta', 'entry.z', 4]] as const) {
-      await db`UPDATE data_rows SET cells_json = ${{ title: id, heading: { key }, literal: 'entry.z', score }} WHERE id = ${id}`
-    }
-    const de: DataLocalizationContext = { language: 'de', translations: { entry: { z: 'Äpfel', a: 'Zoo', m: 'Mango' } } }
-    const it: DataLocalizationContext = { language: 'it', translations: { entry: { z: 'Zeta', a: 'Alfa', m: 'Mela' } } }
-    return { de, it }
+  afterEach(async () => { if (harness) await harness.cleanup() })
+
+  function query(patch: Partial<DataCollectionQuery> = {}): DataCollectionQuery {
+    return { source: { kind: 'table', tableId: 'query-records' }, offset: 0, limit: 100, ...patch }
   }
 
-  it('derives localized filters and count before ordering and pagination, returning original references', async () => {
-    const { de } = await localizeRows()
-    const result = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', {
-      localization: de, filter: { heading: { like: '%ÄPF%' } }, orderBy: { heading: 'asc' }, offset: 1, limit: 1,
-    })
-    expect(result.totalCount).toBe(2)
-    expect(result.rows.map(row => row.id)).toEqual(['delta'])
-    expect(result.rows[0].cells.heading).toEqual({ key: 'entry.z' })
-    expect(result.rows[0].cells.literal).toBe('entry.z')
-    const keys = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { localization: de, filter: { heading: { like: '%entry.z%' } } })
-    expect(keys.totalCount).toBe(0)
-  })
+  async function read(spec = query(), language?: string, db = harness.db, actor = authority) {
+    const snapshot = await DataReadSnapshot.create(db, MAIN_SCOPE, 'draft', actor, { language })
+    return readDataCollection(snapshot, spec)
+  }
 
-  it('orders by the selected text and uses stable row ties, with lifecycle filtering before projection', async () => {
-    const { de, it } = await localizeRows()
-    const german = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { localization: de, orderBy: { heading: 'asc' } })
-    const italian = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { localization: it, orderBy: { heading: 'asc' } })
-    expect(german.rows.map(row => row.id)).toEqual(['alpha', 'delta', 'gamma', 'beta'])
-    expect(italian.rows.map(row => row.id)).toEqual(['beta', 'gamma', 'alpha', 'delta'])
-    await db`UPDATE data_rows SET cells_json = ${{ heading: { key: 'entry.missing' } }} WHERE id = ${'beta'}`
-    const published = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { localization: de, status: 'published', orderBy: { heading: 'asc' } })
-    expect(published.rows.map(row => row.id)).toEqual(['alpha', 'delta', 'gamma'])
-    await expect(listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { localization: de })).rejects.toBeInstanceOf(LocalizationError)
-  })
-
-  it('requires an explicit language for localized query fields and keeps normal text literal', async () => {
-    const { de } = await localizeRows()
-    await expect(listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { filter: { heading: 'Äpfel' } })).rejects.toBeInstanceOf(LocalizationError)
-    await expect(listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { orderBy: { heading: 'asc' } })).rejects.toBeInstanceOf(LocalizationError)
-    const literal = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { filter: { literal: 'entry.z' }, localization: de })
-    expect(literal.totalCount).toBe(4)
-    const translatedLiteral = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { filter: { literal: 'Äpfel' }, localization: de })
-    expect(translatedLiteral.totalCount).toBe(0)
-    const scores = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { filter: { score: { gt: 1, lte: 3, in: [2, 3, 4] } }, localization: de, orderBy: { score: 'asc' } })
-    expect(scores.rows.map(row => row.id)).toEqual(['beta', 'gamma'])
-  })
-
-  it('preserves SQL null and case operator results in the projected query path', async () => {
-    const { de } = await localizeRows()
-    await db`UPDATE data_rows SET cells_json = ${{ heading: null, literal: null }} WHERE id = ${'gamma'}`
-    const filters = [
-      { literal: { eq: null } }, { literal: { ne: 'missing' } },
-      { literal: { like: 'ENTRY._' } }, { literal: { in: [null, 'entry.z'] } },
-      { literal: { eq: 'ENTRY.Z' } },
-    ]
-    for (const filter of filters) {
-      const stored = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { filter, orderBy: { slug: 'asc' } })
-      const projected = await listDataRowsWithFilter(db, MAIN_SCOPE, 'posts', { filter, orderBy: { slug: 'asc' }, localization: de })
-      expect(projected.rows.map(row => row.id)).toEqual(stored.rows.map(row => row.id))
-      expect(projected.totalCount).toBe(stored.totalCount)
+  async function localizeRows() {
+    await harness.db`UPDATE data_tables SET fields_json = ${[
+      { id: 'title', label: 'Title', type: 'text' }, { id: 'heading', label: 'Heading', type: 'localizedText' },
+      { id: 'literal', label: 'Literal', type: 'text' }, { id: 'score', label: 'Score', type: 'number' },
+    ]} WHERE id = ${'query-records'}`
+    const site = (await getDraftSiteDocument(harness.db, MAIN_SCOPE))!
+    site.settings.localization = { catalogues: ['de', 'it'].map(language => ({ language, fileId: `language-${language}` })) }
+    site.files = ['de', 'it'].map(language => ({ id: `language-${language}`, path: `languages/${language}.json`,
+      type: 'config' as const, createdAt: 0, updatedAt: 0,
+      content: JSON.stringify({ language, messages: { entry: language === 'de'
+        ? { z: 'Äpfel', a: 'Zoo', m: 'Mango' } : { z: 'Zeta', a: 'Alfa', m: 'Mela' } } }),
+    }))
+    await saveDraftSite(harness.db, MAIN_SCOPE, site)
+    for (const [id, key, score] of [['alpha', 'entry.z', 1], ['beta', 'entry.a', 2], ['gamma', 'entry.m', 3], ['delta', 'entry.z', 4]] as const) {
+      await harness.db`UPDATE data_rows SET cells_json = ${{ title: id, heading: { key }, literal: 'entry.z', score }} WHERE id = ${id}`
     }
+  }
+
+  it('reads live rows, applies field conditions before paging, and exposes public author metadata', async () => {
+    const result = await read(query({ where: { kind: 'field', fieldId: 'title', operator: 'eq', value: 'Alpha' } }))
+    expect(result.cardinalityCount).toBe(4)
+    expect(result.totalItems).toBe(1)
+    expect(result.items.map(item => item.id)).toEqual(['alpha'])
+    expect(result.items[0].author?.displayName).toBe('Author Person')
+    expect(result.items[0].author).not.toHaveProperty('id')
+    expect(result.items[0].author).not.toHaveProperty('email')
+    expect(JSON.stringify(result)).not.toContain(ownerEmail)
+    const empty = await read(query({ where: { kind: 'field', fieldId: 'title', operator: 'eq', value: 'Nonexistent' } }))
+    expect(empty.items).toEqual([])
+    expect(empty.totalItems).toBe(0)
+  })
+
+  it('uses one bounded storage read for both small and larger admitted collections', async () => {
+    const small = countingRows(harness.db)
+    expect((await read(query({ limit: 500 }), undefined, small.db)).items).toHaveLength(4)
+    for (let index = 0; index < 50; index++) {
+      await createDataRow(harness.db, MAIN_SCOPE, { id: `row-${index}`, tableId: 'query-records', slug: `row-${index}`,
+        cells: { title: `Row ${index}`, score: index } }, ownerId)
+    }
+    const larger = countingRows(harness.db)
+    expect((await read(query({ limit: 500 }), undefined, larger.db)).items).toHaveLength(54)
+    expect(small.counts.reads).toBe(1)
+    expect(larger.counts.reads).toBe(small.counts.reads)
+  })
+
+  it('derives selected language before filter, order, count and page while retaining stored references', async () => {
+    await localizeRows()
+    const result = await read(query({
+      where: { kind: 'field', fieldId: 'heading', operator: 'like', value: '%ÄPF%' },
+      order: [{ kind: 'field', fieldId: 'heading', direction: 'asc' }], offset: 1, limit: 1,
+    }), 'de')
+    expect(result.cardinalityCount).toBe(4)
+    expect(result.totalItems).toBe(2)
+    expect(result.items.map(item => item.id)).toEqual(['delta'])
+    expect(result.items[0].cells.heading).toBe('Äpfel')
+    expect((await getDataRow(harness.db, MAIN_SCOPE, 'delta'))!.cells.heading).toEqual({ key: 'entry.z' })
+    const ordering = query({ order: [{ kind: 'field', fieldId: 'heading', direction: 'asc' }] })
+    expect((await read(ordering, 'de')).items.map(item => item.id)).toEqual(['alpha', 'delta', 'gamma', 'beta'])
+    expect((await read(ordering, 'it')).items.map(item => item.id)).toEqual(['beta', 'gamma', 'alpha', 'delta'])
+    expect((await read(query({ where: { kind: 'field', fieldId: 'heading', operator: 'like', value: '%entry.z%' } }), 'de')).totalItems).toBe(0)
+  })
+
+  it('rejects malformed operands/schema and incomplete locale for every candidate before pagination', async () => {
+    await localizeRows()
+    await expect(read(query())).rejects.toBeInstanceOf(LocalizationError)
+    await expect(read(query(), 'fr')).rejects.toBeInstanceOf(LocalizationError)
+    await expect(read(query({ where: { kind: 'field', fieldId: 'missing', operator: 'eq', value: 'value' } }), 'de')).rejects.toBeInstanceOf(RelationValidationError)
+    await expect(read(query({ where: { kind: 'field', fieldId: 'score', operator: 'eq', value: '2' } }), 'de')).rejects.toBeInstanceOf(RelationValidationError)
+    await harness.db`UPDATE data_rows SET cells_json = ${{ title: 'beta', heading: { key: 'entry.missing' } }} WHERE id = ${'beta'}`
+    await expect(read(query({ source: { kind: 'entries', tableId: 'query-records', rowIds: ['alpha', 'beta'] }, limit: 1 }), 'de')).rejects.toBeInstanceOf(LocalizationError)
+    await harness.db`UPDATE data_tables SET fields_json = ${{ malformed: true }} WHERE id = ${'query-records'}`
+    await expect(read(query(), 'de')).rejects.toThrow()
+  })
+
+  it('preserves literal comparisons, numeric range conjunctions, and explicit presence', async () => {
+    await localizeRows()
+    expect((await read(query({ where: { kind: 'field', fieldId: 'literal', operator: 'eq', value: 'entry.z' } }), 'de')).totalItems).toBe(4)
+    expect((await read(query({ where: { kind: 'field', fieldId: 'literal', operator: 'eq', value: 'Äpfel' } }), 'de')).totalItems).toBe(0)
+    const scores = await read(query({ where: { kind: 'all', predicates: [
+      { kind: 'field', fieldId: 'score', operator: 'gt', value: 1 }, { kind: 'field', fieldId: 'score', operator: 'lte', value: 3 },
+    ] }, order: [{ kind: 'field', fieldId: 'score', direction: 'asc' }] }), 'de')
+    expect(scores.items.map(item => item.id)).toEqual(['beta', 'gamma'])
+    await harness.db`UPDATE data_rows SET cells_json = ${{ title: 'gamma', literal: null, heading: null }} WHERE id = ${'gamma'}`
+    const empty = await read(query({ where: { kind: 'presence', fieldId: 'literal', operator: 'empty' } }), 'de')
+    expect(empty.items.map(item => item.id)).toEqual(['gamma'])
+  })
+
+  it('enforces family grants and table read mode before parsing a corrupt private schema', async () => {
+    await harness.db`UPDATE data_tables SET fields_json = ${{ malformed: true }} WHERE id = ${'query-records'}`
+    const writeOnly: DataReadAuthority = { kind: 'plugin', manifest: {
+      id: 'test.write-only', grantedPermissions: ['cms.content.read', 'cms.content.write'], contentAccess: [{ table: 'records', modes: ['write'] }],
+    } }
+    await expect(read(query(), undefined, harness.db, writeOnly)).rejects.toBeInstanceOf(RelationResolutionError)
+    const declaredOnly: DataReadAuthority = { kind: 'plugin', manifest: {
+      id: 'test.no-read-grant', grantedPermissions: [], contentAccess: [{ table: 'records', modes: ['read'] }],
+    } }
+    await expect(read(query(), undefined, harness.db, declaredOnly)).rejects.toMatchObject({ code: 'relation_unavailable' })
   })
 })

@@ -21,6 +21,12 @@ export const DataRowRouteIdentitySchema = Type.Object({
 }, { additionalProperties: false })
 export type DataRowRouteIdentity = Static<typeof DataRowRouteIdentitySchema>
 
+/** Minimal authoring lookup precedes table and own-row admission. */
+export const DataRowIdentitySchema = Type.Object({
+  rowId: Type.String({ minLength: 1 }), tableId: Type.String({ minLength: 1 }),
+}, { additionalProperties: false })
+export type DataRowIdentity = Static<typeof DataRowIdentitySchema>
+
 export const RepeaterEntryReferenceSchema = Type.Object({
   fieldId: Type.String({ minLength: 1 }),
   itemId: Type.String({ minLength: 1 }),

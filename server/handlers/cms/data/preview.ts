@@ -32,10 +32,10 @@ import { prefetchLoopData, publishedDataRowToLoopItem } from '../../../publish/l
 import { prefetchMediaAssets } from '../../../publish/mediaPrefetch'
 import { registry } from '@core/module-engine'
 import { getLatestPublishedSiteSnapshot } from '../../../repositories/publish'
-import { getDataRow, getDataTable, assertLocalizedDataPrincipalWrite } from '../../../repositories/data'
+import { canReadDataTable, getDataRow, getDataTable, readDataTableIdentities, assertLocalizedDataPrincipalWrite } from '../../../repositories/data'
 import { applyPublishedHtmlPipeline } from '../../../publish/publishedHtmlPipeline'
 import { badRequest, jsonResponse, readValidatedBody } from '../../../http'
-import { canReadDataRow, canReadTable, forbidden, requireDataAccess } from '../../../auth/dataAccess'
+import { canReadDataRow, forbidden, requireDataAccess } from '../../../auth/dataAccess'
 import type { RouteParams } from '../routeTable'
 import type { BranchScope } from '../../../branches/scope'
 
@@ -71,12 +71,13 @@ export async function handleRowPreview(
   const row = await getDataRow(db, scope, params.id)
   if (!row) return jsonResponse({ error: 'Row not found' }, { status: 404 })
 
-  const table = await getDataTable(db, scope, row.tableId)
-  if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
   // System-table rows need data.system.tables.read even to preview (GHSA-x69h).
-  if (!canReadTable(user, table)) return jsonResponse({ error: 'Row not found' }, { status: 404 })
+  const [identity] = await readDataTableIdentities(db, scope, [row.tableId])
+  if (!identity || !canReadDataTable({ kind: 'user', principal: user }, identity)) return jsonResponse({ error: 'Row not found' }, { status: 404 })
 
   if (!canReadDataRow(user, row)) return forbidden()
+  const table = await getDataTable(db, scope, row.tableId)
+  if (!table) return jsonResponse({ error: 'Row not found' }, { status: 404 })
   if (table.kind !== 'postType') return badRequest('Only post-type rows can be previewed')
 
   const body = await readValidatedBody(req, PreviewBodySchema)

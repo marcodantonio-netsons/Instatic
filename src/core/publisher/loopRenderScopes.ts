@@ -9,21 +9,15 @@ export interface LoopRenderScope {
 }
 
 const SOURCE_CONFIGURATION_KEYS = ['sourceId', 'filters', 'orderBy', 'direction', 'limit', 'offset', 'pagination', 'pageSize'] as const
-type LoopScopeIssue = { kind: 'nested' | 'duplicate' } | { kind: 'binding'; propKey: typeof SOURCE_CONFIGURATION_KEYS[number]; property: 'props' | 'dynamicBindings' }
+type LoopScopeIssue = { kind: 'binding'; propKey: typeof SOURCE_CONFIGURATION_KEYS[number]; property: 'props' | 'dynamicBindings' }
 
 export class LoopScopeConfigurationError extends Error {
   readonly path: string
 
   constructor(page: Page, scope: LoopRenderScope, issue: LoopScopeIssue) {
-    const detail = issue.kind === 'binding'
-      ? `has a dynamic binding on authored source configuration "${issue.propKey}"; source configuration is fixed before prefetch`
-      : issue.kind === 'nested'
-      ? 'is inside another loop; infinite loading requires a route-level entry context'
-      : 'has multiple instances on the same public page; infinite loading requires a unique loop id'
-    const name = issue.kind === 'binding' ? 'Loop' : 'Infinite loop'
-    super(`${name} "${scope.node.id}" on page "${page.title}" ${detail}`)
+    super(`Loop "${scope.node.id}" on page "${page.title}" has a dynamic binding on authored source configuration "${issue.propKey}"; source configuration is fixed before prefetch`)
     this.name = 'LoopScopeConfigurationError'
-    const property = issue.kind === 'binding' ? `${issue.property}.${issue.propKey}` : 'props.pagination'
+    const property = `${issue.property}.${issue.propKey}`
     this.path = `pages.${page.id}.nodes.${scope.node.id}.${property}`
   }
 }
@@ -38,23 +32,21 @@ export function collectLoopRenderScopes(page: Page, site: SiteDocument): LoopRen
   return result
 }
 
-/** An entry route's initial stack is supported; an outer loop's iteration is not. */
+/** Actual entry-frame locators support nested and repeated instances; source configuration stays fixed. */
 export function assertLoopRenderScopes(page: Page, scopes: readonly LoopRenderScope[]): void {
-  const counts = new Map<string, number>()
-  for (const scope of scopes) counts.set(scope.node.id, (counts.get(scope.node.id) ?? 0) + 1)
-  for (const scope of scopes) {
-    for (const propKey of SOURCE_CONFIGURATION_KEYS) {
-      if (scope.node.dynamicBindings?.[propKey]) {
-        throw new LoopScopeConfigurationError(page, scope, { kind: 'binding', propKey, property: 'dynamicBindings' })
-      }
-      const value = scope.node.props[propKey]
-      if (typeof value === 'string' && parseTokenString(value).some((segment) => segment.kind === 'token')) {
-        throw new LoopScopeConfigurationError(page, scope, { kind: 'binding', propKey, property: 'props' })
-      }
+  for (const scope of scopes) assertLoopSourceConfiguration(page, scope)
+}
+
+/** Shared by preflight and the actual-entry read executor. */
+export function assertLoopSourceConfiguration(page: Page, scope: LoopRenderScope): void {
+  for (const propKey of SOURCE_CONFIGURATION_KEYS) {
+    if (scope.node.dynamicBindings?.[propKey]) {
+      throw new LoopScopeConfigurationError(page, scope, { kind: 'binding', propKey, property: 'dynamicBindings' })
     }
-    if (scope.node.props.pagination !== 'infinite') continue
-    if (scope.nested) throw new LoopScopeConfigurationError(page, scope, { kind: 'nested' })
-    if (counts.get(scope.node.id)! > 1) throw new LoopScopeConfigurationError(page, scope, { kind: 'duplicate' })
+    const value = scope.node.props[propKey]
+    if (typeof value === 'string' && parseTokenString(value).some(segment => segment.kind === 'token')) {
+      throw new LoopScopeConfigurationError(page, scope, { kind: 'binding', propKey, property: 'props' })
+    }
   }
 }
 

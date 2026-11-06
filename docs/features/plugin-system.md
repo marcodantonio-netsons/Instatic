@@ -748,30 +748,48 @@ await bodyTree.mutate([
 ])
 await bodyTree.replace(currentTree)
 
-// Cross-table
-const { results } = await api.cms.content.search('hello world', { limit: 25 })
+// Native materialized collection: explicit source IDs, search fields and view
+const results = await api.cms.content.query({
+  source: { kind: 'table', tableId: pagesTable.id },
+  search: { fieldIds: [], title: true, text: 'hello world' },
+  offset: 0, limit: 25,
+}, { view: 'public' })
 const snap = await api.cms.content.getPublishedSnapshot(entryId)
 const { count } = await api.cms.content.republishAll()
 ```
 
 `tables.create(input)` accepts the plugin-facing field projection, then maps it to the host's canonical `DataField` schema before storage. `richText` fields default to Markdown format, `select` / `multiSelect` option `value`s become stable option IDs, and `relation.targetTableSlug` must resolve to an existing table slug. `repeater` accepts a one-level `fields` schema made from ordinary authorable fields; nested relation slugs are resolved through the same gate, while recursive repeaters, `pageTree`, and `fieldSchema` item fields are rejected by the boundary schema.
 
-`localizedText` fields store `{ key: "articles.security" }` references, including inside repeaters. An ordinary `text` field stays literal. Entry `get`/`list` results preserve those authoring cells. For localized comparisons and ordering, pass an explicit configured `language` to `list`:
+`table(slug).get/getBySlug/list` return raw authoring cells. `list` accepts only `status`, `offset` and `limit`; it does not derive localized text or accept conditions/order. `tables.get/list` expose each table's native logical `id`, which collection sources use. These SDK shapes live in `src/core/plugin-sdk/contentSchemas.ts`.
+
+`cms.content.query(query, options)` and `cms.content.relations(requests, options)` use the shared `server/repositories/data/read-view/` pipeline. `options.view` is required (`draft` or `public`); `language` and `generation` are optional. Every source and target requires the granted `cms.content.read` permission plus its `contentAccess` read mode before schema/cell projection. Plugin calls use the native main scope; callers cannot supply authority or branch claims. Public post/page/component/layout reads select the active published version, while generic data tables remain live.
+
+`localizedText` cells store `{ key: "articles.security" }` references, including inside repeaters. Native query results derive these cells and the display title using an explicit configured language; ordinary text stays literal. Filtering, declared search, ordering, count and pagination run after this projection. Missing languages/translations fail with typed errors. Search declares `fieldIds` for text fields and/or `title: true`; it does not traverse unrelated fields, repeaters or reference keys.
 
 ```js
-const articles = api.cms.content.table('articles')
-const page = await articles.list({
-  language: 'de',
-  filter: { heading: { like: '%Sicherheit%' } },
-  orderBy: { heading: 'asc' },
-  limit: 10,
-})
-const matches = await api.cms.content.search('Sicherheit', { language: 'de', limit: 25 })
+const articles = await api.cms.content.tables.get('articles')
+const query = {
+  source: { kind: 'table', tableId: articles.id },
+  where: { kind: 'field', fieldId: 'heading', operator: 'like', value: '%Sicherheit%' },
+  search: { fieldIds: ['heading'], title: true, text: 'Sicherheit' },
+  order: [{ kind: 'field', fieldId: 'heading', direction: 'asc' }],
+  offset: 0, limit: 10,
+}
+const page = await api.cms.content.query(query, { view: 'draft', language: 'de' })
+if (page.hasMore) {
+  const next = await api.cms.content.query({ ...query, offset: page.nextOffset }, {
+    view: 'draft', language: 'de', generation: page.generation,
+  })
+}
+const related = await api.cms.content.relations([{
+  owner: { tableId: articles.id, rowId: page.items[0].id },
+  field: { fieldId: 'related' },
+}], { view: 'draft', language: 'de', generation: page.generation })
 ```
 
-`list` derives text before applying the existing `eq`/`ne`/range/`in`/case-insensitive SQL-`like` operators, count, order and pagination; its entries retain raw references. A localized field comparison or order without `language` fails with a typed localization error. The optional `localization` result contains language choices until one is supplied, then only translated keys referenced by the authorized target table. It never contains source files or unrelated catalogue text.
+The canonical `@core/data-read` schemas define table, explicit-entry, relation and inbound sources; field/range/presence/membership predicates; and native field/row/membership ordering. `DataCollectionResult` returns materialized `items`, full source `cardinalityCount`, matched `totalItems`, `offset`, `limit`, `hasMore`, `nextOffset` and captured `generation`. `relations` returns `{ relations, generation }`; each membership remains in its authored order. Stable repeater item IDs belong in `owner.repeater` or `field.repeater`. Unsaved `draftValue` is accepted only in an authorized draft read, and every referenced target must still be admitted.
 
-`search(query, options?)` returns `{ results, localization? }`; `localization` is keyed by authorized table slug. It considers only tables with `contentAccess` read mode, before applying the global limit. Without a language, localized tables contribute slug metadata only. With a language, search includes derived scalar and repeater text, never raw reference keys. Missing or invalid translations fail rather than selecting another language. Plugins may write only references already present in their authorized target table.
+Materialized entries carry canonical title, projected cells, media and public author metadata, plus a native reference for the captured branch/view/generation. They contain no catalogue source files or unrelated translation text. The stored cells retain relation IDs and localization references: read objects/references are derived data and must not be saved in their place. Reuse the returned generation for continuation reads; a changed generation fails explicitly and the caller must start a fresh read. Permission and native pipeline invariants are covered by `src/__tests__/architecture/plugin-content-access-enforced.test.ts` and `server/plugins/host/handlers/contentQuery.test.ts`.
 
 `republishAll` fires the full publish pipeline (`publish.before` → `publish.html` → `publish.after`), so other plugins' filters and listeners participate.
 

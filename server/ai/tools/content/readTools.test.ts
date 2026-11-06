@@ -123,8 +123,8 @@ describe('content read tools', () => {
     expect(await call('content_get_document', { documentId: 'does-not-exist', language: 'de' }, ctx)).toEqual({ ok: false, error: 'Document does-not-exist not found.' })
     const schema = await call('content_get_collection_schema', { tableId: table.id }, context(reader.id, ['data.system.tables.read', 'content.edit.any']))
     expect(schema).toEqual({ ok: false, error: `Collection ${table.id} not found.` })
-    const empty = await call('content_list_documents', { tableId: table.id, language: 'de' }, context(reader.id, ['data.custom.tables.read', 'content.create'])) as { documents: unknown[] }
-    expect(empty.documents).toEqual([])
+    const denied = await call('content_list_documents', { tableId: table.id, language: 'de' }, context(reader.id, ['data.custom.tables.read', 'content.create']))
+    expect(denied).toEqual({ ok: false, error: `Collection ${table.id} not found.` })
   })
 
   it('searches resolved text including repeater text, never catalogue keys or inaccessible values', async () => {
@@ -143,5 +143,37 @@ describe('content read tools', () => {
     const row = await createDataRow(harness.db, MAIN_SCOPE, { id: 'internal-id', tableId: table.id, slug: 'url-only', cells: { slug: 'url-only' } })
     const result = await call('content_get_document', { documentId: row.id }, context('reader', ['data.custom.tables.read', 'content.edit.any'])) as { document: { title: string } }
     expect(result.document.title).toBe('Untitled')
+  })
+
+  it('does not parse inaccessible or non-Content schemas while discovering and searching readable collections', async () => {
+    const table = await createDataTable(harness.db, MAIN_SCOPE, { id: 'readable-articles', name: 'Readable articles', slug: 'readable-articles', kind: 'postType', singularLabel: 'Article', pluralLabel: 'Articles' })
+    await createDataRow(harness.db, MAIN_SCOPE, { id: 'readable-document', tableId: table.id, cells: { title: 'Readable title' } })
+    const data = await createDataTable(harness.db, MAIN_SCOPE, { id: 'non-content', name: 'Non Content', slug: 'non-content', kind: 'data', singularLabel: 'Entry', pluralLabel: 'Entries' })
+    const invalid = [{ id: 'private-field', label: 'Private field', type: 'unknown-private-type' }]
+    await harness.db`UPDATE data_tables SET fields_json = ${invalid} WHERE id = ${'posts'}`
+    await harness.db`UPDATE data_tables SET fields_json = ${invalid} WHERE id = ${data.id}`
+    const ctx = context('reader', ['data.custom.tables.read', 'content.edit.any'])
+
+    const collections = await call('content_list_collections', {}, ctx) as { collections: Array<{ id: string }> }
+    expect(collections.collections.map(collection => collection.id)).toEqual([table.id])
+    const search = await call('content_search_documents', { query: 'Readable' }, ctx) as { results: Array<{ id: string }> }
+    expect(search.results.map(document => document.id)).toEqual(['readable-document'])
+    expect(await call('content_get_collection_schema', { tableId: 'posts' }, ctx)).toEqual({ ok: false, error: 'Collection posts not found.' })
+    expect(await call('content_list_documents', { tableId: 'posts' }, ctx)).toEqual({ ok: false, error: 'Collection posts not found.' })
+  })
+
+  it('reads only the requested admitted collection and checks document ownership before its schema', async () => {
+    const readable = await createDataTable(harness.db, MAIN_SCOPE, { id: 'requested-collection', name: 'Requested', slug: 'requested-collection', kind: 'postType', singularLabel: 'Entry', pluralLabel: 'Entries' })
+    const corrupt = await createDataTable(harness.db, MAIN_SCOPE, { id: 'corrupt-collection', name: 'Corrupt', slug: 'corrupt-collection', kind: 'postType', singularLabel: 'Entry', pluralLabel: 'Entries' })
+    const row = await createDataRow(harness.db, MAIN_SCOPE, { id: 'requested-document', tableId: readable.id, cells: { title: 'Requested title' } })
+    const foreign = await createDataRow(harness.db, MAIN_SCOPE, { id: 'foreign-corrupt-document', tableId: corrupt.id, cells: { title: 'Foreign title' } })
+    await harness.db`UPDATE data_tables SET fields_json = ${[{ id: 'private-field', label: 'Private field', type: 'unknown-private-type' }]} WHERE id = ${corrupt.id}`
+    const ctx = context('reader', ['data.custom.tables.read', 'content.edit.any'])
+    const document = await call('content_get_document', { documentId: row.id }, ctx) as { document: { title: string } }
+    expect(document.document.title).toBe('Requested title')
+    const schema = await call('content_get_collection_schema', { tableId: readable.id }, ctx) as { collection: { id: string } }
+    expect(schema.collection.id).toBe(readable.id)
+    const ownCtx = context('reader', ['data.custom.tables.read', 'content.edit.own'])
+    expect(await call('content_get_document', { documentId: foreign.id }, ownCtx)).toEqual({ ok: false, error: `Document ${foreign.id} not found.` })
   })
 })

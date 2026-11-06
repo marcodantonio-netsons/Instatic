@@ -131,6 +131,7 @@ export function renderVisualComponentRef(
   const syntheticConfig: RenderConfig = {
     ...config,
     page: syntheticPage,
+    renderTreePrefix: `${config.renderTreePrefix ?? ''}${node.id}:`,
     dynamicNodeIds: undefined,
     annotateNodeIds: undefined,
   }

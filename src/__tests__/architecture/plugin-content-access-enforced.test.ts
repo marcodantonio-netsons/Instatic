@@ -68,13 +68,14 @@ describe('plugin content handlers — access enforced', () => {
 
     // Per-table handlers are everything whose first argv unpacks a
     // tableSlug or operates on entries / tree of a specific table.
-    // Cross-table handlers (List on tables, search, republishAll) are
+    // Native query/relation reads and cross-table metadata handlers are
     // intentionally allowlisted — their authorization model differs.
     const crossTableAllowlist = new Set([
       'handleContentTablesList',     // intersects with allowlist itself
       'handleContentTablesCreate',   // gated by cms.content.tables.manage
       'handleContentRepublishAll',   // operates on all published pages
-      'handleContentSearch',         // intersects with allowlist itself
+      'handleContentQuery',          // canonical snapshot admits each source/target
+      'handleContentRelations',      // canonical snapshot admits each source/target
       'handleContentSnapshot',       // looks up table from rowId, then asserts
       'handleContentTreeRead',       // looks up table from rowId, then asserts
       'handleContentTreeMutate',     // looks up table from rowId, then asserts
@@ -88,5 +89,24 @@ describe('plugin content handlers — access enforced', () => {
         `Per-table handler "${name}" must call assertContentTableAccess`,
       ).toBe(true)
     }
+  })
+
+  it('query and relation reads use canonical snapshot authority before projection', async () => {
+    const source = await read('server/plugins/host/handlers/content.ts')
+    const handlers = extractContentHandlers(source)
+    for (const name of ['handleContentQuery', 'handleContentRelations']) {
+      const handler = handlers.find(candidate => candidate.name === name)
+      expect(handler, `${name} must exist`).toBeDefined()
+      expect(handler!.body).toContain('pluginReadSnapshot(db, entry, options)')
+    }
+    expect(source).toContain("assertHostPluginPermission(entry, 'cms.content.read')")
+    expect(source).toContain('grantedPermissions: entry.manifest.grantedPermissions')
+    expect(source).toContain('contentAccess: entry.manifest.contentAccess')
+    expect(source).toContain('DataReadSnapshot.create(')
+    expect(source).toContain('await readDataCollection(snapshot, query)')
+    expect(source).toContain('await materializeDataRelations(snapshot, requests)')
+    expect(source).not.toContain('listDataRowsWithFilter')
+    expect(source).not.toContain('dataCellTextValues')
+    expect(source).not.toContain('projectLocalizedDataCells')
   })
 })

@@ -26,6 +26,7 @@ import type { BranchScope } from '../../../branches/scope'
 import type { DataRow, DataRowCells, DataRowStatus } from '@core/data/schemas'
 import { userRefAt, userRefColumns, userRefJoin, type UserJoinColumns } from '../shared'
 import { isoDate, isoDateOrNull } from '@core/utils/isoDate'
+import type { DataRowReadRecord } from '@core/data-read'
 
 // Re-exported so the sibling rows/ query modules (filter, read) keep one
 // local entry point for the dialect-aware placeholder; the single definition
@@ -75,6 +76,8 @@ interface DataRowRow extends UserJoinColumns {
   published_at: string | Date | null
   scheduled_publish_at: string | Date | null
   deleted_at: string | Date | null
+  read_version_id?: string | null
+  read_version_number?: number | string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -125,32 +128,38 @@ export function isOwnedByUser(row: DataRow, ownerUserId: string): boolean {
  * shared `userRefColumns` fragment (the single source for the user-ref alias
  * set, also spliced by `publish.ts`).
  */
-const DATA_ROW_COLUMNS = `data_rows.logical_id,
+function dataRowColumns(activeVersion: boolean): string {
+  const content = activeVersion ? 'read_version' : 'data_rows'
+  return `data_rows.logical_id,
        data_rows.table_id,
-       data_rows.cells_json,
-       data_rows.slug,
+       ${content}.cells_json,
+       ${content}.slug,
        data_rows.status,
        data_rows.seq,
        data_rows.author_user_id,
        data_rows.created_by_user_id,
        data_rows.updated_by_user_id,
-       data_rows.published_by_user_id,
+       ${content}.published_by_user_id,
        ${userRefColumns('author')},
        ${userRefColumns('created_by')},
        ${userRefColumns('updated_by')},
        ${userRefColumns('published_by')},
        data_rows.created_at,
-       data_rows.updated_at,
-       data_rows.published_at,
+       ${activeVersion ? 'read_version.created_at' : 'data_rows.updated_at'} as updated_at,
+       ${content}.published_at,
        data_rows.scheduled_publish_at,
-       data_rows.deleted_at`
+       data_rows.deleted_at${activeVersion ? ', read_version.id as read_version_id, read_version.version_number as read_version_number' : ''}`
+}
 
 /** The `from data_rows` clause with the four user-ref left joins. */
-const DATA_ROW_JOINS = `from data_rows
+function dataRowJoins(activeVersion: boolean): string {
+  return `from data_rows
+    ${activeVersion ? 'join data_row_versions read_version on read_version.id = data_rows.active_version_id' : ''}
     ${userRefJoin('author', 'data_rows.author_user_id')}
     ${userRefJoin('created_by', 'data_rows.created_by_user_id')}
     ${userRefJoin('updated_by', 'data_rows.updated_by_user_id')}
-    ${userRefJoin('published_by', 'data_rows.published_by_user_id')}`
+    ${userRefJoin('published_by', activeVersion ? 'read_version.published_by_user_id' : 'data_rows.published_by_user_id')}`
+}
 
 /**
  * Shape of a hydrated data-row query. Every clause is spliced verbatim into the
@@ -182,6 +191,8 @@ interface HydratedDataRowsQuery {
   tail?: string
   /** Positional values matching the placeholders across cte + where + tail. */
   params: unknown[]
+  /** Active version content, including slug and dates, never the editable draft payload. */
+  activeVersion?: boolean
 }
 
 /**
@@ -192,17 +203,29 @@ export async function selectHydratedDataRows(
   scope: BranchScope,
   query: HydratedDataRowsQuery,
 ): Promise<DataRow[]> {
+  return (await selectDataRowReadRecords(db, scope, query)).map(record => record.row)
+}
+
+/** The ordinary hydrated reader and public read views share one column and mapping owner. */
+export async function selectDataRowReadRecords(
+  db: DbClient,
+  scope: BranchScope,
+  query: HydratedDataRowsQuery,
+): Promise<DataRowReadRecord[]> {
   // The branch predicate is appended LAST so its placeholder follows every
   // caller-supplied one (SQLite binds `?` by position in the text).
   const branchPredicate = `data_rows.branch_id = ${placeholder(db.dialect, query.params.length + 1)}`
   const sql = `
     ${query.cte ? `with ${query.cte}` : ''}
-    select ${DATA_ROW_COLUMNS}
-    ${DATA_ROW_JOINS}
+    select ${dataRowColumns(query.activeVersion === true)}
+    ${dataRowJoins(query.activeVersion === true)}
     ${query.join ?? ''}
     where ${query.where ? `${query.where} and ` : ''}${branchPredicate}
     ${query.tail ?? ''}
   `
   const { rows } = await db.unsafe<DataRowRow>(sql, [...query.params, scope.branchId])
-  return rows.map((row) => mapRow(row, scope))
+  return rows.map((row) => ({
+    row: mapRow(row, scope),
+    version: row.read_version_id ? { id: row.read_version_id, number: Number(row.read_version_number) } : null,
+  }))
 }

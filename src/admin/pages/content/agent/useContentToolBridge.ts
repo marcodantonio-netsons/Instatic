@@ -9,7 +9,7 @@ import { flushSync } from 'react-dom'
 import { readDisplayTitle } from '@core/data/cells'
 import { hasLocalizedDataFields, projectLocalizedDataCells, type DataLocalizationContext } from '@core/data/localizedCells'
 import type { LocalizedDataState } from '@admin/pages/data/localizedData'
-import { normalizeDataTableFields } from '@core/data/fields'
+import { parseDataTableFields } from '@core/data/fields'
 import type { DataField, DataRow, DataTable } from '@core/data/schemas'
 import {
   createCmsDataRow,
@@ -368,7 +368,7 @@ function projectActiveDocument(
   localization?: DataLocalizationContext,
 ): ContentAgentActiveDocument {
   const table = collections.find((candidate) => candidate.id === row.tableId)
-  const tableFields = table ? normalizeDataTableFields(table.fields) : []
+  const tableFields = table ? parseDataTableFields(table.fields) : []
   const needsLanguage = hasLocalizedDataFields(tableFields) && !localization
   return {
     id: row.id,

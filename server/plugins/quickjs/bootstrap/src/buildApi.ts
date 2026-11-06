@@ -488,10 +488,14 @@ globalThis.__buildApi = function buildApi() {
             },
           }
         },
-        // Cross-table
-        search: function (query: unknown, options: unknown) {
-          assertTargetPermission('cms.content.search')
-          return call('cms.content.search', [String(query), options ?? {}])
+        // Native collection and relation reads require an explicit view.
+        query: function (query: unknown, options: unknown) {
+          assertTargetPermission('cms.content.query')
+          return call('cms.content.query', [query, options])
+        },
+        relations: function (requests: unknown, options: unknown) {
+          assertTargetPermission('cms.content.relations')
+          return call('cms.content.relations', [requests, options])
         },
         getPublishedSnapshot: function (entryId: unknown) {
           assertTargetPermission('cms.content.snapshot')

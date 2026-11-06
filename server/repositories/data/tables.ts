@@ -19,11 +19,11 @@
  */
 import { nanoid } from 'nanoid'
 import { physicalId } from '@core/branches'
-import type { DbClient } from '../../db/client'
+import { placeholder, type DbClient } from '../../db/client'
 import type { BranchScope } from '../../branches/scope'
 import { countDataRows } from './rows/read'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
-import { buildPostTypeDefaultFields, normalizeDataTableFields } from '@core/data/fields'
+import { buildPostTypeDefaultFields, parseDataTableFields } from '@core/data/fields'
 import { POST_TYPE_MANDATORY_FIELD_IDS } from '@core/data/schemas'
 import type {
   DataField,
@@ -111,7 +111,7 @@ function mapTable(row: DataTableRow): DataTable {
     singularLabel: row.singular_label,
     pluralLabel: row.plural_label,
     primaryFieldId: row.primary_field_id,
-    fields: normalizeDataTableFields(row.fields_json),
+    fields: parseDataTableFields(row.fields_json),
     system: Boolean(row.system),
     createdByUserId: row.created_by_user_id ?? null,
     updatedByUserId: row.updated_by_user_id ?? null,
@@ -120,14 +120,23 @@ function mapTable(row: DataTableRow): DataTable {
   }
 }
 
-export async function listDataTables(db: DbClient, scope: BranchScope): Promise<DataTable[]> {
-  const { rows } = await db<DataTableRow>`
+export async function listDataTables(
+  db: DbClient,
+  scope: BranchScope,
+  options: { tableIds?: readonly string[] } = {},
+): Promise<DataTable[]> {
+  if (options.tableIds?.length === 0) return []
+  const parameters = [scope.branchId, ...(options.tableIds?.map(id => physicalId(scope.branchId, id)) ?? [])]
+  const admittedIds = options.tableIds === undefined ? ''
+    : `and id in (${options.tableIds.map((_, index) => placeholder(db.dialect, index + 2)).join(', ')})`
+  const { rows } = await db.unsafe<DataTableRow>(`
     select logical_id, name, slug, kind, route_base, singular_label, plural_label,
            primary_field_id, fields_json, system,
            created_by_user_id, updated_by_user_id, created_at, updated_at
     from data_tables
-    where branch_id = ${scope.branchId}
+    where branch_id = ${placeholder(db.dialect, 1)}
       and deleted_at is null
+      ${admittedIds}
     order by
       case kind
         when 'page' then 0
@@ -137,7 +146,7 @@ export async function listDataTables(db: DbClient, scope: BranchScope): Promise<
         else 4
       end,
       created_at asc
-  `
+  `, parameters)
   return rows.map(mapTable)
 }
 
@@ -152,8 +161,13 @@ export async function listDataTables(db: DbClient, scope: BranchScope): Promise<
 export async function listDataTablesWithCounts(
   db: DbClient,
   scope: BranchScope,
+  options: { tableIds?: readonly string[] } = {},
 ): Promise<DataTableListItem[]> {
-  const { rows } = await db<DataTableRow & { row_count: number | string }>`
+  if (options.tableIds?.length === 0) return []
+  const parameters = [scope.branchId, ...(options.tableIds?.map(id => physicalId(scope.branchId, id)) ?? [])]
+  const admittedIds = options.tableIds === undefined ? ''
+    : `and t.id in (${options.tableIds.map((_, index) => placeholder(db.dialect, index + 2)).join(', ')})`
+  const { rows } = await db.unsafe<DataTableRow & { row_count: number | string }>(`
     select t.logical_id, t.name, t.slug, t.kind, t.route_base, t.singular_label, t.plural_label,
            t.primary_field_id, t.fields_json, t.system,
            t.created_by_user_id, t.updated_by_user_id, t.created_at, t.updated_at,
@@ -162,8 +176,9 @@ export async function listDataTablesWithCounts(
              0
            ) as row_count
     from data_tables t
-    where t.branch_id = ${scope.branchId}
+    where t.branch_id = ${placeholder(db.dialect, 1)}
       and t.deleted_at is null
+      ${admittedIds}
     order by
       case t.kind
         when 'page' then 0
@@ -173,7 +188,7 @@ export async function listDataTablesWithCounts(
         else 4
       end,
       t.created_at asc
-  `
+  `, parameters)
   return rows.map((row) => ({
     ...mapTable(row),
     rowCount: Number(row.row_count ?? 0),
@@ -305,7 +320,7 @@ export async function createDataTable(
   scope: BranchScope,
   input: CreateDataTableInput,
 ): Promise<DataTable> {
-  const fields = withPostTypeBuiltIns(input.kind, normalizeDataTableFields(input.fields ?? []))
+  const fields = withPostTypeBuiltIns(input.kind, parseDataTableFields(input.fields ?? []))
   const logicalId = input.id ?? nanoid()
   const { rows } = await db<DataTableRow>`
     insert into data_tables (
@@ -355,7 +370,7 @@ export async function updateDataTable(
   if (input.fields !== undefined) {
     const existing = await getDataTable(db, scope, tableId)
     if (!existing) return null
-    fields = keepPostTypeBuiltIns(existing, normalizeDataTableFields(input.fields))
+    fields = keepPostTypeBuiltIns(existing, parseDataTableFields(input.fields))
   }
   const routeBase = input.routeBase === undefined ? null : normalizeExplicitRouteBase(input.routeBase)
   const { rows } = await db<DataTableRow>`
@@ -393,7 +408,7 @@ export async function insertDataTableIfAbsent(
 ): Promise<boolean> {
   // Same seeding as createDataTable: `merge-add` / `merge-overwrite` is an
   // import, and an imported post type has to be routable too.
-  const fields = withPostTypeBuiltIns(input.kind, normalizeDataTableFields(input.fields ?? []))
+  const fields = withPostTypeBuiltIns(input.kind, parseDataTableFields(input.fields ?? []))
   const logicalId = input.id ?? nanoid()
   const { rows } = await db<{ id: string }>`
     insert into data_tables (
@@ -499,7 +514,7 @@ export async function restoreDataTable(
 ): Promise<DataTable | null> {
   const stored = await getDeletedDataTable(db, scope, tableId)
   if (!stored) return null
-  const fields = input.fields !== undefined ? keepPostTypeBuiltIns(stored, normalizeDataTableFields(input.fields)) : null
+  const fields = input.fields !== undefined ? keepPostTypeBuiltIns(stored, parseDataTableFields(input.fields)) : null
   const { rows } = await db<DataTableRow>`
     update data_tables
     set deleted_at = null,

@@ -32,6 +32,9 @@ import { handleDataSearchRoute } from './search'
 import { handleDataTableRoutes } from './tables'
 import { handleDataRowRoutes } from './rows'
 import { handleDataLocalizationRoute } from './localization'
+import { handleDataReadRoutes } from './read'
+import { DataReadGenerationError, RelationValidationError, RelationResolutionError } from '@core/data-read'
+import { DataFieldValidationError } from '@core/data/fields'
 import { LocalizationError } from '@core/localization'
 import { LocalizedDataReferenceAccessError } from '@core/data/localizedCells'
 import { jsonResponse } from '../../../http'
@@ -43,12 +46,17 @@ export async function handleDataRoutes(
   options: CmsHandlerOptions = {},
 ): Promise<Response | null> {
   try {
-    return (await handleDataLocalizationRoute(req, db, scope))
+    return (await handleDataReadRoutes(req, db, scope))
+      ?? (await handleDataLocalizationRoute(req, db, scope))
       ?? (await handleDataMetaRoutes(req, db, scope))
       ?? (await handleDataSearchRoute(req, db, scope))
       ?? (await handleDataTableRoutes(req, db, scope))
       ?? (await handleDataRowRoutes(req, db, scope, options))
   } catch (error) {
+    if (error instanceof DataReadGenerationError) return jsonResponse({ error: error.message, code: error.code }, { status: 409 })
+    if (error instanceof RelationResolutionError) return jsonResponse({ error: error.message, code: error.code }, { status: error.code === 'query_limit' ? 422 : 404 })
+    if (error instanceof RelationValidationError) return jsonResponse({ error: error.message, code: error.code }, { status: 422 })
+    if (error instanceof DataFieldValidationError) return jsonResponse({ error: error.message }, { status: 422 })
     if (error instanceof LocalizedDataReferenceAccessError) return jsonResponse({ error: error.message }, { status: 403 })
     if (error instanceof LocalizationError) return jsonResponse({ error: error.message }, { status: 422 })
     throw error

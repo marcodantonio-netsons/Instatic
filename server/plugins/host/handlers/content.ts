@@ -19,10 +19,9 @@
  */
 
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
-import type { ContentSearchResults, ContentTableSummary, PublishedSnapshot } from '@core/plugin-sdk'
-import type { DataLocalization, DataRow, DataTable } from '@core/data/schemas'
-import { dataCellTextValues } from '@core/data/cells'
-import { hasLocalizedDataFields, projectLocalizedDataCells, type DataLocalizationContext } from '@core/data/localizedCells'
+import type { ContentReadOptions, ContentTableSummary, PublishedSnapshot } from '@core/plugin-sdk'
+import type { DataRow, DataTable } from '@core/data/schemas'
+import type { RelationMaterializationRequest } from '@core/data-read'
 import { parsePageNodeTree } from '@core/page-tree'
 import { readPageTree, mutatePageTree } from '../../../ai/content/treeService'
 import { hookBus } from '@core/plugins/hookBus'
@@ -32,12 +31,9 @@ import {
   getDataTable,
   getDataTableBySlug,
   createDataTable,
-  listDataRowsWithFilter,
   getDataRow,
   getDataRowMany,
-  getDataRowBySlug,
   countDataRows,
-  readPluginDataLocalization,
   createDataRow,
   createDataRowMany,
   saveDataRowDraft,
@@ -52,7 +48,8 @@ import { republishAllPages } from '../../../publish/republish'
 import { bumpPublishVersionSerialized } from '../../../publish/publishState'
 import { applyContentEntryCellsFilter } from '../../../publish/contentEvents'
 import type { DbClient } from '../../../db/client'
-import { assertContentTableAccess } from '../registry'
+import { assertContentTableAccess, assertHostPluginPermission } from '../registry'
+import { DataReadSnapshot, canReadDataTable, listDataTableIdentities, materializeDataRelations, readDataCollection, type DataReadAuthority } from '../../../repositories/data/read-view'
 import { buildContentTableIdLookup, pluginContentFieldsToDataFields } from '../contentFieldMapping'
 import {
   buildTableSlugLookup,
@@ -67,6 +64,22 @@ import type { HostPluginRecord } from '../types'
 import { MAIN_SCOPE } from '../../../branches/scope'
 
 // Projection helpers (DB → wire shapes) live in `contentProjection.ts`.
+
+/** Captured grants, never declared permissions, authorize every native read. */
+function pluginReadAuthority(entry: HostPluginRecord): DataReadAuthority {
+  assertHostPluginPermission(entry, 'cms.content.read')
+  return { kind: 'plugin', manifest: {
+    id: entry.manifest.id,
+    grantedPermissions: entry.manifest.grantedPermissions,
+    contentAccess: entry.manifest.contentAccess,
+  } }
+}
+
+function pluginReadSnapshot(db: DbClient, entry: HostPluginRecord, options: ContentReadOptions): Promise<DataReadSnapshot> {
+  return DataReadSnapshot.create(db, MAIN_SCOPE, options.view, pluginReadAuthority(entry), {
+    language: options.language, generation: options.generation,
+  })
+}
 
 // ---------------------------------------------------------------------------
 // Hook emission — actor-attributed `content.entry.*` events
@@ -127,11 +140,11 @@ export async function handleContentTablesList(
   entry: HostPluginRecord,
   db: DbClient,
 ): Promise<void> {
-  const allowedSlugs = new Set((entry.manifest.contentAccess ?? []).filter(access => access.modes.includes('read')).map(access => access.table))
-  const tables = await listDataTablesWithCounts(db, MAIN_SCOPE)
-  const summaries: ContentTableSummary[] = tables
-    .filter((t) => allowedSlugs.has(t.slug))
-    .map((t) => tableSummary(t, t.rowCount))
+  const authority = pluginReadAuthority(entry)
+  const identities = await listDataTableIdentities(db, MAIN_SCOPE)
+  const tableIds = identities.filter(identity => canReadDataTable(authority, identity)).map(identity => identity.id)
+  const tables = await listDataTablesWithCounts(db, MAIN_SCOPE, { tableIds })
+  const summaries: ContentTableSummary[] = tables.map((t) => tableSummary(t, t.rowCount))
   replyApiOk(msg.pluginId, msg.correlationId, summaries)
 }
 
@@ -141,6 +154,7 @@ export async function handleContentTablesGet(
   db: DbClient,
 ): Promise<void> {
   const [slug] = msg.args
+  pluginReadAuthority(entry)
   assertContentTableAccess(entry, slug, 'read')
   const table = await getDataTableBySlug(db, MAIN_SCOPE, slug)
   if (!table) {
@@ -152,7 +166,7 @@ export async function handleContentTablesGet(
   // return.
   const [rowCount, slugLookup] = await Promise.all([
     countDataRows(db, MAIN_SCOPE, table.id),
-    buildTableSlugLookup(db),
+    listDataTableIdentities(db, MAIN_SCOPE).then(identities => new Map(identities.map(identity => [identity.id, identity.slug]))),
   ])
   replyApiOk(
     msg.pluginId,
@@ -201,14 +215,16 @@ export async function handleContentEntriesList(
 ): Promise<void> {
   const [tableSlug, options] = msg.args
   assertContentTableAccess(entry, tableSlug, 'read')
-  const table = await resolveTableBySlug(db, tableSlug)
-  const localization = hasLocalizedDataFields(table.fields)
-    ? await readPluginDataLocalization(db, MAIN_SCOPE, table, options.language) : undefined
-  const result = await listDataRowsWithFilter(db, MAIN_SCOPE, table.id, { ...options, localization: queryLocalization(localization) })
+  const snapshot = await pluginReadSnapshot(db, entry, { view: 'draft' })
+  const table = await snapshot.tableBySlug(tableSlug)
+  const rows = await listDataRows(db, MAIN_SCOPE, table.id)
+  const eligible = options.status === undefined || options.status === 'any'
+    ? rows : rows.filter(row => row.status === options.status)
+  const offset = options.offset ?? 0
+  await snapshot.assertFresh()
   replyApiOk(msg.pluginId, msg.correlationId, {
-    entries: result.rows.map((r) => rowToEntry(r, tableSlug)),
-    totalCount: result.totalCount,
-    ...(localization ? { localization } : {}),
+    entries: eligible.slice(offset, offset + (options.limit ?? 100)).map((r) => rowToEntry(r, tableSlug)),
+    totalCount: eligible.length,
   })
 }
 
@@ -219,9 +235,11 @@ export async function handleContentEntriesGet(
 ): Promise<void> {
   const [tableSlug, entryId] = msg.args
   assertContentTableAccess(entry, tableSlug, 'read')
-  const table = await resolveTableBySlug(db, tableSlug)
-  const row = await getDataRow(db, MAIN_SCOPE, entryId)
-  if (!row || row.tableId !== table.id) {
+  const snapshot = await pluginReadSnapshot(db, entry, { view: 'draft' })
+  const table = await snapshot.tableBySlug(tableSlug)
+  const row = (await snapshot.records(table.id, [entryId]))[0]?.row
+  await snapshot.assertFresh()
+  if (!row) {
     replyApiOk(msg.pluginId, msg.correlationId, null)
     return
   }
@@ -235,8 +253,10 @@ export async function handleContentEntriesGetBySlug(
 ): Promise<void> {
   const [tableSlug, slug] = msg.args
   assertContentTableAccess(entry, tableSlug, 'read')
-  const table = await resolveTableBySlug(db, tableSlug)
-  const row = await getDataRowBySlug(db, MAIN_SCOPE, table.id, slug)
+  const snapshot = await pluginReadSnapshot(db, entry, { view: 'draft' })
+  const table = await snapshot.tableBySlug(tableSlug)
+  const row = (await snapshot.recordBySlug(table, slug))?.row
+  await snapshot.assertFresh()
   replyApiOk(msg.pluginId, msg.correlationId, row ? rowToEntry(row, tableSlug) : null)
 }
 
@@ -572,43 +592,34 @@ export async function handleContentTreeReplace(
 }
 
 // ---------------------------------------------------------------------------
-// Cross-table — search / snapshot / republishAll
+// Native collection / relation reads; published snapshot / republishAll
 // ---------------------------------------------------------------------------
 
-export async function handleContentSearch(
-  msg: ApiCallFor<'cms.content.search'>,
+export async function handleContentQuery(
+  msg: ApiCallFor<'cms.content.query'>,
   entry: HostPluginRecord,
   db: DbClient,
 ): Promise<void> {
   const [query, options] = msg.args
-  const allowedSlugs = new Set((entry.manifest.contentAccess ?? []).filter(access => access.modes.includes('read')).map(access => access.table))
-  const tables = (await listDataTablesWithCounts(db, MAIN_SCOPE)).filter(table => allowedSlugs.has(table.slug))
-  const output: ContentSearchResults = { results: [] }
-  const needle = query.toLowerCase()
-  for (const table of tables) {
-    assertContentTableAccess(entry, table.slug, 'read')
-    const localized = hasLocalizedDataFields(table.fields)
-    const localization = localized ? await readPluginDataLocalization(db, MAIN_SCOPE, table, options.language) : undefined
-    if (localization) (output.localization ??= {})[table.slug] = localization
-    const context = queryLocalization(localization)
-    for (const row of await listDataRows(db, MAIN_SCOPE, table.id)) {
-      // Raw references belong to authoring; search sees only metadata until
-      // the caller supplies the language needed to derive their text.
-      const values = localized && !context ? [row.slug] : [row.slug, ...dataCellTextValues(
-        context ? projectLocalizedDataCells(row.cells, table.fields, context, `rows.${row.id}.cells`) : row.cells, table.fields)]
-      if (!values.some(value => value.toLowerCase().includes(needle))) continue
-      output.results.push({ id: row.id, tableSlug: table.slug, tableName: table.name, slug: row.slug,
-        status: row.status, updatedAt: row.updatedAt })
-    }
-  }
-  output.results.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id))
-  output.results = output.results.slice(0, options.limit ?? 50)
-  replyApiOk(msg.pluginId, msg.correlationId, output)
+  const snapshot = await pluginReadSnapshot(db, entry, options)
+  replyApiOk(msg.pluginId, msg.correlationId, await readDataCollection(snapshot, query))
 }
 
-function queryLocalization(localization: DataLocalization | undefined): DataLocalizationContext | undefined {
-  return localization?.language !== undefined
-    ? { language: localization.language, translations: localization.translations } : undefined
+export async function handleContentRelations(
+  msg: ApiCallFor<'cms.content.relations'>,
+  entry: HostPluginRecord,
+  db: DbClient,
+): Promise<void> {
+  const [inputs, options] = msg.args
+  const snapshot = await pluginReadSnapshot(db, entry, options)
+  const requests: RelationMaterializationRequest[] = inputs.map(input => ({
+    owner: { ...snapshot.reference(input.owner.tableId, input.owner.rowId), ...(input.owner.repeater ? { repeater: input.owner.repeater } : {}) },
+    field: input.field,
+    ...(Object.hasOwn(input, 'draftValue') ? { draftValue: input.draftValue } : {}),
+  }))
+  const relations = await materializeDataRelations(snapshot, requests)
+  await snapshot.assertFresh()
+  replyApiOk(msg.pluginId, msg.correlationId, { relations: [...relations.values()], generation: snapshot.generation })
 }
 
 export async function handleContentSnapshot(

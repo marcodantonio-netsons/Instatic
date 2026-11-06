@@ -158,6 +158,7 @@ export function tableSummary(
   rowCount: number,
 ): ContentTableSummary {
   return {
+    id: table.id,
     slug: table.slug,
     name: table.name,
     kind: table.kind,

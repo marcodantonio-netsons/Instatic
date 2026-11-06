@@ -29,22 +29,26 @@ import {
 } from '@core/templates'
 import type { SourceRequestContext } from '@core/loops/types'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
-import { readEntrySeoOverride, readFeaturedMediaCell } from '@core/data/cells'
-import type { DataRow, DataTable, PublishedDataRow } from '@core/data/schemas'
+import { readEntrySeoOverride } from '@core/data/cells'
 import type { Page, SiteDocument } from '@core/page-tree'
 import { canonicalJson } from '@core/utils/canonicalJson'
 import type { DbClient } from '../db/client'
 import type { BranchScope } from '../branches/scope'
 import { BRANCH_PREVIEW_EXIT_PATH } from '../branches/previewLinks'
 import { getBranch } from '../repositories/branches'
-import { getDataRowBySlug, listDataTables } from '../repositories/data'
+import { DataReadSnapshot, readDataTableIdentityByRouteBase, canReadDataTable } from '../repositories/data'
+import { captureDataReadGeneration } from '../repositories/data/generation'
+import { findUserById } from '../repositories/users'
+import type { BranchPreview } from '../repositories/branchPreviews'
+import { userHasCapability } from '../auth/authz'
+import { dataEntryToLoopItem } from '@core/loops'
+import { jsonResponse } from '../http'
 import { getDraftSiteDocument } from '../repositories/publish'
 import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
-import { prefetchLoopData, publishedDataRowToLoopItem } from './loopPrefetch'
+import { prefetchLoopReadView } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { contentRouteFromPath, publicSlugFromPath } from './publicRouter'
-import { getPublishVersion } from './publishState'
 import { buildSiteRuntimeScripts } from './runtime/bundleScripts'
 import { ensureRuntimeDependencyCache } from './runtime/dependencyCache'
 import { buildRuntimePackageImportmap, serializeImportmapForCsp } from './runtime/packageImportmap'
@@ -59,50 +63,8 @@ interface ResolvedPreview {
   documentMeta?: DocumentMetaOverride
 }
 
-/**
- * A draft row in the shape the entry-template renderer expects. Draft rows
- * have no published version: the version number is 0 and the publish
- * timestamps fall back to the row's own.
- */
-async function draftRowAsPublished(db: DbClient, row: DataRow, table: DataTable): Promise<PublishedDataRow> {
-  const featuredMediaId = readFeaturedMediaCell(row.cells)
-  let featuredMediaPath: string | null = null
-  if (featuredMediaId) {
-    const { rows } = await db<{ public_path: string }>`
-      select public_path from media_assets where id = ${featuredMediaId} limit 1
-    `
-    featuredMediaPath = rows[0]?.public_path ?? null
-  }
-  const publisher = row.publishedBy ?? row.updatedBy
-  return {
-    id: row.id,
-    rowId: row.id,
-    tableId: table.id,
-    tableSlug: table.slug,
-    tableKind: table.kind,
-    tableFields: table.fields,
-    tableRouteBase: table.routeBase,
-    versionNumber: 0,
-    cells: row.cells,
-    slug: row.slug,
-    featuredMediaId,
-    featuredMediaPath,
-    authorUserId: row.authorUserId,
-    authorName: row.author?.displayName ?? null,
-    authorRoleSlug: row.author?.roleSlug ?? null,
-    authorRoleName: row.author?.roleName ?? null,
-    publishedByUserId: publisher?.id ?? null,
-    publishedByName: publisher?.displayName ?? null,
-    publishedByRoleSlug: publisher?.roleSlug ?? null,
-    publishedByRoleName: publisher?.roleName ?? null,
-    publishedAt: row.publishedAt ?? row.updatedAt,
-    createdAt: row.createdAt,
-  }
-}
-
 async function resolvePreview(
-  db: DbClient,
-  scope: BranchScope,
+  snapshot: DataReadSnapshot,
   site: SiteDocument,
   url: URL,
 ): Promise<ResolvedPreview | null> {
@@ -120,24 +82,23 @@ async function resolvePreview(
   const route = contentRouteFromPath(url.pathname)
   if (!route) return null
   const routeBase = normalizeRouteBase(route.tableRouteBase)
-  const tables = await listDataTables(db, scope)
-  const table = tables.find((candidate) => normalizeRouteBase(candidate.routeBase) === routeBase)
-  if (!table) return null
-  const row = await getDataRowBySlug(db, scope, table.id, route.rowSlug)
-  if (!row) return null
+  const identity = await readDataTableIdentityByRouteBase(snapshot.db, snapshot.scope, routeBase)
+  if (!identity || !canReadDataTable(snapshot.authority, identity)) return null
+  const table = await snapshot.table(identity.id)
+  const record = await snapshot.recordBySlug(table, route.rowSlug)
+  if (!record) return null
+  const entry = (await snapshot.project(table, [record]))[0]
 
   const chain = resolveTemplateChain(site, { kind: 'entry', tableSlug: table.slug })
   if (chain.length === 0) return null
   const merged = composeTemplateChain(chain, { kind: 'entry' })
-  if (typeof row.cells.title === 'string') merged.title = row.cells.title
-  const published = await draftRowAsPublished(db, row, table)
+  merged.title = entry.title
   const templateContext = buildTemplateRenderContext(merged, site, { entryStack: [], route: buildRouteFrame(url.toString()) })
-  const localization = templateContext.site?.language ? { language: templateContext.site.language, translations: templateContext.site.translations } : undefined
   return {
     merged,
     scriptPage: chain[chain.length - 1] ?? merged,
-    templateContext: { ...templateContext, entryStack: [publishedDataRowToLoopItem(published, localization)] },
-    documentMeta: readEntrySeoOverride(row.cells),
+    templateContext: { ...templateContext, entryStack: [dataEntryToLoopItem(entry)] },
+    documentMeta: readEntrySeoOverride(entry.cells),
   }
 }
 
@@ -194,13 +155,30 @@ function previewBanner(branchName: string): string {
  */
 export async function renderBranchPreview(
   db: DbClient,
-  branchId: string,
+  grant: BranchPreview,
   url: URL,
 ): Promise<Response | null> {
-  const scope: BranchScope = { branchId }
-  const [branch, site] = await Promise.all([getBranch(db, branchId), getDraftSiteDocument(db, scope)])
+  const scope: BranchScope = { branchId: grant.branchId }
+  const generation = await captureDataReadGeneration(db, scope, 'draft')
+  if (!grant.createdByUserId) return jsonResponse({ error: 'This preview link has no attributed author; request a new link' }, { status: 409 })
+  const issuer = await findUserById(db, grant.createdByUserId)
+  if (!issuer || issuer.status !== 'active' || !userHasCapability(issuer, 'site.read')) return jsonResponse({ error: 'This preview link is no longer authorized; request a new link' }, { status: 403 })
+  const [branch, site] = await Promise.all([getBranch(db, grant.branchId), getDraftSiteDocument(db, scope)])
   if (!branch || !site) return null
-  const resolved = await resolvePreview(db, scope, site, url)
+  // Resolve the native route language before data projection; table admission
+  // is still performed by the actual issuer's snapshot below.
+  const route = contentRouteFromPath(url.pathname)
+  const terminalPage = site.pages.find(page => page.slug === publicSlugFromPath(url.pathname) && !isTemplatePage(page))
+  const routeTable = route && !terminalPage ? await readDataTableIdentityByRouteBase(db, scope, normalizeRouteBase(route.tableRouteBase)) : null
+  if (routeTable && !canReadDataTable({ kind: 'user', principal: issuer }, routeTable)) return null
+  const entryChain = routeTable ? resolveTemplateChain(site, { kind: 'entry', tableSlug: routeTable.slug }) : []
+  const framePage = terminalPage ?? (entryChain.length ? composeTemplateChain(entryChain, { kind: 'entry' }) : undefined)
+  if (!framePage) return null
+  const frame = buildTemplateRenderContext(framePage, site, { entryStack: [] })
+  const dataSnapshot = await DataReadSnapshot.create(db, scope, 'draft', { kind: 'user', principal: issuer }, {
+    generation, language: frame.site?.language, localizationSite: site,
+  })
+  const resolved = await resolvePreview(dataSnapshot, site, url)
   if (!resolved) return null
 
   const { merged, scriptPage, templateContext, documentMeta } = resolved
@@ -215,7 +193,8 @@ export async function renderBranchPreview(
     slug: segments.length > 0 ? decodeURIComponent(segments[segments.length - 1]!) : null,
     cookies: {},
   }
-  const loopData = await prefetchLoopData(merged, site, db, url, { branchId, request, templateContext })
+  const readView = await prefetchLoopReadView(merged, site, dataSnapshot, url, { request, templateContext })
+  const loopData = readView.loopData
   const mediaAssets = await prefetchMediaAssets(merged, site, registry, db, { templateContext, loopData })
   const rendered = publishPage(merged, site, registry, {
     visitorPreferencesStorage: 'memory',
@@ -226,7 +205,7 @@ export async function renderBranchPreview(
     loopData,
     mediaAssets,
     dynamicNodes: 'inline',
-    publishVersion: getPublishVersion(),
+    generation,
   })
   // The same pipeline as a published page (plugin frontend assets, form
   // tokens, module scripts, the `publish.*` hooks), so a form or a plugin's
@@ -240,10 +219,11 @@ export async function renderBranchPreview(
       slug: merged.slug,
       siteId: site.id,
       jsModuleIds: rendered.jsModuleIds.filter((id) => moduleJsMap.has(id)),
-      publishVersion: getPublishVersion(),
+      generation,
     },
     db,
   )
+  await dataSnapshot.assertFresh()
   const banner = previewBanner(branch.name)
   // A function replacement: a `$` in the branch name must not be read as a
   // replacement pattern.

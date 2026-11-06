@@ -1,10 +1,11 @@
 import type { DbClient } from '../../db/client'
 import type { BranchScope } from '../../branches/scope'
-import { canReadDataRow, canReadTable, canSeeAllDataRows, type DataAccessUser } from '../../auth/dataAccess'
+import { canReadDataRow, canReadTable, canReadDataRows, canSeeAllDataRows, type DataAccessUser } from '../../auth/dataAccess'
 import { userHasCapability } from '../../auth/authz'
 import { findUserById, type AuthUser } from '../users'
 import { getDraftSite } from '../site'
 import { getDataTable, listDataTables } from './tables'
+import { listDataTableIdentities } from './read-view/tableIdentity'
 import { listDataRows } from './rows/read'
 import { hasLocalizedDataFields, localizedDataReferences, assertLocalizedDataReferenceAccess, type DataLocalizationContext } from '@core/data/localizedCells'
 import { physicalId } from '@core/branches'
@@ -17,7 +18,11 @@ import type { TranslationMessages } from '@core/localization-schema'
 /** The same readable-table and own/any-row policy owns every catalogue projection. */
 export async function readableLocalizedDataKeys(db: DbClient, scope: BranchScope, user: DataAccessUser, tables?: readonly DataTable[]): Promise<Set<string>> {
   const keys = new Set<string>()
-  const readableTables = (tables ?? await listDataTables(db, scope)).filter(table => canReadTable(user, table) && hasLocalizedDataFields(table.fields))
+  if (!canReadDataRows(user)) return keys
+  const candidates = tables ?? await listDataTables(db, scope, {
+    tableIds: (await listDataTableIdentities(db, scope)).filter(table => canReadTable(user, table)).map(table => table.id),
+  })
+  const readableTables = candidates.filter(table => canReadTable(user, table) && hasLocalizedDataFields(table.fields))
   for (const table of readableTables) {
     const rows = await listDataRows(db, scope, table.id, canSeeAllDataRows(user) ? {} : { ownerUserId: user.id })
     for (const row of rows) {

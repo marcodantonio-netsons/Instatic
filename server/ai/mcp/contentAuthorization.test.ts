@@ -189,4 +189,29 @@ describe('MCP content row authorization', () => {
     await expect(authorizeMcpContentTool(harness.db, ownerId, capabilities,
       'content_create_document', { tableId: table.id, fields: { heading: { key: 'entry.missing' } } }, MAIN_SCOPE)).rejects.toBeInstanceOf(LocalizationError)
   })
+
+  it('admits delegated family and ownership before parsing a corrupt private schema', async () => {
+    const table = await createDataTable(harness.db, MAIN_SCOPE, {
+      id: 'delegated-table', name: 'Delegated', slug: 'delegated-table', kind: 'postType', singularLabel: 'Entry', pluralLabel: 'Entries',
+    })
+    const row = await createDataRow(harness.db, MAIN_SCOPE, { id: 'delegated-foreign', tableId: table.id, cells: { title: 'Foreign' } }, foreignUserId)
+    await expect(authorizeMcpContentTool(harness.db, ownerId, ['data.custom.tables.read', 'content.create'],
+      'content_create_document', { tableId: table.id, fields: { title: 'New' } }, MAIN_SCOPE)).resolves.toBeUndefined()
+    const invalid = [{ id: 'private-field', label: 'Private field', type: 'unknown-private-type' }]
+    await harness.db`UPDATE data_tables SET fields_json = ${invalid} WHERE id = ${'posts'}`
+    await harness.db`UPDATE data_tables SET fields_json = ${invalid} WHERE id = ${table.id}`
+
+    const creationDenied = 'Tool content_create_document is not permitted for this document or collection.'
+    for (const tableId of ['posts', 'missing']) {
+      await expect(authorizeMcpContentTool(harness.db, ownerId, ['data.custom.tables.read', 'content.create'],
+        'content_create_document', { tableId }, MAIN_SCOPE)).rejects.toThrow(creationDenied)
+    }
+    await expect(authorizeMcpContentTool(harness.db, ownerId, ['data.custom.tables.read'],
+      'content_create_document', { tableId: table.id }, MAIN_SCOPE)).rejects.toThrow(creationDenied)
+    const updateDenied = 'Tool content_set_document_fields is not permitted for this document or collection.'
+    for (const documentId of [row.id, 'missing']) {
+      await expect(authorizeMcpContentTool(harness.db, ownerId, ['data.custom.tables.read', 'content.edit.own'],
+        'content_set_document_fields', { documentId, fields: { title: 'Changed' } }, MAIN_SCOPE)).rejects.toThrow(updateDenied)
+    }
+  })
 })

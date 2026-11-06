@@ -1,85 +1,70 @@
 import type { DbClient } from '../db/client'
-import type { Page, PageNode, SiteDocument } from '@core/page-tree'
 import { reindexNodeParents } from '@core/page-tree'
 import { resolveNotFoundTemplate } from '@core/templates'
-import { assertLoopRenderScopes, collectLoopRenderScopes } from '@core/publisher'
+import type { SourceRequestContext } from '@core/loops'
+import { resolveDataRenderTarget } from '../repositories/data'
+import { assertDataReadGeneration } from '../repositories/data/generation'
+import { MAIN_SCOPE } from '../branches/scope'
 import { resolvePublicRoute, resolvePublishedNotFoundRoute } from './publicRouteResolution'
-import { buildPublishedEntryRenderContext, buildPublishedPageRenderContext } from './publishedRenderContext'
-import { NOT_FOUND_ARTEFACT_URL_PATH } from './staticArtefact'
-import type { PublishedPageSnapshot } from '../repositories/publish'
-import type { PublishedRenderContext } from './publishedRenderContext'
+import { readPublishedPageRenderView, readPublishedEntryRenderView } from './publishedReadView'
 
 export class LoopFragmentContextError extends Error {
-  readonly status: 400 | 404 | 409
-
-  constructor(message: string, status: 400 | 404 | 409) {
+  constructor(message: string, readonly status: 400 | 404 | 409) {
     super(message)
     this.name = 'LoopFragmentContextError'
-    this.status = status
   }
 }
 
-/** Require the actual local public URL; never recover an arbitrary consumer by node ID. */
+/** Require the actual local public URL, never an arbitrary consumer selected by node ID. */
 export function readLoopPageUrl(pagePath: string, endpointUrl: URL): URL {
-  if (!pagePath.startsWith('/') || pagePath.startsWith('//')) {
-    throw new LoopFragmentContextError('The originating page URL must be a local absolute path', 400)
-  }
+  if (!pagePath.startsWith('/') || pagePath.startsWith('//')) throw new LoopFragmentContextError('The originating page URL must be a local absolute path', 400)
   let pageUrl: URL
-  try {
-    pageUrl = new URL(pagePath, endpointUrl.origin)
-  } catch {
-    throw new LoopFragmentContextError('Invalid originating page URL', 400)
-  }
-  if (pageUrl.origin !== endpointUrl.origin || pageUrl.hash) {
-    throw new LoopFragmentContextError('Invalid originating page URL', 400)
-  }
-  try {
-    decodeURIComponent(pageUrl.pathname)
-  } catch {
-    throw new LoopFragmentContextError('Invalid originating page URL', 400)
-  }
+  try { pageUrl = new URL(pagePath, endpointUrl.origin) }
+  catch (cause) { throw new LoopFragmentContextError(`Invalid originating page URL: ${cause instanceof Error ? cause.message : 'invalid URL'}`, 400) }
+  if (pageUrl.origin !== endpointUrl.origin || pageUrl.hash) throw new LoopFragmentContextError('Invalid originating page URL', 400)
+  try { decodeURIComponent(pageUrl.pathname) }
+  catch { throw new LoopFragmentContextError('Invalid originating page URL', 400) }
   return pageUrl
 }
 
-function findLoopTarget(page: Page, site: SiteDocument, loopId: string) {
-  const scopes = collectLoopRenderScopes(page, site)
-  const targets = scopes.filter((scope) => scope.node.id === loopId)
-  if (targets.length === 0) throw new LoopFragmentContextError('Loop not found on the published page', 404)
-  assertLoopRenderScopes(page, scopes)
-  if (targets.length > 1) throw new LoopFragmentContextError('Loop has multiple instances on the published page', 409)
-  const target = targets[0]
-  const nodes: Record<string, PageNode> = {}
-  for (const [id, current] of Object.entries(target.nodes)) nodes[id] = { ...current }
-  reindexNodeParents(nodes)
-  return { node: target.node, page: { ...page, nodes, rootNodeId: target.node.id } }
-}
-
-/** Resolve the same published page/entry/404 and template composition as the full public renderer. */
-export async function resolveLoopFragmentContext(db: DbClient, pageUrl: URL, loopId: string) {
+/** Full HTML, holes and continuation resolve one certified origin route and actual entry view. */
+export async function resolvePublishedFragmentContext(
+  db: DbClient, pageUrl: URL, nodeId: string,
+  options: { generation: string; locator: string; request?: SourceRequestContext },
+) {
+  await assertDataReadGeneration(db, MAIN_SCOPE, 'public', options.generation)
   const resolution = await resolvePublicRoute(db, pageUrl)
-  if (resolution.kind === 'redirect') {
-    throw new LoopFragmentContextError('The originating page has moved', 409)
-  }
-  let snapshot: PublishedPageSnapshot | null
-  let context: PublishedRenderContext | null
+  if (resolution.kind === 'redirect') throw new LoopFragmentContextError('The originating page has moved', 409)
+  const readOptions = { generation: options.generation, url: pageUrl, request: options.request, mode: 'targets' as const }
+  let published
+  let context
   if (resolution.kind === 'not-found') {
-    snapshot = await resolvePublishedNotFoundRoute(db)
-    const page = snapshot && resolveNotFoundTemplate(snapshot.site)
-    if (!snapshot || !page) throw new LoopFragmentContextError('Published page not found', 404)
-    pageUrl = new URL(NOT_FOUND_ARTEFACT_URL_PATH, pageUrl.origin)
-    context = buildPublishedPageRenderContext(snapshot, page, pageUrl)
+    published = await resolvePublishedNotFoundRoute(db)
+    const sourcePage = published && resolveNotFoundTemplate(published.site)
+    if (!published || !sourcePage) throw new LoopFragmentContextError('Published page not found', 404)
+    // Preserve the actual missing URL/query; the 404 artefact path is storage, not a route frame.
+    context = await readPublishedPageRenderView(db, published, sourcePage, readOptions)
   } else {
-    snapshot = resolution.snapshot
-    if (resolution.kind === 'row') {
-      context = buildPublishedEntryRenderContext(snapshot, resolution.row, pageUrl)
-    } else {
-      const pageId = snapshot.pageRowId
-      const page = snapshot.site.pages.find((candidate) => candidate.id === pageId)
-      if (!page) throw new LoopFragmentContextError('Published page not found', 404)
-      context = buildPublishedPageRenderContext(snapshot, page, pageUrl)
+    published = resolution.snapshot
+    if (resolution.kind === 'row') context = await readPublishedEntryRenderView(db, published, resolution.row, readOptions)
+    else {
+      const sourcePage = published.site.pages.find(candidate => candidate.id === published.pageRowId)
+      if (!sourcePage) throw new LoopFragmentContextError('Published page not found', 404)
+      context = await readPublishedPageRenderView(db, published, sourcePage, readOptions)
     }
     if (!context) throw new LoopFragmentContextError('Published entry template not found', 404)
   }
-  const target = findLoopTarget(context.page, snapshot.site, loopId)
-  return { ...target, site: snapshot.site, templateContext: context.templateContext, pageUrl }
+  const target = resolveDataRenderTarget(context.readView, options.locator, nodeId)
+  const nodes = structuredClone(target.frame.nodes)
+  reindexNodeParents(nodes)
+  const page = { ...context.page, nodes, rootNodeId: target.node.id }
+  return {
+    ...target, page, site: published.site, published, pageUrl,
+    dataSnapshot: context.dataSnapshot, readView: context.readView,
+    walk: {
+      prefix: target.renderTreePrefix, parentId: target.frame.parentId,
+      ancestors: target.frame.ancestors, componentIds: target.frame.componentIds,
+      ancestorNodeIds: target.frame.ancestorNodeIds,
+    },
+  }
 }

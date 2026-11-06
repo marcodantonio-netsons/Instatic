@@ -125,3 +125,4 @@ export {
   getCmsRegistryProfile,
   searchCmsRegistry,
 } from './cmsRegistry'
+export { readCmsDataCollection, readCmsDataRelations } from './cmsDataRead'

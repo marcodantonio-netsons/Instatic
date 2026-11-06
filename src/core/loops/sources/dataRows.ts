@@ -26,7 +26,7 @@ import { isoDate } from '../../utils/isoDate'
 import { firstImagePathFromMarkdown } from '@core/markdown/renderMarkdown'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { publicDataUserFromParts } from '@core/data/publicDataUser'
-import { normalizeDataTableFields } from '@core/data/fields'
+import { parseDataTableFields } from '@core/data/fields'
 import { LocalizationError } from '@core/localization'
 import { hasLocalizedDataFields, projectLocalizedDataCells, compareDataCellValues, type DataLocalizationContext } from '@core/data/localizedCells'
 import { readFeaturedMediaCell } from '@core/data/cells'
@@ -449,7 +449,7 @@ export async function fetchPublishedDataRowItems(
   `
   const table = tableRows[0]
   if (!table) return { items: [], totalItems: 0 }
-  const fields = normalizeDataTableFields(table.fields_json)
+  const fields = parseDataTableFields(table.fields_json)
   const localized = hasLocalizedDataFields(fields)
   if (localized && !opts.localization?.translations) throw new LocalizationError(`tables.${opts.tableId}`, 'Choose a configured content language to resolve localized data')
   // Derived texts must be filtered and ordered before pagination. Admin row

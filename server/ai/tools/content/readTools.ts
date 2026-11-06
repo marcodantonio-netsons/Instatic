@@ -20,13 +20,15 @@ import {
   listDataAuthorOptions,
   listDataRows,
   listDataTablesWithCounts,
+  listDataTableIdentities,
+  readDataTableIdentities,
+  canReadDataTable,
   readDataLocalization,
 } from '../../../repositories/data'
 import { canReadDataRow, canReadTable, canSeeAllDataRows, type DataAccessUser } from '../../../auth/dataAccess'
 import { listMediaAssets } from '../../../repositories/media'
 import { readDisplayTitle, dataCellTextValues } from '@core/data/cells'
 import { hasLocalizedDataFields, projectLocalizedDataCells, type DataLocalizationContext } from '@core/data/localizedCells'
-import { normalizeDataTableFields } from '@core/data/fields'
 import type { DataField, DataLocalization, DataRow, DataTableListItem } from '@core/data/schemas'
 
 // ---------------------------------------------------------------------------
@@ -112,8 +114,18 @@ function dataToolUser(ctx: ToolContext): DataAccessUser {
   return { id: ctx.userId, capabilities: [...ctx.capabilities] }
 }
 
-function visibleContentTables(tables: DataTableListItem[], user: DataAccessUser): DataTableListItem[] {
-  return tables.filter(table => CONTENT_KIND_VISIBLE.has(table.kind) && canReadTable(user, table))
+async function readableContentTables(
+  ctx: ToolContext,
+  options: { tableIds?: readonly string[]; rows?: boolean } = {},
+): Promise<DataTableListItem[]> {
+  const user = dataToolUser(ctx)
+  const identities = options.tableIds === undefined
+    ? await listDataTableIdentities(ctx.db, ctx.branch)
+    : await readDataTableIdentities(ctx.db, ctx.branch, options.tableIds)
+  const tableIds = identities.filter(table => CONTENT_KIND_VISIBLE.has(table.kind) && (
+    options.rows ? canReadDataTable({ kind: 'user', principal: user }, table) : canReadTable(user, table)
+  )).map(table => table.id)
+  return listDataTablesWithCounts(ctx.db, ctx.branch, { tableIds })
 }
 
 async function localizationFor(ctx: ToolContext, tables: DataTableListItem[], language?: string): Promise<DataLocalization | undefined> {
@@ -157,7 +169,7 @@ const listCollectionsTool: AiTool = {
   inputSchema: ListCollectionsInput,
   handler: async (input, ctx) => {
     const { language } = input as Static<typeof ListCollectionsInput>
-    const tables = visibleContentTables(await listDataTablesWithCounts(ctx.db, ctx.branch), dataToolUser(ctx))
+    const tables = await readableContentTables(ctx)
     return {
       collections: tables.map(projectCollection),
       localization: await localizationFor(ctx, tables, language),
@@ -184,16 +196,15 @@ const getCollectionSchemaTool: AiTool = {
   inputSchema: GetCollectionSchemaInput,
   handler: async (input, ctx) => {
     const { tableId, language } = input as Static<typeof GetCollectionSchemaInput>
-    const tables = visibleContentTables(await listDataTablesWithCounts(ctx.db, ctx.branch), dataToolUser(ctx))
+    const tables = await readableContentTables(ctx, { tableIds: [tableId] })
     const table = tables.find((t) => t.id === tableId)
     if (!table) {
       return { ok: false, error: `Collection ${tableId} not found.` }
     }
-    const fields = normalizeDataTableFields(table.fields)
     return {
       collection: {
         ...projectCollection(table),
-        fields: fields.map(projectField),
+        fields: table.fields.map(projectField),
       },
       localization: await localizationFor(ctx, [table], language),
     }
@@ -229,7 +240,7 @@ const listDocumentsTool: AiTool = {
   handler: async (input, ctx) => {
     const args = input as Static<typeof ListDocumentsInput>
     const user = dataToolUser(ctx)
-    const tables = visibleContentTables(await listDataTablesWithCounts(ctx.db, ctx.branch), user)
+    const tables = await readableContentTables(ctx, { tableIds: [args.tableId], rows: true })
     const table = tables.find(candidate => candidate.id === args.tableId)
     if (!table) return { ok: false, error: `Collection ${args.tableId} not found.` }
     const localization = await localizationFor(ctx, [table], args.language)
@@ -272,9 +283,12 @@ const getDocumentTool: AiTool = {
     const { documentId, language } = input as Static<typeof GetDocumentInput>
     const user = dataToolUser(ctx)
     const row = await getDataRow(ctx.db, ctx.branch, documentId)
-    const tables = visibleContentTables(await listDataTablesWithCounts(ctx.db, ctx.branch), user)
-    const table = row && tables.find(candidate => candidate.id === row.tableId)
-    if (!row || !table || !canReadDataRow(user, row)) {
+    if (!row || !canReadDataRow(user, row)) {
+      return { ok: false, error: `Document ${documentId} not found.` }
+    }
+    const tables = await readableContentTables(ctx, { tableIds: [row.tableId], rows: true })
+    const table = tables.find(candidate => candidate.id === row.tableId)
+    if (!table) {
       return { ok: false, error: `Document ${documentId} not found.` }
     }
     const localization = await localizationFor(ctx, [table], language)
@@ -315,7 +329,7 @@ const searchDocumentsTool: AiTool = {
   handler: async (input, ctx) => {
     const { query, limit, language } = input as Static<typeof SearchDocumentsInput>
     const user = dataToolUser(ctx)
-    const tables = visibleContentTables(await listDataTablesWithCounts(ctx.db, ctx.branch), user)
+    const tables = await readableContentTables(ctx, { rows: true })
     const localization = await localizationFor(ctx, tables, language)
     const context = languageContext(localization)
     const results: ReturnType<typeof projectRow>[] = []

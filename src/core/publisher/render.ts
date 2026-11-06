@@ -71,10 +71,11 @@ interface PublishPageOptions {
   visitorPreferencesStorage?: 'persistent' | 'memory'
   breakpointId?: string
   templateContext?: TemplateRenderDataContext
+  renderTreePrefix?: string
   runtimeAssets?: PublishedPageRuntimeAssets
   /**
    * Pre-fetched data for every `base.loop` node on the page, keyed by
-   * loop nodeId. Produced server-side by `prefetchLoopData()` before
+   * instance path and native entry stack. Produced server-side by `prefetchLoopData()` before
    * publishing. Loops without an entry here render an empty string in
    * the published page (and an HTML comment in dev/preview).
    */
@@ -501,6 +502,7 @@ export function publishPage(
     breakpointId: options.breakpointId,
     templateContext,
     loopData: options.loopData,
+    renderTreePrefix: options.renderTreePrefix,
     mediaAssets: options.mediaAssets,
     dynamicNodeIds: dynamicNodeIds.size > 0 ? dynamicNodeIds : undefined,
     publishVersion: options.publishVersion ?? 0,

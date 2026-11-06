@@ -1,10 +1,8 @@
 /**
  * TypeBox schemas for the `api.cms.content.*` plugin surface.
  *
- * The surface mirrors the structure plugins already understand from
- * `api.cms.storage.*` (one CRUD per resource, operator-object filters,
- * orderBy/limit/offset) but talks to the host's CMS content tables
- * (`data_tables` + `data_rows`) rather than the plugin-private storage.
+ * Raw entry CRUD retains authoring cells. Collection queries and relation
+ * reads use the native `@core/data-read` shapes and authorized projection.
  *
  * Source of truth for every shape on the wire:
  *
@@ -17,7 +15,7 @@
  *   - `CreateContentEntryInputSchema`    — `table(slug).create(...)` arg
  *   - `UpdateContentEntryInputSchema`    — `table(slug).update(...)` arg
  *   - `TreeOperationSchema`              — `tree(...).mutate(...)` element
- *   - `ContentSearchResultSchema`        — `search(...)` element
+ *   - `ContentReadOptionsSchema`         — native query/relation read context
  *   - `PublishedSnapshotSchema`          — `getPublishedSnapshot(...)` result
  *
  * `cells` is a free-form `Record<string, unknown>` — typed projection is the
@@ -26,14 +24,14 @@
  */
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
-import { DataTableKindSchema, DataRowStatusSchema, DataLocalizationSchema } from '@core/data/schemas'
+import { DataTableKindSchema, DataRowStatusSchema } from '@core/data/schemas'
+import { DataReadViewSchema } from '@core/data-read'
 import {
   TreeMutateResultSchema,
   TreeOperationSchema,
   type TreeMutateResult,
   type TreeOperation,
 } from '@core/page-tree'
-import { StorageFilterValueSchema } from './storageSchemas'
 import { PluginContentFieldSchema } from './types/content'
 import type { PluginPermission } from './types/permissions'
 
@@ -42,6 +40,7 @@ import type { PluginPermission } from './types/permissions'
 // ---------------------------------------------------------------------------
 
 export const ContentTableSummarySchema = Type.Object({
+  id: Type.String({ minLength: 1 }),
   slug: Type.String(),
   name: Type.String(),
   kind: DataTableKindSchema,
@@ -111,12 +110,6 @@ export type UpdateContentEntryInput = Static<typeof UpdateContentEntryInputSchem
 // ---------------------------------------------------------------------------
 
 export const ContentListOptionsSchema = Type.Object({
-  language: Type.Optional(Type.String({ minLength: 1 })),
-  filter: Type.Optional(Type.Record(Type.String(), StorageFilterValueSchema)),
-  orderBy: Type.Optional(Type.Record(
-    Type.String(),
-    Type.Union([Type.Literal('asc'), Type.Literal('desc')]),
-  )),
   status: Type.Optional(Type.Union([
     Type.Literal('any'),
     Type.Literal('draft'),
@@ -131,7 +124,6 @@ export type ContentListOptions = Static<typeof ContentListOptionsSchema>
 export const ContentListResultSchema = Type.Object({
   entries: Type.Array(ContentEntrySchema),
   totalCount: Type.Integer({ minimum: 0 }),
-  localization: Type.Optional(DataLocalizationSchema),
 })
 export type ContentListResult = Static<typeof ContentListResultSchema>
 
@@ -146,30 +138,15 @@ export type ContentTreeOperation = TreeOperation
 export type { TreeMutateResult }
 
 // ---------------------------------------------------------------------------
-// Search / published snapshot
+// Native collection / relation read context and published snapshot
 // ---------------------------------------------------------------------------
 
-export const ContentSearchResultSchema = Type.Object({
-  id: Type.String(),
-  tableSlug: Type.String(),
-  tableName: Type.String(),
-  slug: Type.String(),
-  status: DataRowStatusSchema,
-  updatedAt: Type.String(),
-})
-export type ContentSearchResult = Static<typeof ContentSearchResultSchema>
-
-export const ContentSearchOptionsSchema = Type.Object({
+export const ContentReadOptionsSchema = Type.Object({
+  view: DataReadViewSchema,
   language: Type.Optional(Type.String({ minLength: 1 })),
-  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+  generation: Type.Optional(Type.String({ minLength: 1 })),
 }, { additionalProperties: false })
-export type ContentSearchOptions = Static<typeof ContentSearchOptionsSchema>
-
-export const ContentSearchResultsSchema = Type.Object({
-  results: Type.Array(ContentSearchResultSchema),
-  localization: Type.Optional(Type.Record(Type.String(), DataLocalizationSchema)),
-})
-export type ContentSearchResults = Static<typeof ContentSearchResultsSchema>
+export type ContentReadOptions = Static<typeof ContentReadOptionsSchema>
 
 export const PublishedSnapshotSchema = Type.Object({
   entryId: Type.String(),

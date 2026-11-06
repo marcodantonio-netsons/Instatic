@@ -9,7 +9,7 @@
  */
 import type { CoreCapability } from '@core/capabilities'
 import type { DbClient } from '../../db/client'
-import { assertLocalizedDataPrincipalWrite, getDataRow, getDataTable } from '../../repositories/data'
+import { assertLocalizedDataPrincipalWrite, getDataRow, getDataTable, readDataTableIdentities } from '../../repositories/data'
 import type { BranchScope } from '../../branches/scope'
 import { canEditDataRow, canPublishDataRow, canReadTable, type DataAccessUser } from '../../auth/dataAccess'
 import { isRecord } from '@core/utils/isRecord'
@@ -56,8 +56,11 @@ export async function authorizeMcpContentTool(
   const denied = () => new Error(`Tool ${toolName} is not permitted for this document or collection.`)
 
   if (createsDocument) {
-    const table = await getDataTable(db, scope, inputString(input, 'tableId'))
-    if (!table || !canReadTable(principal, table) || !capabilities.includes('content.create')) throw denied()
+    const tableId = inputString(input, 'tableId')
+    const [identity] = await readDataTableIdentities(db, scope, [tableId])
+    if (!identity || !canReadTable(principal, identity) || !capabilities.includes('content.create')) throw denied()
+    const table = await getDataTable(db, scope, tableId)
+    if (!table) throw denied()
     await assertLocalizedDataPrincipalWrite(db, scope, table.fields, inputFields(input), principal, 'fields')
     return
   }
@@ -65,11 +68,14 @@ export async function authorizeMcpContentTool(
   const documentId = inputString(input, 'documentId')
   const row = await getDataRow(db, scope, documentId)
   if (!row) throw denied()
+  const [identity] = await readDataTableIdentities(db, scope, [row.tableId])
+  if (!identity || !canReadTable(principal, identity)) throw denied()
+  if (checksEditOwnership && !canEditDataRow(principal, row)) throw denied()
+  if (checksPublishOwnership && !canPublishDataRow(principal, row)) throw denied()
   const table = await getDataTable(db, scope, row.tableId)
-  if (!table || !canReadTable(principal, table)) throw denied()
+  if (!table) throw denied()
 
   if (checksEditOwnership) {
-    if (!canEditDataRow(principal, row)) throw denied()
     if (toolName === 'content_set_document_field') {
       await assertLocalizedDataPrincipalWrite(db, scope, table.fields,
         { [inputString(input, 'fieldId')]: input.value }, principal, 'fields')
@@ -78,6 +84,4 @@ export async function authorizeMcpContentTool(
     }
     return
   }
-
-  if (!canPublishDataRow(principal, row)) throw denied()
 }

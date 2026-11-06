@@ -51,6 +51,18 @@ describe('getDataRowMany', () => {
   it('returns [] for an empty id list without touching the db', async () => {
     expect(await getDataRowMany(db, MAIN_SCOPE, [])).toEqual([])
   })
+
+  it('preserves tombstone custom cells for an explicit internal restore read', async () => {
+    const cells = { title: 'Restore me', members: ['post-3', 'post-1'], sections: [{ id: 'section-a', cells: { member: 'post-1' } }] }
+    await db`update data_rows set cells_json = ${cells} where id = ${'post-2'}`
+    await softDeleteDataRow(db, MAIN_SCOPE, 'post-2')
+    expect(await getDataRow(db, MAIN_SCOPE, 'post-2')).toBeNull()
+    expect((await getDataRow(db, MAIN_SCOPE, 'post-2', { includeDeleted: true }))?.cells).toEqual(cells)
+    const rows = await getDataRowMany(db, MAIN_SCOPE, ['post-2', 'post-1', 'missing'], { includeDeleted: true })
+    expect(rows.find(row => row.id === 'post-2')?.cells).toEqual(cells)
+    expect(rows.map(row => row.id).sort()).toEqual(['post-1', 'post-2'])
+    expect((await getDataRowMany(db, MAIN_SCOPE, ['post-2', 'post-1'])).map(row => row.id)).toEqual(['post-1'])
+  })
 })
 
 describe('countDataRows', () => {

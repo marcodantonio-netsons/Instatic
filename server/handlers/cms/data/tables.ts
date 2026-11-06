@@ -30,6 +30,9 @@ import {
 import {
   createDataTable,
   getDataTable,
+  canReadDataTable,
+  listDataTableIdentities,
+  readDataTableIdentities,
   listDataTablesWithCounts,
   softDeleteDataTable,
   updateDataTable,
@@ -38,7 +41,7 @@ import {
   listDataRows,
   readDataLocalization,
 } from '../../../repositories/data'
-import { normalizeDataTableFields } from '@core/data/fields'
+import { parseDataTableFields } from '@core/data/fields'
 import { slugForTable } from '@core/data/cells'
 import { slugFromTitle } from '@core/utils/slug'
 import { fetchPublishedDataRowItems } from '@core/loops/sources/dataRows'
@@ -105,7 +108,7 @@ function buildTablePatch(
     update.primaryFieldId = body.primaryFieldId.trim()
   }
   if (body.fields !== undefined) {
-    update.fields = normalizeDataTableFields(body.fields)
+    update.fields = parseDataTableFields(body.fields)
   }
 
   if (Object.keys(update).length === 0) return { error: 'Table update is required' }
@@ -184,14 +187,9 @@ async function handleTablesCollection(
     const limitParam = url.searchParams.get('limit')
     const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 25, 1), 100) : null
 
-    let tables = await listDataTablesWithCounts(db, scope)
-
-    // Per-family visibility: a custom-only persona (e.g. "client") never sees
-    // the system tables. Content-row callers (loop/template pickers) keep the
-    // full list so they can choose any table as a loop source.
-    if (!hasContentRowAccess(user)) {
-      tables = tables.filter((t) => canReadTable(user, t))
-    }
+    const identities = await listDataTableIdentities(db, scope)
+    const tableIds = identities.filter(table => hasContentRowAccess(user) || canReadTable(user, table)).map(table => table.id)
+    let tables = await listDataTablesWithCounts(db, scope, { tableIds })
 
     if (query) {
       tables = tables.filter(
@@ -227,7 +225,7 @@ async function handleTablesCollection(
       singularLabel,
       pluralLabel,
       primaryFieldId: body.primaryFieldId?.trim() || undefined,
-      fields: normalizeDataTableFields(body.fields),
+      fields: parseDataTableFields(body.fields),
       createdByUserId: user.id,
       updatedByUserId: user.id,
     })
@@ -248,24 +246,26 @@ async function handleTableItem(
   if (req.method === 'GET') {
     const user = await requireAnyRead(req, db)
     if (user instanceof Response) return user
-    const table = await getDataTable(db, scope, tableId)
-    if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
+    const [identity] = await readDataTableIdentities(db, scope, [tableId])
     // A custom-only persona must not read a system table by id. Content-row
     // callers (loop pickers) may still resolve any table.
-    if (!canReadTable(user, table) && !hasContentRowAccess(user)) {
+    if (!identity || (!canReadTable(user, identity) && !hasContentRowAccess(user))) {
       return jsonResponse({ error: 'Table not found' }, { status: 404 })
     }
+    const table = await getDataTable(db, scope, tableId)
+    if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
     return jsonResponse({ table })
   }
 
-  // PATCH/DELETE = schema mutation. Resolve the table first so the manage gate
-  // is kind-aware (system vs custom). Step-up gated — schema/route changes
-  // affect the public URL surface.
+  // PATCH/DELETE = schema mutation. Admit the family before reading fields.
+  // Step-up gated — schema/route changes affect the public URL surface.
   const user = await requireDataTablesRead(req, db)
   if (user instanceof Response) return user
+  const [identity] = await readDataTableIdentities(db, scope, [tableId])
+  if (!identity) return jsonResponse({ error: 'Table not found' }, { status: 404 })
+  if (!canManageTable(user, identity)) return forbidden()
   const table = await getDataTable(db, scope, tableId)
   if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
-  if (!canManageTable(user, table)) return forbidden()
   const stepUp = await requireStepUp(req, db, user)
   if (stepUp) return stepUp
 
@@ -312,16 +312,19 @@ async function handleTableRows(
     : await requireDataAccess(req, db)
   if (user instanceof Response) return user
 
-  const table = await getDataTable(db, scope, tableId)
-  if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
-
   if (req.method === 'GET') {
     // A broad content.* capability satisfies requireDataAccess, but reading a
     // system table's rows still needs data.system.tables.read (GHSA-x69h).
-    if (!canReadTable(user, table)) return jsonResponse({ error: 'Table not found' }, { status: 404 })
+    const [identity] = await readDataTableIdentities(db, scope, [tableId])
+    if (!identity || !canReadDataTable({ kind: 'user', principal: user }, identity)) {
+      return jsonResponse({ error: 'Table not found' }, { status: 404 })
+    }
     const visibility = canSeeAllDataRows(user) ? {} : { ownerUserId: user.id }
     return jsonResponse({ rows: await listDataRows(db, scope, tableId, visibility) })
   }
+
+  const table = await getDataTable(db, scope, tableId)
+  if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
 
   if (req.method === 'POST') {
     const body = await readValidatedBody(req, RowUpsertBodySchema)
@@ -390,8 +393,12 @@ async function handleTableLoopPreview(
   const user = await requireDataAccess(req, db)
   if (user instanceof Response) return user
 
+  const [identity] = await readDataTableIdentities(db, scope, [tableId])
+  if (!identity || !canReadDataTable({ kind: 'user', principal: user }, identity)) {
+    return jsonResponse({ error: 'Table not found' }, { status: 404 })
+  }
   const table = await getDataTable(db, scope, tableId)
-  if (!table || !canReadTable(user, table)) return jsonResponse({ error: 'Table not found' }, { status: 404 })
+  if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
 
   const url = new URL(req.url)
   const orderBy = url.searchParams.get('orderBy') ?? 'publishedAt'

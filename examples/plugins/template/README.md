@@ -117,16 +117,23 @@ export default [defineModule({
 Plugins that declare and receive `cms.content.read` plus the matching `contentAccess` read mode can query a localized table with an explicit language:
 
 ```js
-const page = await api.cms.content.table('articles').list({
-  language: 'de',
-  filter: { heading: { like: '%Sicherheit%' } },
-  orderBy: { heading: 'asc' },
-  limit: 10,
-})
-const { results, localization } = await api.cms.content.search('Sicherheit', { language: 'de', limit: 25 })
+const articles = await api.cms.content.tables.get('articles')
+const page = await api.cms.content.query({
+  source: { kind: 'table', tableId: articles.id },
+  where: { kind: 'field', fieldId: 'heading', operator: 'like', value: '%Sicherheit%' },
+  search: { fieldIds: ['heading'], title: true, text: 'Sicherheit' },
+  order: [{ kind: 'field', fieldId: 'heading', direction: 'asc' }],
+  offset: 0, limit: 10,
+}, { view: 'draft', language: 'de' })
+const related = await api.cms.content.relations([{
+  owner: { tableId: articles.id, rowId: page.items[0].id },
+  field: { fieldId: 'related' },
+}], { view: 'draft', language: 'de', generation: page.generation })
 ```
 
-The configured language files supply the text; list entries retain their raw `{ key }` authoring cells. Queries derive text before filtering, ordering, counting and paging. Omitting a language returns choices and permits authoring reads, but a localized field comparison/order fails. Search without a language reads only slug metadata in localized tables. Catalogue projections contain only keys referenced by the authorized table, never source files or unrelated text. This starter's default manifest does not request content access; declare the tables your plugin needs before using these calls.
+The native `@core/data-read` pipeline supplies projected cells and titles before filtering, declared search, ordering, counting and paging. `view` is required; localized tables also require a configured language. `query` returns `items`, `cardinalityCount`, `totalItems`, pagination metadata and a captured `generation`; pass that generation when continuing the same read. `relations` returns `{ relations, generation }`, preserving authored membership order and admitting every source/target table. Search names text field IDs or the native title and does not scan unrelated cells or reference keys. A stale generation or unavailable member fails explicitly.
+
+Authoring `table(slug).get/list` retain raw references. `list` accepts only status/offset/limit. Materialized objects and their references must not replace stored relation IDs or localization keys. Public content reads use active published versions; generic data tables are live. Results contain public author metadata and referenced media, never source language files or unrelated catalogue text. See [the content SDK contract](../../../docs/features/plugin-system.md) and `src/core/plugin-sdk/contentSchemas.ts`. This starter's default manifest does not request content access; declare every source/target table your plugin needs before using these calls.
 
 ## Permissions
 

@@ -27,6 +27,8 @@ import {
   cancelScheduledPublish,
   getDataRow,
   getDataTable,
+  canReadDataTable,
+  readDataTableIdentities,
   listDataAuthorOptions,
   saveDataRowDraft,
   scheduleDataRowPublish,
@@ -59,7 +61,6 @@ import {
   canEditDataRow,
   canPublishDataRow,
   canReadDataRow,
-  canReadTable,
   forbidden,
   requireDataAccess,
   requireDataAuthorManager,
@@ -145,8 +146,8 @@ async function loadRowForAccess(
   // satisfies row ownership on every row, so without this it could read, edit,
   // and publish system-table rows (pages/posts drafts, author identity). The
   // schema-read sibling already checks this; the row layer did not (GHSA-x69h).
-  const table = await getDataTable(db, scope, row.tableId)
-  if (!table || !canReadTable(user, table)) return rowNotFound()
+  const [identity] = await readDataTableIdentities(db, scope, [row.tableId])
+  if (!identity || !canReadDataTable({ kind: 'user', principal: user }, identity)) return rowNotFound()
   if (!check(user, row)) return forbidden()
   return row
 }

@@ -6,7 +6,6 @@
  *   mapper.ts    — internal mapping + hydrated-SELECT helpers (not re-exported)
  *   read.ts      — hydrated read queries (list / get / by-slug / authors)
  *   search.ts    — cross-table slug search (spotlight content provider)
- *   filter.ts    — operator-object filter querying (plugin content surface)
  *   mutations.ts — single-row writes (create / save / delete / move / status / author)
  *   bulk.ts      — transactional batch writes
  *   apply.ts     — explicit-delete row apply (the site-document save's write path)
@@ -29,9 +28,7 @@ export {
 } from './read'
 
 export { searchDataRows } from './search'
-
-
-export { listDataRowsWithFilter } from './filter'
+export { readDataRowRecords, readDataRowIdBySlug, readDataRowIdentity } from './readView'
 
 
 export {

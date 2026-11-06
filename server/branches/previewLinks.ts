@@ -60,11 +60,11 @@ export async function issueBranchPreviewLink(
 }
 
 /** The branch a token currently grants, or null when it is unknown or revoked. */
-export async function resolvePreviewToken(db: DbClient, token: string): Promise<string | null> {
+export async function resolvePreviewToken(db: DbClient, token: string): Promise<BranchPreview | null> {
   if (!TOKEN_PATTERN.test(token)) return null
-  const branchId = await resolveBranchPreviewToken(db, hashPreviewToken(token))
-  if (!branchId || !(await branchExists(db, branchId))) return null
-  return branchId
+  const preview = await resolveBranchPreviewToken(db, hashPreviewToken(token))
+  if (!preview || !(await branchExists(db, preview.branchId))) return null
+  return preview
 }
 
 function readCookie(req: Request, name: string): string {
@@ -77,7 +77,7 @@ function readCookie(req: Request, name: string): string {
 }
 
 /** The branch this request previews via its cookie, or null. */
-export async function resolvePreviewCookie(req: Request, db: DbClient): Promise<string | null> {
+export async function resolvePreviewCookie(req: Request, db: DbClient): Promise<BranchPreview | null> {
   const token = readCookie(req, BRANCH_PREVIEW_COOKIE)
   if (!token) return null
   return resolvePreviewToken(db, token)
