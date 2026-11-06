@@ -1,6 +1,6 @@
 import { Type, type Static } from '@sinclair/typebox'
 
-const TypeScriptProjectFileSchema = Type.Object({
+export const TypeScriptProjectFileSchema = Type.Object({
   path: Type.String(),
   content: Type.String(),
 })
@@ -13,7 +13,7 @@ const TypeScriptDiagnosticSeveritySchema = Type.Union([
   Type.Literal('info'),
 ])
 
-const TypeScriptEditorDiagnosticSchema = Type.Object({
+export const TypeScriptEditorDiagnosticSchema = Type.Object({
   code: Type.Number(),
   severity: TypeScriptDiagnosticSeveritySchema,
   message: Type.String(),

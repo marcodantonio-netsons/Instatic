@@ -13,7 +13,7 @@
  * Every id in and out is LOGICAL; the branch comes from `scope` and is
  * folded into the physical ids the SQL binds (see `@core/branches`).
  */
-import { physicalId } from '@core/branches'
+import { logicalIdOf, physicalId } from '@core/branches'
 import type { DbClient } from '../../../db/client'
 import type { BranchScope } from '../../../branches/scope'
 import type { DataRow } from '@core/data/schemas'
@@ -99,7 +99,7 @@ export async function listSoftDeletedDataRowIds(
   return rows.map((r) => r.id)
 }
 
-interface DataRowSeq {
+export interface DataRowSeq {
   id: string
   seq: number
 }
@@ -131,6 +131,42 @@ export async function listDataRowSeqs(
     ],
   )
   return rows.map((r) => ({ id: r.id, seq: Number(r.seq) }))
+}
+
+export interface ChangedDataRowRef {
+  id: string
+  tableId: string
+  seq: number
+  deleted: boolean
+}
+
+/**
+ * Lean refs of every row in the given tables whose seq is PAST the client's
+ * cursor — the reconnect delta of the live-sync channel. Soft-deleted rows
+ * included (a deletion the client missed must surface as a `rows-deleted`
+ * hint, not as silence). O(delta) via `data_rows_table_seq_idx`.
+ */
+export async function listChangedDataRowRefsSince(
+  db: DbClient,
+  scope: BranchScope,
+  tableIds: ReadonlyArray<string>,
+  cursor: number,
+): Promise<ChangedDataRowRef[]> {
+  if (tableIds.length === 0) return []
+  const placeholders = tableIds.map((_, i) => placeholder(db.dialect, i + 2)).join(', ')
+  const { rows } = await db.unsafe<{ id: string; table_id: string; seq: number; deleted_at: string | null }>(
+    `select logical_id as id, table_id, seq, deleted_at from data_rows
+     where seq > ${placeholder(db.dialect, 1)} and table_id in (${placeholders})
+       and branch_id = ${placeholder(db.dialect, tableIds.length + 2)}
+     order by seq asc`,
+    [cursor, ...tableIds.map((tableId) => physicalId(scope.branchId, tableId)), scope.branchId],
+  )
+  return rows.map((row) => ({
+    id: row.id,
+    tableId: logicalIdOf(scope.branchId, row.table_id),
+    seq: Number(row.seq),
+    deleted: row.deleted_at !== null,
+  }))
 }
 
 export async function getDataRow(

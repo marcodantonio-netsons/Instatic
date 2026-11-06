@@ -59,7 +59,7 @@ export interface DataRowWrite {
   slug: string
 }
 
-interface ApplyDataRowChangesInput {
+export interface ApplyDataRowChangesInput {
   tableId: string
   /** Rows to create/update, with their final slugs. */
   writes: DataRowWrite[]
@@ -70,7 +70,7 @@ interface ApplyDataRowChangesInput {
   seq: number
 }
 
-interface ApplyDataRowChangesResult {
+export interface ApplyDataRowChangesResult {
   /** True when any soft-deleted row was published (caller bumps the publish version AFTER commit). */
   deletedPublished: boolean
 }

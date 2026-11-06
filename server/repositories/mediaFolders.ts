@@ -161,7 +161,7 @@ export async function deleteMediaFolder(
 // ---------------------------------------------------------------------------
 
 /** A media folder serialized for bundle transfer (authorship dropped). */
-interface ExportableMediaFolder {
+export interface ExportableMediaFolder {
   id: string
   parentId: string | null
   name: string

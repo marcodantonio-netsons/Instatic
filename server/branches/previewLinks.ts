@@ -15,7 +15,6 @@
  */
 import { createHash, randomBytes } from 'node:crypto'
 import type { DbClient } from '../db/client'
-import { readCookie } from '../http'
 import { publicOriginIsHttps } from '../auth/security'
 import {
   createBranchPreview,
@@ -66,6 +65,15 @@ export async function resolvePreviewToken(db: DbClient, token: string): Promise<
   const branchId = await resolveBranchPreviewToken(db, hashPreviewToken(token))
   if (!branchId || !(await branchExists(db, branchId))) return null
   return branchId
+}
+
+function readCookie(req: Request, name: string): string {
+  const cookie = req.headers.get('cookie') ?? ''
+  for (const part of cookie.split(';')) {
+    const [rawKey, ...rawValue] = part.trim().split('=')
+    if (rawKey === name) return rawValue.join('=')
+  }
+  return ''
 }
 
 /** The branch this request previews via its cookie, or null. */

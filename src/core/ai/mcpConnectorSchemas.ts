@@ -38,6 +38,7 @@ const McpRemoteAccessSchema = Type.Union([
   Type.Literal('public-https'),
   Type.Literal('local-only'),
 ])
+export type McpRemoteAccess = Static<typeof McpRemoteAccessSchema>
 
 export const McpConnectionOverviewSchema = Type.Object({
   connections: Type.Array(McpConnectionViewSchema),

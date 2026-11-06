@@ -202,7 +202,7 @@ function safeStorageStem(filename: string): string {
   return safe || 'upload'
 }
 
-interface UploadForm {
+export interface UploadForm {
   /** The `file` part, or null when the multipart body has none. */
   file: File | null
   /** Optional `altText` text part — a site import sends the authored `<img alt>`. */

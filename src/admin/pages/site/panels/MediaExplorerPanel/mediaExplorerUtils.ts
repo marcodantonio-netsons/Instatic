@@ -70,7 +70,7 @@ function extension(path: string) {
  * real media, so `null` results are dropped at the bucketing/filtering step
  * rather than surfaced under a generic "Other" category.
  */
-function mediaBucket(mimeType: string | undefined, path: string): MediaBucket | null {
+export function mediaBucket(mimeType: string | undefined, path: string): MediaBucket | null {
   if (mimeType?.startsWith('image/')) return 'images'
   if (mimeType?.startsWith('video/')) return 'videos'
 

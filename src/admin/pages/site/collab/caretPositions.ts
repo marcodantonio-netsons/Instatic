@@ -14,7 +14,7 @@ import * as Y from 'yjs'
 import { fromBase64, toBase64 } from 'lib0/buffer'
 import { nodeTextOf } from '@core/collab'
 
-interface EncodedCaretRange {
+export interface EncodedCaretRange {
   nodeId: string
   prop: string
   /** base64-encoded Y.RelativePosition */

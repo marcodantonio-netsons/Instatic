@@ -14,7 +14,7 @@
  */
 import { parseCollabDocId } from '@core/collab'
 
-interface InvalidationTracker {
+export interface InvalidationTracker {
   /** Mark docs invalidated at a fresh version; returns the versions this batch owns. */
   activate(docIds: readonly string[]): Map<string, number>
   /** A reset batch completed: clear the active marker of every doc it still owns. */

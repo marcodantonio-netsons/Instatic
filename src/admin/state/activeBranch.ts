@@ -12,8 +12,8 @@
 import { MAIN_BRANCH_ID, isValidBranchId } from '@core/branches'
 import { registerRequestHeaderProvider } from '@core/http'
 
-const ACTIVE_BRANCH_STORAGE_KEY = 'instatic-active-branch'
-const BRANCH_QUERY_PARAM = 'branch'
+export const ACTIVE_BRANCH_STORAGE_KEY = 'instatic-active-branch'
+export const BRANCH_QUERY_PARAM = 'branch'
 /** The request header carrying the branch; the server reads it case-insensitively. */
 export const BRANCH_HEADER = 'X-Instatic-Branch'
 
@@ -60,7 +60,7 @@ export function rememberBranchId(branchId: string): void {
 }
 
 /** The branch header every admin request should carry; empty on main. */
-function activeBranchHeaders(): Record<string, string> {
+export function activeBranchHeaders(): Record<string, string> {
   return activeBranchId === MAIN_BRANCH_ID ? {} : { [BRANCH_HEADER]: activeBranchId }
 }
 

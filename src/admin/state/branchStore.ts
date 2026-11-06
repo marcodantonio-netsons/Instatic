@@ -43,7 +43,7 @@ const BRANCH_NOT_FOUND_CODE = 'branch_not_found'
 /** The inline reason every publish/schedule control shows on a branch. */
 export const BRANCH_PUBLISH_REASON = 'Publishing happens on main. Merge this branch first.'
 
-type BranchSwitcherMode = 'closed' | 'list' | 'create'
+export type BranchSwitcherMode = 'closed' | 'list' | 'create'
 
 interface BranchState {
   activeBranchId: string
@@ -70,7 +70,7 @@ interface BranchState {
 }
 
 /** Main first, then most recently updated. */
-function sortBranches(branches: readonly SiteBranch[]): SiteBranch[] {
+export function sortBranches(branches: readonly SiteBranch[]): SiteBranch[] {
   return [...branches].sort((a, b) => {
     if (a.id === MAIN_BRANCH_ID) return -1
     if (b.id === MAIN_BRANCH_ID) return 1
@@ -216,7 +216,7 @@ export async function deleteBranch(branchId: string): Promise<void> {
   await refreshBranchesAfterMutation()
 }
 
-type BranchMergeResult = ApplyMergeEnvelope
+export type BranchMergeResult = ApplyMergeEnvelope
 
 /**
  * Merge a branch into main, or update it from main. Callers wrap this in
@@ -303,7 +303,7 @@ function placeholderBranch(id: string): SiteBranch {
   return branch
 }
 
-interface BranchPublishGate {
+export interface BranchPublishGate {
   /** True while the tab edits a branch other than main. */
   onBranch: boolean
   /** The inline reason to show on disabled publish/schedule controls; null on main. */

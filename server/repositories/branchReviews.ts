@@ -131,7 +131,7 @@ export async function getOpenMergeRequest(db: DbClient, branchId: string): Promi
   return rows[0] ?? null
 }
 
-async function getMergeRequestById(db: DbClient, id: string): Promise<BranchMergeRequest | null> {
+export async function getMergeRequestById(db: DbClient, id: string): Promise<BranchMergeRequest | null> {
   const rows = await selectRequests(db, `where r.id = ${placeholder(db.dialect, 1)} limit 1`, [id])
   return rows[0] ?? null
 }

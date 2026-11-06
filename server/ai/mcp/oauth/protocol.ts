@@ -9,7 +9,7 @@ import {
 } from '../paths'
 
 export const MCP_OAUTH_SCOPE = 'mcp'
-const MCP_OAUTH_OFFLINE_SCOPE = 'offline_access'
+export const MCP_OAUTH_OFFLINE_SCOPE = 'offline_access'
 export const MCP_OAUTH_SUPPORTED_SCOPES = [MCP_OAUTH_SCOPE, MCP_OAUTH_OFFLINE_SCOPE] as const
 
 export const MCP_OAUTH_ISSUER_UNAVAILABLE_MESSAGE =

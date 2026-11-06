@@ -22,7 +22,7 @@ import type { BranchScope } from '../../branches/scope'
 import { getDataRow, getDataTable, saveDataRowDraft } from '../../repositories/data'
 import { applyContentEntryCellsFilter } from '../../publish/contentEvents'
 
-interface PageTreeAccessOptions {
+export interface PageTreeAccessOptions {
   /** Invoked after the field resolves, before any read/mutation. Throw to deny. */
   assertAccess?: (table: DataTable) => void
 }
