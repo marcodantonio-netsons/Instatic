@@ -481,18 +481,18 @@ export function publishPage(
   assertPageLoopScopes(page, site)
   assertPageScrollNavigation(page, site)
   assertPageScrollState(page, site)
+  const templateContext = buildTemplateRenderContext(page, site, options.templateContext)
+
   // Layer C: classify every node as static or dynamic before walking the tree.
   // Dynamic node ids are threaded into the RenderConfig so renderNode can
   // emit <instatic-hole> placeholders instead of recursing.
   const dynamicNodeIds = options.dynamicNodes === 'inline'
     ? new Set<string>()
-    : findDynamicNodeIds(page, site, registry)
+    : findDynamicNodeIds(page, site, registry, templateContext)
 
   // Composed once per page render: the walker reads it through the config,
   // and the <head> builder interpolates {source.field} tokens in the
   // title/description against the same frames.
-  const templateContext = buildTemplateRenderContext(page, site, options.templateContext)
-
   // Read-only inputs of this render pass. A renderer that needs a different
   // page (VC ref) or template frame (loop iteration) derives a child config —
   // it never mutates this one.

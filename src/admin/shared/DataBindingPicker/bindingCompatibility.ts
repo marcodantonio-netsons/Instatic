@@ -45,7 +45,7 @@ export const BINDING_COMPATIBILITY: Record<PropertyControlKind, readonly DataFie
   // multiSelect binds as a comma-joined list of selected option labels.
   // relation binds as the related row's primary-field display label.
   text:     ['text', 'localizedText', 'longText', 'richText', 'url', 'email', 'select', 'multiSelect', 'relation', 'number', 'boolean', 'date', 'dateTime'],
-  textarea: ['text', 'localizedText', 'longText', 'richText'],
+  textarea: ['text', 'localizedText', 'longText', 'richText', 'number'],
   richtext: ['richText', 'longText', 'text', 'localizedText'],
   // svg holds raw inline-SVG markup — edited in the code editor, never wired
   // to a data field.

@@ -47,5 +47,5 @@ export {
 } from '../page-tree/selectors'
 export { deleteSubtree, removeNodeSubtrees } from '../page-tree/subtreeRemoval'
 
-export { DynamicPropBindingSchema } from '../page-tree/dynamicBinding'
+export { DynamicPropBindingSchema, DynamicBindingConfigurationError } from '../page-tree/dynamicBinding'
 export type { DynamicPropBinding } from '../page-tree/dynamicBinding'

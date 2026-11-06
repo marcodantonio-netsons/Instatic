@@ -2,15 +2,13 @@
  * Page — a NodeTree (flat `nodes` + `rootNodeId`) plus page-level metadata
  * (id, slug, title, optional template config). The structural shape matches
  * `NodeTreeSchema`; the only refinement is that the page's nodes carry the
- * richer `PageNode` type (BaseNode + optional `dynamicBindings` for template
- * data binding), and `rootNodeId` always points at a `base.body` node.
+ * shared `PageNode` type (the same BaseNode contract, including runtime
+ * bindings), and `rootNodeId` always points at a `base.body` node.
  *
  * The shared `NodeTreeSchema.properties` are spread in so that `Page` and
  * `NodeTreeSchema` cannot drift out of sync. The `nodes` field is overridden
- * with the page-specific `PageNodeSchema` (vs. the BaseNode-typed version in
- * `NodeTreeSchema`) — `PageNode` is structurally a superset of `BaseNode`, so
- * anything that consumes the page as a generic `NodeTree<BaseNode>` still
- * works.
+ * with the named `PageNodeSchema` alias. Pages and components both satisfy
+ * the same generic `NodeTree<BaseNode>` contract.
  *
  * Architecture source: docs/superpowers/plans/2026-05-06-tree-unification.md
  *
@@ -31,7 +29,7 @@ import { PageSeoSchema, parsePageSeo } from './pageSeo'
 
 export const PageSchema = Type.Object({
   ...NodeTreeSchema.properties,
-  /** Override the BaseNode-typed `nodes` with the page-specific PageNode type. */
+  /** Page nodes use the shared BaseNode schema through its PageNode alias. */
   nodes: Type.Record(Type.String(), PageNodeSchema),
   id: Type.String(),
   /** URL-safe slug — used as the public URL path when published */

@@ -21,7 +21,8 @@
 import type { DbClient } from '../../db/client'
 import { FormConfigurationError } from '@core/forms'
 import { LocalizationError } from '@core/localization'
-import { PageTranslationError } from '@core/page-tree'
+import { PageTranslationError, DynamicBindingConfigurationError } from '@core/page-tree'
+import { DynamicBindingNumberFormatError } from '@core/templates'
 import { LoopScopeConfigurationError, ScrollNavigationConfigurationError } from '@core/publisher'
 import { VisualComponentParameterError } from '@core/visualComponents'
 import { isMainScope, type BranchScope } from '../../branches/scope'
@@ -65,7 +66,7 @@ export async function handlePublishRoutes(
     try {
       result = await publishDraftSite(db, user.id, options.uploadsDir)
     } catch (err) {
-      if (err instanceof FormConfigurationError || err instanceof RuntimeScriptBuildError || err instanceof ModulePublishValidationError || err instanceof LocalizationError || err instanceof PageTranslationError || err instanceof PublicAssetValidationError || err instanceof LoopScopeConfigurationError || err instanceof ScrollNavigationConfigurationError || err instanceof VisualComponentParameterError) {
+      if (err instanceof DynamicBindingConfigurationError || err instanceof DynamicBindingNumberFormatError || err instanceof FormConfigurationError || err instanceof RuntimeScriptBuildError || err instanceof ModulePublishValidationError || err instanceof LocalizationError || err instanceof PageTranslationError || err instanceof PublicAssetValidationError || err instanceof LoopScopeConfigurationError || err instanceof ScrollNavigationConfigurationError || err instanceof VisualComponentParameterError) {
         return jsonResponse({ error: err.message }, { status: 422 })
       }
       throw err

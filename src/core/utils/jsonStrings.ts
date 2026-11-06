@@ -14,3 +14,23 @@ export function mapJsonStrings(value: unknown, transform: (value: string, path: 
   }
   return next ?? value
 }
+
+/** Visit JSON string leaves without transforming or copying the input. */
+export function visitJsonStrings(value: unknown, visit: (value: string, path: string) => void, path = ''): void {
+  if (typeof value === 'string') {
+    visit(value, path)
+    return
+  }
+  if (!value || typeof value !== 'object') return
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      if (index in value) visitJsonStrings(value[index], visit, `${path}.${index}`)
+    }
+    return
+  }
+  for (const key in value) {
+    if (Object.hasOwn(value, key)) {
+      visitJsonStrings((value as Record<string, unknown>)[key], visit, path ? `${path}.${key}` : key)
+    }
+  }
+}

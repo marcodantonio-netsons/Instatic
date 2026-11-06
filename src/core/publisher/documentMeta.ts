@@ -1,22 +1,13 @@
 import { assertSeoUrl, parsePageSeo, type Page, type SiteDocument } from '@core/page-tree'
 import { urlScheme } from '@core/html-sanitize'
-import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
-import { interpolateTokens } from '@core/templates/tokenInterpolation'
+import { interpolateTokens, type TemplateRenderDataContext } from '@core/templates'
+import { mapJsonStrings } from '@core/utils/jsonStrings'
 import { escapeHtml, isSafeUrl } from './utils'
 
 /** Per-entry values override the template's authored document title/description. */
 export interface DocumentMetaOverride {
   title?: string
   description?: string
-}
-
-function interpolateJson(value: unknown, context: TemplateRenderDataContext): unknown {
-  if (typeof value === 'string') return interpolateTokens(value, context)
-  if (Array.isArray(value)) return value.map((item) => interpolateJson(item, context))
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, interpolateJson(item, context)]))
-  }
-  return value
 }
 
 /** One native metadata renderer is used by previews, static baking and live routes. */
@@ -65,7 +56,7 @@ export function buildDocumentMetaTags(
   for (const data of seo?.structuredData ?? []) {
     // Escaping '<' makes closing script tags and HTML comment openers inert while
     // JSON.parse restores the original data. JSON-LD never grants executable CSP sources.
-    const json = JSON.stringify(interpolateJson(data, context)).replace(/</g, '\\u003c')
+    const json = JSON.stringify(mapJsonStrings(data, resolve)).replace(/</g, '\\u003c')
     pageMeta += `\n  <script type="application/ld+json">${json}</script>`
   }
   return {

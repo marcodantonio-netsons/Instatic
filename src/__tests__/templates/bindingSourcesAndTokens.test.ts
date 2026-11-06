@@ -28,7 +28,15 @@ import {
   buildRouteFrame,
 } from '@core/templates/contextFrames'
 import { makeSite } from "../fixtures"
-import type { Page, SiteDocument } from '@core/page-tree'
+import {
+  DynamicBindingConfigurationError,
+  PageNodeSchema,
+  parsePageNode,
+  type Page,
+  type SiteDocument,
+} from '@core/page-tree'
+import { compiledCheck } from '@core/utils/typeboxCompiler'
+import { DynamicBindingNumberFormatError } from '@core/templates'
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -137,7 +145,96 @@ describe('resolveDynamicProps — system sources', () => {
     expect(props.text).toBe('OK')
   })
 
-  it('does NOT walk through arrays for dotted paths (defensive — leaf semantics only)', () => {
+  it('resolves repeater records by stable item ID for tokens and structured bindings', () => {
+    const product = {
+      id: 'product-1',
+      fields: {
+        matrix: [
+          { id: 'feature-1', cells: { initialValue: 'Basic' } },
+          { id: 'feature-2', cells: { initialValue: 'Premium' } },
+        ],
+      },
+    }
+    const context = ctx({ entryStack: [product] })
+    const path = 'matrix.feature-2.cells.initialValue'
+
+    expect(interpolateTokens(`{currentEntry.${path}}`, context)).toBe('Premium')
+    expect(resolveDynamicProps(
+      { text: 'Static' },
+      { text: { source: 'currentEntry', field: path } },
+      context,
+    ).text).toBe('Premium')
+
+    product.fields.matrix.reverse()
+    expect(interpolateTokens(`{currentEntry.${path}}`, context)).toBe('Premium')
+    expect(resolveDynamicProps(
+      { text: 'Static' },
+      { text: { source: 'currentEntry', field: path } },
+      context,
+    ).text).toBe('Premium')
+  })
+
+  it('resolves parentEntry repeater records from the frame below currentEntry', () => {
+    const context = ctx({ entryStack: [
+      { id: 'parent', fields: { matrix: [{ id: 'feature-2', cells: { initialValue: 'Parent value' } }] } },
+      { id: 'child', fields: { matrix: [{ id: 'feature-2', cells: { initialValue: 'Child value' } }] } },
+    ] })
+    const path = 'matrix.feature-2.cells.initialValue'
+
+    expect(interpolateTokens(`{parentEntry.${path}}`, context)).toBe('Parent value')
+    expect(resolveDynamicProps(
+      { text: 'Static' },
+      { text: { source: 'parentEntry', field: path } },
+      context,
+    ).text).toBe('Parent value')
+  })
+
+  it('returns undefined for missing item IDs and does not treat numeric segments as positions', () => {
+    const context = ctx({ entryStack: [{ id: 'r1', fields: {
+      matrix: [
+        { id: 'feature-2', cells: { initialValue: 'Premium' } },
+        { cells: { initialValue: 'No stable ID' } },
+      ],
+      nullableMatrix: null,
+    } }] })
+    const missingPath = 'matrix.missing.cells.initialValue'
+    const numericPath = 'matrix.0.cells.initialValue'
+    const nullPath = 'nullableMatrix.feature-2.cells.initialValue'
+
+    expect(interpolateTokens(`{currentEntry.${missingPath}}`, context)).toBe('')
+    expect(interpolateTokens(`{currentEntry.${numericPath}}`, context)).toBe('')
+    expect(interpolateTokens(`{currentEntry.${nullPath}}`, context)).toBe('')
+    expect(resolveDynamicProps(
+      { text: 'Static fallback' },
+      { text: { source: 'currentEntry', field: missingPath } },
+      context,
+    ).text).toBe('Static fallback')
+    expect(resolveDynamicProps(
+      { text: 'Static fallback' },
+      { text: { source: 'currentEntry', field: numericPath } },
+      context,
+    ).text).toBe('Static fallback')
+    expect(resolveDynamicProps(
+      { text: 'Static fallback' },
+      { text: { source: 'currentEntry', field: nullPath } },
+      context,
+    ).text).toBe('Static fallback')
+  })
+
+  it('accepts a numeric-looking segment only when it matches an actual item ID', () => {
+    const context = ctx({ entryStack: [{ id: 'r1', fields: {
+      matrix: [{ id: '0', cells: { initialValue: 'Stable ID zero' } }],
+    } }] })
+
+    expect(interpolateTokens('{currentEntry.matrix.0.cells.initialValue}', context)).toBe('Stable ID zero')
+    expect(resolveDynamicProps(
+      { text: 'Static' },
+      { text: { source: 'currentEntry', field: 'matrix.0.cells.initialValue' } },
+      context,
+    ).text).toBe('Stable ID zero')
+  })
+
+  it('does not traverse primitive arrays by position or by value', () => {
     const props = resolveDynamicProps(
       { text: 'Static' },
       { text: { source: 'currentEntry', field: 'tags.0' } },
@@ -148,6 +245,10 @@ describe('resolveDynamicProps — system sources', () => {
       }),
     )
     expect(props.text).toBe('Static')
+
+    const context = ctx({ entryStack: [{ id: 'r1', fields: { tags: ['a', 'b'] } }] })
+    expect(interpolateTokens('{currentEntry.tags.0}', context)).toBe('')
+    expect(interpolateTokens('{currentEntry.tags.a}', context)).toBe('')
   })
 })
 
@@ -464,5 +565,328 @@ describe('resolveDynamicProps — tokens in htmlAttributes', () => {
       ctx({ entryStack: [entry] }),
     )
     expect(props.htmlAttributes).toEqual({ nested: { deep: 'x' } })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Numeric structured bindings
+// ---------------------------------------------------------------------------
+
+describe('resolveDynamicProps — numeric bindings', () => {
+  it('formats numeric strings using the active site language and Intl decimal defaults', () => {
+    const props = resolveDynamicProps(
+      { text: '€' },
+      { text: { source: 'currentEntry', field: 'price', format: 'number' } },
+      ctx({
+        entryStack: [{ id: 'product-1', fields: { price: '1234.5678' } }],
+        site: { id: 'site_1', name: 'Acme', language: 'it-IT' },
+      }),
+    )
+
+    expect(props.text).toBe('1234,568')
+  })
+
+  it('uses explicit decimal options and locale override without currency formatting', () => {
+    const props = resolveDynamicProps(
+      { text: 'Static' },
+      {
+        text: {
+          source: 'currentEntry',
+          field: 'price',
+          format: 'number',
+          numberFormat: {
+            locale: 'en-US',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+            useGrouping: false,
+          },
+        },
+      },
+      ctx({ entryStack: [{ id: 'product-1', fields: { price: 1234.5 } }] }),
+    )
+
+    expect(props.text).toBe('1234.50')
+  })
+
+  it('uses the active page language catalogue for locale-specific number affixes', () => {
+    const binding = {
+      text: {
+        source: 'currentEntry' as const,
+        field: 'price',
+        format: 'number' as const,
+        numberFormat: { templateKey: 'pricing.monthly' },
+      },
+    }
+    const entryStack = [{ id: 'product-1', fields: { price: 12345.5 } }]
+    const english = resolveDynamicProps(
+      { text: 'Static' },
+      binding,
+      ctx({ entryStack, site: {
+        id: 'site_1', name: 'Acme', language: 'en',
+        translations: { pricing: { monthly: '€{value}' } },
+      } }),
+    )
+    const italian = resolveDynamicProps(
+      { text: 'Static' },
+      binding,
+      ctx({ entryStack, site: {
+        id: 'site_1', name: 'Acme', language: 'it',
+        translations: { pricing: { monthly: '{value} €' } },
+      } }),
+    )
+
+    expect(english.text).toBe('€12,345.5')
+    expect(italian.text).toBe('12.345,5 €')
+  })
+
+  it('keeps the page catalogue language independent from the numeric locale override', () => {
+    const props = resolveDynamicProps(
+      { text: 'Static' },
+      { text: {
+        source: 'currentEntry',
+        field: 'price',
+        format: 'number',
+        numberFormat: { locale: 'it-IT', templateKey: 'pricing.monthly' },
+      } },
+      ctx({
+        entryStack: [{ id: 'product-1', fields: { price: 12345.5 } }],
+        site: {
+          id: 'site_1', name: 'Acme', language: 'en',
+          translations: { pricing: { monthly: '€ {value}' } },
+        },
+      }),
+    )
+
+    expect(props.text).toBe('€ 12.345,5')
+  })
+
+  it('throws a typed path error for missing or malformed number language templates', () => {
+    const binding = {
+      text: {
+        source: 'currentEntry' as const,
+        field: 'price',
+        format: 'number' as const,
+        numberFormat: { templateKey: 'pricing.monthly' },
+      },
+    }
+    const entryStack = [{ id: 'product-1', fields: { price: 12.5 } }]
+    const contextFor = (pattern?: string) => ctx({
+      entryStack,
+      site: {
+        id: 'site_1', name: 'Acme', language: 'en',
+        translations: pattern === undefined ? {} : { pricing: { monthly: pattern } },
+      },
+    })
+
+    for (const [pattern, code] of [
+      ['Currency only', 'invalid-template'],
+      ['{value} and {value}', 'invalid-template'],
+      [undefined, 'invalid-template'],
+    ] as const) {
+      let error: unknown
+      try {
+        resolveDynamicProps({ text: 'Static' }, binding, contextFor(pattern))
+      } catch (caught) {
+        error = caught
+      }
+      expect(error).toBeInstanceOf(DynamicBindingNumberFormatError)
+      expect(error).toMatchObject({
+        code,
+        path: 'dynamicBindings.text.numberFormat.templateKey',
+      })
+    }
+
+    let emptyKeyError: unknown
+    try {
+      resolveDynamicProps({ text: 'Static' }, {
+        text: { ...binding.text, numberFormat: { templateKey: '' } },
+      }, contextFor('€{value}'))
+    } catch (caught) {
+      emptyKeyError = caught
+    }
+    expect(emptyKeyError).toBeInstanceOf(DynamicBindingNumberFormatError)
+    expect(emptyKeyError).toMatchObject({
+      code: 'invalid-template',
+      path: 'dynamicBindings.text.numberFormat.templateKey',
+    })
+
+    let noLanguageError: unknown
+    try {
+      resolveDynamicProps({ text: 'Static' }, {
+        text: {
+          ...binding.text,
+          numberFormat: { locale: 'it-IT', templateKey: 'pricing.monthly' },
+        },
+      }, ctx({
+        entryStack,
+        site: { id: 'site_1', name: 'Acme', translations: { pricing: { monthly: '€{value}' } } },
+      }))
+    } catch (caught) {
+      noLanguageError = caught
+    }
+    expect(noLanguageError).toBeInstanceOf(DynamicBindingNumberFormatError)
+    expect(noLanguageError).toMatchObject({
+      code: 'invalid-template',
+      path: 'dynamicBindings.text.numberFormat.templateKey',
+    })
+  })
+
+  it('leaves unformatted bindings raw and preserves the static fallback for missing values', () => {
+    const raw = resolveDynamicProps(
+      { text: 'Static' },
+      { text: { source: 'currentEntry', field: 'price' } },
+      ctx({ entryStack: [{ id: 'product-1', fields: { price: '1234.50' } }] }),
+    )
+    const missing = resolveDynamicProps(
+      { text: 'Static' },
+      { text: { source: 'currentEntry', field: 'price', format: 'number' } },
+      ctx({ entryStack: [{ id: 'product-1', fields: {} }] }),
+    )
+
+    expect(raw.text).toBe('1234.50')
+    expect(missing.text).toBe('Static')
+  })
+
+  it('throws a typed error for non-finite or non-numeric values', () => {
+    for (const price of [Number.POSITIVE_INFINITY, Number.NaN, 'not-a-price', '']) {
+      expect(() => resolveDynamicProps(
+        { text: 'Static' },
+        { text: { source: 'currentEntry', field: 'price', format: 'number' } },
+        ctx({ entryStack: [{ id: 'product-1', fields: { price } }] }),
+      )).toThrow(DynamicBindingNumberFormatError)
+    }
+  })
+
+  it('throws a typed error for invalid fraction ranges and locale tags', () => {
+    const binding = { source: 'currentEntry' as const, field: 'price', format: 'number' as const }
+    const context = ctx({ entryStack: [{ id: 'product-1', fields: { price: 12.5 } }] })
+
+    expect(() => resolveDynamicProps(
+      { text: 'Static' },
+      { text: { ...binding, numberFormat: { minimumFractionDigits: 3, maximumFractionDigits: 2 } } },
+      context,
+    )).toThrow(DynamicBindingNumberFormatError)
+    expect(() => resolveDynamicProps(
+      { text: 'Static' },
+      { text: { ...binding, numberFormat: { locale: 'not a locale' } } },
+      context,
+    )).toThrow(DynamicBindingNumberFormatError)
+  })
+
+  it('uses a typed path error when the number format context has no locale', () => {
+    const context = ctx({
+      entryStack: [{ id: 'product-1', fields: { price: 12.5 } }],
+      site: { id: 'site_1', name: 'Acme' },
+    })
+
+    let error: unknown
+    try {
+      resolveDynamicProps(
+      { text: 'Static' },
+      { text: { source: 'currentEntry', field: 'price', format: 'number' } },
+      context,
+      )
+    } catch (caught) {
+      error = caught
+    }
+
+    expect(error).toBeInstanceOf(DynamicBindingNumberFormatError)
+    expect(error).toMatchObject({
+      code: 'invalid-options',
+      path: 'dynamicBindings.text',
+    })
+  })
+
+  it('round-trips authored number format options through the page-node parser and schema', () => {
+    const raw = {
+      id: 'price-node',
+      moduleId: 'base.text',
+      children: [],
+      props: { text: '€' },
+      dynamicBindings: {
+        text: {
+          source: 'currentEntry',
+          field: 'price',
+          format: 'number',
+          numberFormat: { locale: 'it-IT', templateKey: 'pricing.monthly', minimumFractionDigits: 2, maximumFractionDigits: 2 },
+        },
+      },
+    }
+    const parsed = parsePageNode(raw, 'nodes.price-node')
+
+    expect(parsed.dynamicBindings?.text).toEqual(raw.dynamicBindings.text)
+    expect(compiledCheck(PageNodeSchema, parsed)).toBe(true)
+    expect(compiledCheck(PageNodeSchema, {
+      ...parsed,
+      dynamicBindings: { text: { ...raw.dynamicBindings.text, numberFormat: { maximumFractionDigits: 21 } } },
+    })).toBe(false)
+    expect(compiledCheck(PageNodeSchema, {
+      ...parsed,
+      dynamicBindings: { text: { ...raw.dynamicBindings.text, numberFormat: { ...raw.dynamicBindings.text.numberFormat, templateKey: '' } } },
+    })).toBe(false)
+    let configError: unknown
+    try {
+      parsePageNode({
+        ...raw,
+        dynamicBindings: { text: { ...raw.dynamicBindings.text, numberFormat: { minimumFractionDigits: '2' } } },
+      }, 'nodes.price-node')
+    } catch (error) {
+      configError = error
+    }
+    expect(configError).toBeInstanceOf(DynamicBindingConfigurationError)
+    expect(configError).toMatchObject({
+      path: 'dynamicBindings.text.numberFormat',
+      code: 'invalid-number-format',
+    })
+
+    for (const templateKey of ['', '   ']) {
+      let templateKeyError: unknown
+      try {
+        parsePageNode({
+          ...raw,
+          dynamicBindings: {
+            text: { ...raw.dynamicBindings.text, numberFormat: { ...raw.dynamicBindings.text.numberFormat, templateKey } },
+          },
+        }, 'nodes.price-node')
+      } catch (error) {
+        templateKeyError = error
+      }
+      expect(templateKeyError).toBeInstanceOf(DynamicBindingConfigurationError)
+      expect(templateKeyError).toMatchObject({
+        path: 'dynamicBindings.text.numberFormat.templateKey',
+        code: 'invalid-number-format',
+      })
+    }
+
+    for (const numberFormat of [
+      { minimumFractionDigits: 3, maximumFractionDigits: 2 },
+      { locale: '' },
+      { locale: 'not a locale' },
+    ]) {
+      let crossFieldError: unknown
+      try {
+        parsePageNode({
+          ...raw,
+          dynamicBindings: {
+            text: { ...raw.dynamicBindings.text, numberFormat },
+          },
+        }, 'nodes.price-node')
+      } catch (error) {
+        crossFieldError = error
+      }
+      expect(crossFieldError).toBeInstanceOf(DynamicBindingConfigurationError)
+      expect(crossFieldError).toMatchObject({
+        path: 'dynamicBindings.text.numberFormat',
+        code: 'invalid-number-format',
+      })
+    }
+
+    const canonicalLocale = parsePageNode({
+      ...raw,
+      dynamicBindings: {
+        text: { ...raw.dynamicBindings.text, numberFormat: { locale: ' it-it ' } },
+      },
+    }, 'nodes.price-node')
+    expect(canonicalLocale.dynamicBindings?.text.numberFormat?.locale).toBe('it-IT')
   })
 })

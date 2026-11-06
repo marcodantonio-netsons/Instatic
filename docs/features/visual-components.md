@@ -9,7 +9,7 @@ A VC **is** a `NodeTree<VCNode>` (structurally identical to `NodeTree<BaseNode>`
 ## TL;DR
 
 - VCs are stored as rows in the `components` system table (`data_tables.kind = 'component'`).
-- Type lives in `src/core/visualComponents/schemas.ts`. **`VCNode === BaseNode`** — no `dynamicBindings` (that's page-tree only).
+- Type lives in `src/core/visualComponents/schemas.ts`. **`VCNode === PageNode === BaseNode`** — shared structure, parameter bindings and runtime data bindings.
 - Parameters: typed (`string`, `number`, `boolean`, `url`, `enum`, `color`, `image`, `richText`, `slot`) with `defaultValue`, `required`, optional `enumOptions` and `description`.
 - **Slots are `base.slot-outlet` nodes inside the VC tree.** The outlet IS the slot — no separate `vc.params` slot entry. Multiple outlets with the same `slotName` count as one slot.
 - A consumer's `base.visual-component-ref` has one `base.slot-instance` child per declared slot, in param order, kept in sync by `syncSlotInstances(...)` (`slotSync.ts`).
@@ -58,7 +58,7 @@ Stored in `data_rows` (`table_id = 'components'`), serialized via `componentFrom
 
 ### `VCNode` (`= BaseNode`)
 
-A VC tree node is structurally identical to a `BaseNode`. The only difference from `PageNode`: no `dynamicBindings` field (template data-binding is page-tree-only).
+A VC tree node and a page node share `BaseNode`, including `dynamicBindings`. A component inside a loop reads the same `currentEntry` frame as ordinary page nodes. Bindings, including numeric formatting, survive storage parsing, component instantiation and canvas virtual-page synthesis; values are resolved by the common template engine rather than copied into the component.
 
 VC tree shape: `NodeTree<VCNode> = { nodes: Record<string, VCNode>, rootNodeId: string }` — same as any other tree. The stored root is a `base.body` structural anchor, but the Layers panel hides that wrapper while editing a VC and displays only the authored component content.
 

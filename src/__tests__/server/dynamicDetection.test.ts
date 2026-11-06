@@ -15,6 +15,7 @@
 import { describe, it, expect, afterEach } from 'bun:test'
 import { findDynamicNodeIds } from '../../core/publisher/dynamicDetection'
 import { loopSourceRegistry } from '../../core/loops/registry'
+import { buildTemplateRenderContext, composeTemplateChain } from '@core/templates'
 import { makePage, makeSite, makeRegistry, makeModule } from '../publisher/helpers'
 import type { VisualComponent } from '../../core/visualComponents/schemas'
 import type { LoopEntitySource } from '../../core/loops/types'
@@ -39,7 +40,13 @@ function makeLoopSource(id: string, requestDependent?: boolean): LoopEntitySourc
 function makeVcNodes(
   nodeSpecs: Record<
     string,
-    { moduleId: string; props?: Record<string, unknown>; children?: string[] }
+    {
+      moduleId: string
+      props?: Record<string, unknown>
+      children?: string[]
+      hidden?: boolean
+      propBindings?: VisualComponent['tree']['nodes'][string]['propBindings']
+    }
   >,
 ): VisualComponent['tree']['nodes'] {
   const nodes: VisualComponent['tree']['nodes'] = {}
@@ -50,6 +57,8 @@ function makeVcNodes(
       props: spec.props ?? {},
       breakpointOverrides: {},
       children: spec.children ?? [],
+      hidden: spec.hidden,
+      propBindings: spec.propBindings,
       classIds: [],
     }
   }
@@ -60,7 +69,13 @@ function makeVc(
   id: string,
   nodeSpecs: Record<
     string,
-    { moduleId: string; props?: Record<string, unknown>; children?: string[] }
+    {
+      moduleId: string
+      props?: Record<string, unknown>
+      children?: string[]
+      hidden?: boolean
+      propBindings?: VisualComponent['tree']['nodes'][string]['propBindings']
+    }
   >,
   rootNodeId = 'root',
 ): VisualComponent {
@@ -72,6 +87,21 @@ function makeVc(
     classIds: [],
     createdAt: 0,
   }
+}
+
+function makeLocalizedSite(messages: Record<string, unknown>) {
+  const site = makeSite()
+  site.settings.language = 'en'
+  site.settings.localization = { catalogues: [{ language: 'en', fileId: 'locale-en' }] }
+  site.files = [{
+    id: 'locale-en',
+    path: 'locales/en.json',
+    type: 'config',
+    content: JSON.stringify({ language: 'en', messages }),
+    createdAt: 0,
+    updatedAt: 0,
+  }]
+  return site
 }
 
 // ---------------------------------------------------------------------------
@@ -420,6 +450,115 @@ describe('findDynamicNodeIds — Rule 4: VC ref cascade', () => {
     expect(ids.size).toBe(0)
   })
 
+  it('ignores unused missing translation defaults and overrides after effective params are instantiated', () => {
+    const vc = makeVc('vc-effective-params', {
+      root: { moduleId: 'base.body', children: ['label'] },
+      label: {
+        moduleId: 'base.text',
+        props: { text: 'stale definition value' },
+        propBindings: { text: { paramId: 'label' } },
+      },
+    })
+    vc.params = [
+      { id: 'label', name: 'Label', type: 'string', defaultValue: '{site.translations.missing-default}', required: false },
+      { id: 'unused', name: 'Unused', type: 'string', defaultValue: 'unused', required: false },
+    ]
+    const page = makePage({
+      root: { moduleId: 'base.body', children: ['ref'] },
+      ref: {
+        moduleId: 'base.visual-component-ref',
+        props: {
+          componentId: 'vc-effective-params',
+          propOverrides: {
+            label: 'Safe text',
+            unused: '{site.translations.missing-override}',
+          },
+        },
+      },
+    })
+    const site = makeLocalizedSite({})
+    site.visualComponents = [vc]
+    const reg = makeRegistry({
+      'base.body': makeModule('base.body'),
+      'base.text': makeModule('base.text'),
+      'base.visual-component-ref': makeModule('base.visual-component-ref'),
+    })
+
+    expect(findDynamicNodeIds(page, site, reg).size).toBe(0)
+  })
+
+  it('marks the outer VC ref as the only hole for dynamic effective params and translated slot fills', () => {
+    const vc = makeVc('vc-dynamic-effective-content', {
+      root: { moduleId: 'base.body', children: ['label', 'outlet'] },
+      label: {
+        moduleId: 'base.text',
+        props: { text: 'stale definition value' },
+        propBindings: { text: { paramId: 'label' } },
+      },
+      outlet: { moduleId: 'base.slot-outlet', props: { slotName: 'body' } },
+    })
+    vc.params = [
+      { id: 'label', name: 'Label', type: 'string', defaultValue: 'static default', required: false },
+    ]
+    const page = makePage({
+      root: { moduleId: 'base.body', children: ['ref'] },
+      ref: {
+        moduleId: 'base.visual-component-ref',
+        props: {
+          componentId: 'vc-dynamic-effective-content',
+          propOverrides: { label: '{site.translations.live}' },
+        },
+        children: ['body-slot'],
+      },
+      'body-slot': {
+        moduleId: 'base.slot-instance',
+        props: { slotName: 'body' },
+        children: ['fill'],
+      },
+      fill: { moduleId: 'base.text', props: { text: '{site.translations.live}' } },
+    })
+    const site = makeLocalizedSite({ live: 'Search {route.query.q}' })
+    site.visualComponents = [vc]
+    const reg = makeRegistry({
+      'base.body': makeModule('base.body'),
+      'base.text': makeModule('base.text'),
+      'base.visual-component-ref': makeModule('base.visual-component-ref'),
+    })
+
+    expect(findDynamicNodeIds(page, site, reg)).toEqual(new Set(['ref']))
+  })
+
+  it('does not promote a static loop for a dynamic slot fill hidden by an unused slot outlet', () => {
+    const vc = makeVc('vc-hidden-slot-outlet', {
+      root: { moduleId: 'base.body', children: ['outlet'] },
+      outlet: { moduleId: 'base.slot-outlet', props: { slotName: 'body' }, hidden: true },
+    })
+    const page = makePage({
+      root: { moduleId: 'base.body', children: ['loop'] },
+      loop: { moduleId: 'base.loop', props: {}, children: ['ref'] },
+      ref: {
+        moduleId: 'base.visual-component-ref',
+        props: { componentId: 'vc-hidden-slot-outlet' },
+        children: ['body-slot'],
+      },
+      'body-slot': {
+        moduleId: 'base.slot-instance',
+        props: { slotName: 'body' },
+        children: ['fill'],
+      },
+      fill: { moduleId: 'base.text', props: { text: '{site.translations.live}' } },
+    })
+    const site = makeLocalizedSite({ live: 'Search {route.query.q}' })
+    site.visualComponents = [vc]
+    const reg = makeRegistry({
+      'base.body': makeModule('base.body'),
+      'base.text': makeModule('base.text'),
+      'base.visual-component-ref': makeModule('base.visual-component-ref'),
+    })
+
+    expect(findDynamicNodeIds(page, site, reg)).toEqual(new Set())
+  })
+
   it('handles a VC with a request-dependent loop source inside', () => {
     registerTestSource(makeLoopSource('test.live-feed', true))
 
@@ -452,7 +591,10 @@ describe('findDynamicNodeIds — Rule 4: VC ref cascade', () => {
       ref1: {
         moduleId: 'base.visual-component-ref',
         props: { componentId: 'vc-missing' },
+        children: ['slot'],
       },
+      slot: { moduleId: 'base.slot-instance', props: { slotName: 'body' }, children: ['fill'] },
+      fill: { moduleId: 'base.text', props: { text: '{route.query.q}' } },
     })
     const site = makeSite({ visualComponents: [] })
     const reg = makeRegistry({
@@ -652,4 +794,31 @@ describe('findDynamicNodeIds — pre-pass / main-pass rule agreement', () => {
     expect(ids.has('loop')).toBe(true)
     expect(ids.has('ref1')).toBe(false)
   })
+})
+
+it('uses terminal language for composed pages and all catalogues for standalone templates', () => {
+  const site = makeLocalizedSite({ team: '{route.query.team}' })
+  site.settings.localization!.catalogues.push({ language: 'it', fileId: 'locale-it' })
+  site.files.push({ id: 'locale-it', path: 'locales/it.json', type: 'config',
+    content: JSON.stringify({ language: 'it', messages: { team: 'Italian team' } }),
+    createdAt: 0, updatedAt: 0 })
+  const page = makePage({
+    root: { moduleId: 'base.body', children: ['text'] },
+    text: { moduleId: 'base.text', props: { text: '{site.translations.team}' } },
+  })
+  page.language = 'it'
+  const layout = makePage({
+    id: 'layout',
+    slug: 'layout',
+    root: { moduleId: 'base.body', children: ['outlet'] },
+    outlet: { moduleId: 'base.outlet' },
+    template: { enabled: true, target: { kind: 'everywhere' }, priority: 0 },
+  })
+  const composed = composeTemplateChain([layout], { kind: 'page', page })
+  const terminalContext = buildTemplateRenderContext(composed, site, undefined)
+  expect(terminalContext.site?.language).toBe('it')
+  expect(findDynamicNodeIds(composed, site, makeRegistry({}), terminalContext).has('text')).toBe(false)
+
+  page.template = { enabled: true, target: { kind: 'postTypes', tableSlugs: ['products'] }, priority: 0 }
+  expect(findDynamicNodeIds(page, site, makeRegistry({})).has('text')).toBe(true)
 })

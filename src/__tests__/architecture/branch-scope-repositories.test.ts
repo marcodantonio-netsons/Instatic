@@ -47,11 +47,12 @@ const SCOPELESS_REPOSITORY_FUNCTIONS = new Set([
 /**
  * Files outside the repositories with raw SQL on a branched table where the
  * branch is carried by a physical id instead of a `branch_id` predicate.
- * §3 — the loop source binds `physicalId(branchId, tableId)` from `@core/branches`.
+ * §3 — the loop source passes `physicalId(branchId, tableId)` from `@core/branches`
+ *      to its SQL query module; the physical table ID carries the branch.
  * §4 — the setup screen reads the main shell by its well-known physical key `default`.
  */
 const RAW_SQL_ALLOWLIST = new Set([
-  'src/core/loops/sources/dataRows.ts', // §3
+  'src/core/loops/sources/dataRowsQueries.ts', // §3
   'server/handlers/cms/setup.ts', // §4
 ])
 

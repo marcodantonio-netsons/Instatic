@@ -62,6 +62,26 @@ describe('required arguments in the native publisher', () => {
     expect(publishPage(page, site, registry).html).toContain('href="{page.permalink}"')
   })
 
+  it('requires nested translation entry references outside a loop and resolves them inside one', () => {
+    const { page, site } = linkFixture('{site.translations.product.download}')
+    site.settings.language = 'en'
+    site.settings.localization = { catalogues: [{ language: 'en', fileId: 'en' }] }
+    site.files = [{
+      id: 'en', path: 'locales/en.json', type: 'config',
+      content: JSON.stringify({ language: 'en', messages: { product: { download: '{currentEntry.url}' } } }),
+      createdAt: 0, updatedAt: 0,
+    }]
+
+    expect(() => publishPage(page, site, registry)).toThrow(VisualComponentParameterError)
+
+    page.nodes.root.children = ['loop']
+    page.nodes.loop = makeNode({ id: 'loop', moduleId: 'base.loop', children: ['ref'] })
+    const html = publishPage(page, site, registry, {
+      loopData: new Map([['loop', { items: [{ id: 'product', fields: { url: '/product.zip' } }], totalItems: 1, pageNumber: 1, hasMore: false }]]),
+    }).html
+    expect(html).toContain('href="/product.zip"')
+  })
+
   it('does not interpolate a field result a second time while checking the parameter', () => {
     const { page, site } = linkFixture('{currentEntry.url}')
     const html = publishPage(page, site, registry, {

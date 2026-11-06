@@ -1,6 +1,16 @@
 import type { PageNode, SiteDocument } from '@core/page-tree'
+import { visitJsonStrings } from '@core/utils/jsonStrings'
 import { walkRenderTree } from '@core/visualComponents'
-import { assertPageTranslationGroups, composeTemplateChain, parseTokenString, readPageTranslationField, resolvePageTranslations, resolveTemplateChain } from '@core/templates'
+import {
+  assertPageTranslationGroups,
+  bindingToToken,
+  buildTemplateRenderContext,
+  composeTemplateChain,
+  readPageTranslationField,
+  resolvePageTranslations,
+  resolveTemplateChain,
+  visitExpandedTokenReferences,
+} from '@core/templates'
 
 /** Check effective static pages and reachable components before snapshot writes. */
 export function assertPageTranslationBindings(site: SiteDocument): void {
@@ -9,18 +19,15 @@ export function assertPageTranslationBindings(site: SiteDocument): void {
   for (const page of site.pages) {
     if (page.template?.enabled) continue
     const translations = resolvePageTranslations(page, site)
-    const checkText = (value: unknown) => {
-      if (typeof value !== 'string' || !value.includes('{')) return
-      for (const token of parseTokenString(value)) {
-        if (token.kind === 'token' && token.source === 'page' && token.field.startsWith('translations.')) {
-          readPageTranslationField(translations, token.field.slice('translations.'.length))
-        }
+    const context = buildTemplateRenderContext(page, site, undefined)
+    const checkToken = (token: { source: string; field: string }) => {
+      if (token.source === 'page' && token.field.startsWith('translations.')) {
+        readPageTranslationField(translations, token.field.slice('translations.'.length))
       }
     }
-    const checkJson = (value: unknown): void => {
-      if (typeof value === 'string') checkText(value)
-      else if (Array.isArray(value)) for (const item of value) checkJson(item)
-      else if (value && typeof value === 'object') for (const item of Object.values(value)) checkJson(item)
+    const checkText = (value: unknown) => {
+      if (typeof value !== 'string' || !value.includes('{')) return
+      visitExpandedTokenReferences(value, context, checkToken)
     }
     const checkNode = (node: PageNode) => {
       for (const [name, value] of Object.entries(node.props)) {
@@ -32,12 +39,14 @@ export function assertPageTranslationBindings(site: SiteDocument): void {
       for (const binding of Object.values(node.dynamicBindings ?? {})) {
         if (binding.source === 'page' && binding.field.startsWith('translations.')) {
           readPageTranslationField(translations, binding.field.slice('translations.'.length))
+        } else if (binding.source === 'site' && binding.field.startsWith('translations.')) {
+          visitExpandedTokenReferences(bindingToToken(binding.source, binding.field), context, checkToken)
         }
       }
     }
     checkText(site.settings.metaTitle)
     checkText(site.settings.metaDescription)
-    checkJson(page.seo)
+    visitJsonStrings(page.seo, checkText)
     const effective = composeTemplateChain(chain, { kind: 'page', page })
     walkRenderTree(effective.nodes, effective.rootNodeId, site.visualComponents, checkNode)
   }

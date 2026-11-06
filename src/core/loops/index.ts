@@ -17,9 +17,12 @@ export type { LoopQueryBinding } from '@core/loops-schema'
 export { pageToLoopItem, filterPagesForLoop } from './sources/sitePages'
 export {
   ENTRY_FIELD_FILTER_KEY,
+  ENTRY_FIELD_ITEM_ID_FILTER_KEY,
   ENTRY_FIELD_SOURCE_ID,
+  readEntryFieldItemIdFilter,
   resolveEntryFieldItems,
   type EntryFieldMedia,
+  type ResolveEntryFieldItemsOptions,
 } from './sources/entryField'
 
 // Media projection shared by the `data.rows` source and the publisher's

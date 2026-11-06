@@ -11,6 +11,7 @@ Loop sources are pluggable: built-in sources (`data.rows`, `site.pages`, `site.m
 - Loop source registry: `loopSourceRegistry` in `src/core/loops/registry.ts`. First-party sources self-register from `src/core/loops/sources/index.ts` at boot.
 - `LoopEntitySource` shape: `{ id, label, fields, filterSchema?, orderByOptions?, fetch, preview? }` in `src/core/loops/types.ts`.
 - `entry.field` is the contextual exception: it resolves an array on the closest `currentEntry` separately for every outer iteration, so a Project's multi-media `gallery` field can drive an inner loop.
+- An `entry.field` loop can filter by item identity before direction and pagination are applied.
 - The `base.loop` module's children are **variants** — different per-item layouts (e.g. "Card", "Featured"). The walker round-robins across them as it iterates.
 - At publish time, `loopPrefetch.ts` calls each loop's `fetch()` and stores results on the render context. The walker is then purely synchronous.
 - Each iteration renders against a fresh `entryStack` snapshot (`[...baseStack, item]`) carried in a child `RenderConfig`; nodes inside the loop resolve `currentEntry.<field>` against that item via dynamic bindings. The stack is never mutated in place.
@@ -172,6 +173,14 @@ available as `currentEntry.value`; object-array members are exposed by key.
 Media ids are resolved through the publisher's batched media prefetch and
 provide `currentEntry.src`, `url`, `path`, `altText`, `mimeType`, `width`, and
 `height`.
+
+The optional text `Item ID` filter keeps items whose identity matches the
+authored value before direction, offset, and limit. Objects with a nonempty
+string `id` use that value; string items use the string itself; other values
+use the positional `entry-item-N` identity. An empty filter keeps the full
+array, and a missing ID produces an empty result. `totalItems` counts the
+filtered items. Explicit IDs let a loop keep selecting the same item when an
+authored collection is reordered.
 
 Contextual loops preserve authored order by default, can reverse/slice with
 direction/offset/limit, and do not support infinite pagination. Infinite

@@ -15,6 +15,8 @@
 
 import { describe, it, expect } from 'bun:test'
 import { publishPage, renderNode } from '@core/publisher'
+import { parseVisualComponent } from '@core/visualComponents'
+import { LoopModule } from '@modules/base/loop'
 import type { VisualComponent, VCParam, VCNode } from '@core/visualComponents'
 import { makeModule, makeRegistry, makePage, makeSite, makeAccumulators } from './helpers'
 import { ContainerModule } from '@modules/base/container'
@@ -28,6 +30,7 @@ import { OutletModule } from '@modules/base/outlet'
 // ---------------------------------------------------------------------------
 
 const registry = makeRegistry({
+  'base.loop': LoopModule as never,
   'base.container': ContainerModule as never,
   'base.text': TextModule as never,
   'base.visual-component-ref': VisualComponentRefModule as never,
@@ -454,7 +457,8 @@ describe('VC inlining — class CSS collection', () => {
         assets: { css: 'p { color: navy; }' },
         render: (props) => ({ html: `<p>${String((props as { text: unknown }).text)}</p>` }),
       }),
-      'base.container': ContainerModule as never,
+      'base.loop': LoopModule as never,
+  'base.container': ContainerModule as never,
     })
 
     const styledNode = makeVCNode({
@@ -678,5 +682,27 @@ describe('VC inlining — nested VC refs', () => {
     // Structure: outer container wraps inner text
     expect(html).toContain('<div>')
     expect(html).toContain('<p>Inner</p>')
+  })
+})
+
+
+describe('shared components — persisted numeric row bindings', () => {
+  it('formats each loop row through a parsed component without copying display amounts', () => {
+    const parsed = parseVisualComponent(makeVC({
+      id: 'amount', name: 'Amount', rootId: 'amount-text',
+      nodes: [makeVCNode({ id: 'amount-text', moduleId: 'base.text', props: { text: 'stale copied amount', tag: 'span' }, dynamicBindings: { text: { source: 'currentEntry', field: 'amount', format: 'number', numberFormat: { minimumFractionDigits: 2, maximumFractionDigits: 2 } } } })],
+    }))
+    if (!parsed) throw new Error('Component must parse')
+    const page = makePage({
+      root: { moduleId: 'base.container', children: ['prices'] },
+      prices: { moduleId: 'base.loop', props: { ...LoopModule.defaults, pagination: 'none' }, children: ['price-ref'] },
+      'price-ref': { moduleId: 'base.visual-component-ref', props: { componentId: parsed.id, propOverrides: {} } },
+    })
+    const site = makeSite({ pages: [page], visualComponents: [parsed] })
+    for (const [language, expected] of [['it', ['248,75', '69,90']], ['en', ['248.75', '69.90']]]) {
+      const html = publishPage(page, { ...site, settings: { ...site.settings, language } }, registry, { dynamicNodes: 'inline', loopData: new Map([['prices', { items: [{ id: 'a', fields: { amount: 248.75 } }, { id: 'b', fields: { amount: 69.90 } }], totalItems: 2, pageNumber: 1, hasMore: false }]]) }).html
+      for (const value of expected) expect(html).toContain(`<span>${value}</span>`)
+      expect(html).not.toContain('stale copied amount')
+    }
   })
 })

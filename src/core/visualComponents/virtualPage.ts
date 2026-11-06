@@ -18,7 +18,7 @@
  * generated from `crypto.randomUUID()` and never collide with the prefix).
  */
 
-import type { Page, PageNode } from '@core/page-tree-schema'
+import type { Page } from '@core/page-tree-schema'
 import type { VisualComponent } from './schemas'
 
 /**
@@ -49,8 +49,7 @@ export function parseVirtualVCPageId(pageId: string): string | null {
  * Flatten a Visual Component's tree into a virtual `Page` so the canvas
  * and publisher can render it through the existing page pipeline.
  *
- * `VCNode` (= `BaseNode`) is structurally compatible with `PageNode`
- * (which adds only optional `dynamicBindings`), so the cast is safe.
+ * `VCNode` and `PageNode` share the BaseNode schema, including runtime bindings.
  */
 export function flattenVCToVirtualPage(vc: VisualComponent): Page {
   return {
@@ -58,6 +57,6 @@ export function flattenVCToVirtualPage(vc: VisualComponent): Page {
     title: vc.name,
     slug: `components/${vc.name}`,
     rootNodeId: vc.tree.rootNodeId,
-    nodes: vc.tree.nodes as Record<string, PageNode>,
+    nodes: vc.tree.nodes,
   }
 }

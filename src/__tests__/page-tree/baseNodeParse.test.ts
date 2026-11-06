@@ -31,6 +31,7 @@ function rawStoredNode(): Record<string, unknown> {
     classIds: ['c1', 7, 'c2'],
     inlineStyles: { color: 'blue' },
     propBindings: { text: { paramId: 'p1' }, broken: { nope: 1 } },
+    dynamicBindings: { text: { source: 'currentEntry', field: 'amount', format: 'number', numberFormat: { minimumFractionDigits: 2, maximumFractionDigits: 2 } } },
     label: 'My Node',
     locked: true,
     hidden: false,
@@ -132,5 +133,14 @@ describe('parseBaseNodeFields — page/VC parse equivalence', () => {
     })
     expect(vc).not.toBeNull()
     expect(Object.keys(vc!.tree.nodes)).toEqual([NODE_ID])
+  })
+})
+
+
+describe('shared runtime bindings — corrupted numeric configuration', () => {
+  it('reports invalid component bindings instead of silently dropping the node', () => {
+    const raw = { ...rawStoredNode(), dynamicBindings: { text: { source: 'currentEntry', field: 'amount', format: 'number', numberFormat: { minimumFractionDigits: 'two' } } } }
+    expect(() => parsedViaVC(raw)).toThrow(/numberFormat/)
+    expect(() => parsedViaPage(raw)).toThrow(/numberFormat/)
   })
 })

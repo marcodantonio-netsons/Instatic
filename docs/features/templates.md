@@ -230,6 +230,14 @@ Text props mix literal text + tokens:
 
 `parseTokenString(input)` returns `TokenSegmentNode[]`; `interpolateTokens(input, ctx)` evaluates and concatenates. Tokens that resolve to `undefined` render as the empty string.
 
+Dotted `currentEntry` and `parentEntry` paths can select a repeater record by its stable `id`, then continue through its fields. The same path works in inline tokens and structured bindings:
+
+```text
+{currentEntry.matrix.feature-2.cells.initialValue}
+```
+
+`feature-2` must exactly match an item's `id`. The segment selects by ID, never by array position; a numeric-looking segment such as `0` works only when an item actually has `id: "0"`. Primitive arrays and missing IDs do not resolve, so inline tokens become empty and structured bindings keep their static prop value.
+
 Interpolation applies to string-typed props during the tree walk **and** to the document `<title>` + `<meta name="description">` (`buildDocumentMetaTags` in `src/core/publisher/render.ts`), so a site-wide `metaTitle` like `{currentEntry.name} | Acme` publishes per-entry SEO titles on entry routes.
 
 Source: `src/core/templates/tokenInterpolation.ts`.
@@ -286,12 +294,18 @@ The design canvas renders the active document the way it publishes: **inside its
 
 ### Dynamic binding picker
 
-The Properties panel wraps every bindable control in `DynamicBindingControl` (`src/admin/pages/site/property-controls/DynamicBindingControl/`). Two interaction modes:
+The Properties panel wraps every bindable control in `DynamicBindingControl` (`src/admin/pages/site/property-controls/DynamicBindingControl/`). The picker offers two actions for text and textarea controls:
 
-- **Insert mode** (text / string controls): clicking the `{}` affordance opens a picker popover. Clicking a field row inserts a `{source.field}` token into the text value at the caret. The popover **stays open** so authors can insert multiple tokens in one session without re-opening.
-- **Bind mode** (image / media controls): clicking the affordance opens the picker. Clicking a field commits a structured entry to `node.dynamicBindings[propKey]` and the picker **closes immediately**.
+- **Insert token** (default for text / string controls): clicking the `{}` affordance opens a picker popover. Clicking a field row inserts a `{source.field}` token into the text value at the caret. The popover **stays open** so authors can insert multiple tokens in one session without re-opening.
+- **Bind whole value**: the action selector switches the same picker to structured binding. Clicking a field commits an entry to `node.dynamicBindings[propKey]` and the picker **closes immediately**. This is available for text and textarea controls as well as image / media controls.
 
 Neither mode has a Confirm step — a single click is the action.
+
+### Decimal number bindings
+
+A structured binding may set `format: 'number'` and optional `numberFormat` settings (`locale`, `templateKey`, `minimumFractionDigits`, `maximumFractionDigits`, `useGrouping`). The resolver formats a finite number or numeric string with `Intl.NumberFormat` decimal style. It uses the active page language from the native render context unless a BCP 47 locale override is authored; otherwise it uses the platform's standard decimal defaults. An optional `templateKey` resolves a language-file string from the active page language and replaces its single literal `{value}` placeholder with the formatted number. The numeric `locale` controls decimal presentation only; it does not change which language catalogue supplies the surrounding text. A missing key or a pattern with anything other than one `{value}` placeholder raises a typed path error. Missing bound fields retain the existing static/empty fallback behavior, and invalid numbers or format settings raise typed path errors instead of becoming zero or silently losing the binding.
+
+For prices, bind the numeric amount and use a language template for currency symbol, position, and spacing; translate billing periods, renewal terms, and other wording separately. For example, one catalogue value can use `€{value}` in English and `{value} €` in Italian without duplicating the amount. Without a `templateKey`, number bindings keep the existing decimal-only output; raw numeric source values remain usable by calculations.
 
 **Auto-scope:** when the active page is a `postTypes` template, the picker auto-scopes to the first targeted table. Field rows appear directly under a `"<TableName> fields"` group header with a chip labelled `"Current row — <TableName>"`. No source-selection step is shown.
 

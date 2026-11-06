@@ -20,7 +20,7 @@
  */
 
 import type { Page, PageNode, PageTemplateConfig } from '@core/page-tree'
-import { parsePageTranslationGroup, parsePageNode, parsePageTemplate } from '@core/page-tree'
+import { parsePageTranslationGroup, parsePageNode, parsePageTemplate, DynamicBindingConfigurationError } from '@core/page-tree'
 import type { DataRow, DataRowCells } from '@core/data/schemas'
 import { readPageSeoCells, writePageSeoCells } from './pageSeoCells'
 
@@ -88,7 +88,8 @@ function parseNode(id: string, raw: unknown): PageNode | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   try {
     return parsePageNode({ id, ...(raw as Record<string, unknown>) }, `nodes.${id}`)
-  } catch {
+  } catch (err) {
+    if (err instanceof DynamicBindingConfigurationError) throw err
     // A node the parser cannot make sense of is dropped, not crashed on:
     // validatePages reports the structural problem where it can be fixed.
     return null

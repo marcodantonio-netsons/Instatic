@@ -24,6 +24,8 @@
  * to collide with an id-based route (table ids are nanoid strings, no leading
  * underscores), and it avoids any risk of the table/:id pattern eating it.
  */
+import { DynamicBindingConfigurationError } from '@core/page-tree'
+import { DynamicBindingNumberFormatError } from '@core/templates'
 import type { DbClient } from '../../../db/client'
 import type { BranchScope } from '../../../branches/scope'
 import type { CmsHandlerOptions } from '../shared'
@@ -51,6 +53,7 @@ export async function handleDataRoutes(
       ?? (await handleDataTableRoutes(req, db, scope))
       ?? (await handleDataRowRoutes(req, db, scope, options))
   } catch (error) {
+    if (error instanceof DynamicBindingConfigurationError || error instanceof DynamicBindingNumberFormatError) return jsonResponse({ error: error.message }, { status: 422 })
     if (error instanceof PagePublishError) return jsonResponse({ error: error.message }, { status: 409 })
     if (error instanceof RuntimeScriptBuildError) return jsonResponse({ error: error.message }, { status: 422 })
     if (error instanceof LocalizedDataReferenceAccessError) return jsonResponse({ error: error.message }, { status: 403 })

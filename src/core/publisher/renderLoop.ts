@@ -14,8 +14,10 @@
 import type { PageNode } from '@core/page-tree'
 import {
   ENTRY_FIELD_FILTER_KEY,
+  ENTRY_FIELD_ITEM_ID_FILTER_KEY,
   ENTRY_FIELD_SOURCE_ID,
   LOOP_LOADING_LABEL_DEFAULTS,
+  readEntryFieldItemIdFilter,
   resolveEntryFieldItems,
   readLoopQueryBindings,
   type EntryFieldMedia,
@@ -167,10 +169,14 @@ function resolveLoopData(node: PageNode, config: RenderConfig) {
   }
 
   const filters = node.props.filters
-  const fieldId =
-    filters && typeof filters === 'object' && !Array.isArray(filters)
-      ? (filters as Record<string, unknown>)[ENTRY_FIELD_FILTER_KEY]
-      : undefined
+  const filterRecord = filters && typeof filters === 'object' && !Array.isArray(filters)
+    ? filters as Record<string, unknown>
+    : undefined
+  const itemId = readEntryFieldItemIdFilter(
+    filterRecord?.[ENTRY_FIELD_ITEM_ID_FILTER_KEY],
+    `nodes.${node.id}.props.filters.${ENTRY_FIELD_ITEM_ID_FILTER_KEY}`,
+  )
+  const fieldId = filterRecord?.[ENTRY_FIELD_FILTER_KEY]
   if (typeof fieldId !== 'string' || !fieldId) {
     return { items: [], totalItems: 0, pageNumber: 1, hasMore: false }
   }
@@ -179,6 +185,7 @@ function resolveLoopData(node: PageNode, config: RenderConfig) {
   const entry = stack[stack.length - 1]
   const value = entry?.fields[fieldId]
   const resolved = resolveEntryFieldItems(value, {
+    itemId,
     offset: typeof node.props.offset === 'number' ? node.props.offset : 0,
     limit: typeof node.props.limit === 'number' ? node.props.limit : 10,
     direction: node.props.direction === 'desc' ? 'desc' : 'asc',

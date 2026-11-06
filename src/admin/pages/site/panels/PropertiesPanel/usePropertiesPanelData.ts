@@ -14,7 +14,7 @@
  */
 import { useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { useEditorStore, selectSelectedNode } from '@site/store/store'
+import { useEditorStore, selectActiveCanvasPage, selectSelectedNode } from '@site/store/store'
 import { registry } from '@core/module-engine'
 import { getAncestors, resolveProps } from '@core/page-tree'
 import { loopSourceRegistry } from '@core/loops/registry'
@@ -111,6 +111,7 @@ export function usePropertiesPanelData(): PropertiesPanelData {
   const renameNode = useEditorStore((s) => s.renameNode)
   const site = useEditorStore((s) => s.site)
   const activePageId = useEditorStore((s) => s.activePageId)
+  const activeCanvasPage = useEditorStore(selectActiveCanvasPage)
   const activeClassId = useEditorStore((s) => s.activeClassId)
   const selectedSelectorClassId = useEditorStore((s) => s.selectedSelectorClassId)
   const selectedSelectorClassIds = useEditorStore(useShallow((s) => s.selectedSelectorClassIds))
@@ -177,7 +178,7 @@ export function usePropertiesPanelData(): PropertiesPanelData {
   // bindings — they resolve to the loop's iteration item via the publisher's
   // entry-stack semantics.
   const { enclosingLoopSource, enclosingLoopTableId } = resolveEnclosingLoopContext(
-    activePage,
+    activeCanvasPage,
     selectedNodeId,
   )
   // Bindings are always available. The picker decides which sources are
