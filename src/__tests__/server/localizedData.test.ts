@@ -173,6 +173,57 @@ describe('native localized data access and writes', () => {
     expect((await getDataTable(harness!.db, MAIN_SCOPE, table.id))!.name).toBe(table.name)
   })
 
+  it('checks localized references in restored published versions against their frozen catalogue', async () => {
+    const { table, ownerId, site } = await setup()
+    const row = await write(table, { heading: { key: 'entry.a' } }, ownerId, 'published-import-row')
+    const publisher = await harness!.createRoleUser({
+      name: 'Publisher without catalogue access',
+      slug: `publisher-${crypto.randomUUID()}`,
+      capabilities: ['content.publish.any', 'pages.publish', 'data.custom.tables.manage', 'data.custom.tables.read', 'data.import'],
+    })
+    const publishedAt = new Date().toISOString()
+    const bundle: SiteBundle = {
+      schemaVersion: 1,
+      exportedAt: publishedAt,
+      tables: [table],
+      rows: [row],
+      publication: {
+        rows: [{
+          rowId: row.id,
+          activeVersionId: 'published-version',
+          versions: [{
+            id: 'published-version',
+            versionNumber: 1,
+            cells: { heading: { key: 'entry.private' } },
+            slug: row.slug,
+            siteSnapshotId: 'published-snapshot',
+            runtimeAssets: null,
+            publishedAt,
+            createdAt: publishedAt,
+          }],
+        }],
+        snapshots: [{
+          id: 'published-snapshot',
+          site,
+          importmapBody: null,
+          importmapSha256: null,
+          createdAt: publishedAt,
+        }],
+        files: [],
+      },
+    }
+    const response = await harness!.cms('/admin/api/cms/import?strategy=merge-overwrite', {
+      method: 'POST',
+      cookie: await harness!.stepUp(publisher.cookie),
+      json: bundle,
+    })
+
+    expect(response.status).toBe(403)
+    expect((await getDataRow(harness!.db, MAIN_SCOPE, row.id))!.cells.heading).toEqual({ key: 'entry.a' })
+    const { rows: versions } = await harness!.db`SELECT id FROM data_row_versions WHERE row_id = ${row.id}`
+    expect(versions).toHaveLength(0)
+  })
+
   it('validates retained history when a field is reclassified, without disclosing private row identities', async () => {
     const { table } = await setup()
     const persona = await dataPersona()
