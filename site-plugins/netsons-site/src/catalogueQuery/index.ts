@@ -101,7 +101,7 @@ function routeBaseFromTable(api: PluginApi, config: CatalogueQueryConfig): Promi
 }
 
 function rowItem(entry: CatalogueEntry, cells: Record<string, unknown>, routeBase: string) {
-  const permalink = `${routeBase}/${entry.slug}` || `/${entry.slug}`
+  const permalink = `${routeBase}/${entry.slug}`
   return {
     id: entry.id,
     fields: {

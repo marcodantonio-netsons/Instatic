@@ -26,9 +26,9 @@ interface CspRequirements {
 }
 
 const CLOUDFLARE_ORIGIN = 'https://challenges.cloudflare.com'
-const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/ // eslint-disable-line no-control-regex -- Reject control characters at the URL boundary.
 const SCHEME_PREFIX = /^([a-z][a-z\d+.-]*):/i
-const DNS_LABEL_PATTERN = '[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?'
+const DNS_LABEL_PATTERN = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?'
 const URI_HOST_SCHEMA = Type.String({
   minLength: 1,
   maxLength: 253,
@@ -37,7 +37,7 @@ const URI_HOST_SCHEMA = Type.String({
 const URI_IPV4_HOST_SCHEMA = Type.String({
   pattern: '^(?:(?:25[0-5]|2[0-4]\\d|1\\d{2}|[1-9]?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1\\d{2}|[1-9]?\\d)$',
 })
-const URI_IPV6_HOST_SCHEMA = Type.String({ minLength: 2, maxLength: 45, pattern: '^[a-f\d:.]+$' })
+const URI_IPV6_HOST_SCHEMA = Type.String({ minLength: 2, maxLength: 45, pattern: '^[a-f0-9:.]+$' })
 const URI_PORT_SCHEMA = Type.Number({ minimum: 0, maximum: 65535, multipleOf: 1 })
 
 function isElement(node: HtmlNode): node is HtmlElement {

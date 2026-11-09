@@ -11,7 +11,7 @@ export function formatNumber(value:unknown,language:string,options:NumberOptions
  if(!Number.isFinite(number))throw Error('Numeric binding requires a finite number')
  const locale=options.locale??language
  if(!locale||NumberFormat.supportedLocalesOf([locale]).length!==1)throw Error('Unsupported number locale '+locale)
- const {templateKey,locale:override,...digits}=options
+ const {templateKey,locale:_locale,...digits}=options
  const key=JSON.stringify([locale,digits]);let formatter=formatters.get(key)
  if(!formatter){formatter=new NumberFormat(locale,{style:'decimal',...digits});formatters.set(key,formatter);if(formatters.size>64)formatters.delete(formatters.keys().next().value!)}
  const formatted=formatter.format(number)
