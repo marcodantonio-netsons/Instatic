@@ -69,6 +69,44 @@ const TRICKY_STRINGS: Array<[label: string, value: string]> = [
 ]
 
 describe('plugin VM payload marshaling', () => {
+  it('preserves null separately from undefined in host API responses, including nested cells', async () => {
+    const entry = {
+      id: 'entry', publishedAt: null, authorUserId: null,
+      cells: { optional: null, values: [null, { nested: null }, 'text'] },
+    }
+    const vm = await createPluginVm({
+      pluginSource: `
+        globalThis.__plugin_exports = {
+          activate(api) {
+            globalThis.__plugin_handlers.filters['test.host-response'] = async function () {
+              const table = api.cms.content.table('public-data');
+              return {
+                missingIsNull: (await table.get('null')) === null,
+                absentIsUndefined: (await table.get('undefined')) === undefined,
+                entry: await table.get('entry'),
+              };
+            };
+          },
+        };
+      `,
+      env: {
+        pluginId: 'test.nulls', manifestVersion: '1.0.0',
+        grantedPermissions: ['cms.content.read'], assetBasePath: '/uploads/plugins/test.nulls/1.0.0',
+        settings: {}, log: () => {},
+        hostCall: async (target, args) => {
+          if (target !== 'cms.content.entries.get') throw new Error('Unexpected API call ' + target)
+          return args[1] === 'null' ? null : args[1] === 'undefined' ? undefined : entry
+        },
+      },
+    })
+    try {
+      await vm.runLifecycle('activate')
+      expect(await vm.runHookFilter('test.host-response', {})).toEqual({ missingIsNull: true, absentIsUndefined: true, entry })
+    } finally {
+      vm.dispose()
+    }
+  })
+
   it('round-trips tricky strings byte-identically through runHookFilter', async () => {
     const vm = await vmPromise
     for (const [label, value] of TRICKY_STRINGS) {

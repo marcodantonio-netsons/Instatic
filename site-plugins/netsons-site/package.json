@@ -1,0 +1,21 @@
+{
+  "name": "netsons-site-instatic-plugin",
+  "private": true,
+  "type": "module",
+  "version": "1.0.1",
+  "dependencies": {
+    "@formatjs/intl-collator": "0.3.2",
+    "@formatjs/intl-getcanonicallocales": "^3.3.0",
+    "@formatjs/intl-locale": "^5.4.2",
+    "@formatjs/intl-numberformat": "^10.0.2",
+    "@formatjs/intl-pluralrules": "^7.0.2",
+    "@sinclair/typebox": "0.34.49",
+    "fflate": "^0.8.3",
+    "parse5": "7.3.0",
+    "uri-js": "4.4.1"
+  },
+  "scripts": {
+    "build": "bun build.ts",
+    "typecheck": "bun ../../node_modules/typescript/bin/tsc -p tsconfig.json"
+  }
+}

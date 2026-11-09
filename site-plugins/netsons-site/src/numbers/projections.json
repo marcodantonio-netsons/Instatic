@@ -1,0 +1,370 @@
+{
+  "n5c0012aad6a001f6dafa": {
+    "field": "offerMonthlyAmount",
+    "options": {
+      "locale": "pl",
+      "templateKey": "sharedCopy.value_bd04732423",
+      "useGrouping": true,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n707ec1418b206d97b40f": {
+    "field": "priceMonthlyAmount",
+    "options": {
+      "locale": "pl",
+      "templateKey": "sharedCopy.value_bd04732423",
+      "useGrouping": true,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n3122d5c90185d5dbcf64": {
+    "field": "offerMonthlyAmount",
+    "options": {
+      "locale": "de",
+      "templateKey": "sharedCopy.value_bd04732423",
+      "useGrouping": true,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "nbce49d0d3cdf3a8dacfb": {
+    "field": "priceMonthlyAmount",
+    "options": {
+      "locale": "de",
+      "templateKey": "sharedCopy.value_bd04732423",
+      "useGrouping": true,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n38a6215328236a222c6f": {
+    "field": "offerMonthlyAmount",
+    "options": {
+      "locale": "pt",
+      "templateKey": "sharedCopy.value_bd04732423",
+      "useGrouping": true,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n50149964524c601a20c7": {
+    "field": "priceMonthlyAmount",
+    "options": {
+      "locale": "pt",
+      "templateKey": "sharedCopy.value_bd04732423",
+      "useGrouping": true,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "ne91d01367786195eeea1": {
+    "field": "offerMonthlyAmount",
+    "options": {
+      "locale": "ro",
+      "templateKey": "sharedCopy.value_bd04732423",
+      "useGrouping": true,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n094be2302f66c230d86e": {
+    "field": "priceMonthlyAmount",
+    "options": {
+      "locale": "ro",
+      "templateKey": "sharedCopy.value_bd04732423",
+      "useGrouping": true,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n84d4a0b941bfc0ee5763": {
+    "field": "offerMonthlyAmount",
+    "options": {
+      "locale": "nl",
+      "templateKey": "sharedCopy.value_bd04732423",
+      "useGrouping": true,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "na22d021d8d11f05fecb3": {
+    "field": "priceMonthlyAmount",
+    "options": {
+      "locale": "nl",
+      "templateKey": "sharedCopy.value_bd04732423",
+      "useGrouping": true,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n60ef923d6d1389fd2646": {
+    "field": "priceMonthlyAmount",
+    "options": {
+      "locale": "es",
+      "templateKey": "sharedCopy.value_bd04732423",
+      "useGrouping": true,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n742b9d3293224062665a": {
+    "field": "offerMonthlyAmount",
+    "options": {
+      "locale": "es",
+      "templateKey": "sharedCopy.value_bd04732423",
+      "useGrouping": true,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n7fd815b33f14aef3ed70": {
+    "field": "offerMonthlyAmount",
+    "options": {
+      "locale": "fr",
+      "templateKey": "sharedCopy.value_bd04732423",
+      "useGrouping": true,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n96d152bcdd0bd17014ec": {
+    "field": "priceMonthlyAmount",
+    "options": {
+      "locale": "fr",
+      "templateKey": "sharedCopy.value_bd04732423",
+      "useGrouping": true,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "nc9aa3790ed95dcf583d6": {
+    "field": "priceMonthlyAmount",
+    "options": {
+      "locale": "it",
+      "templateKey": "sharedCopy.value_bd04732423",
+      "useGrouping": false,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n6886ae0cd2700c100a80": {
+    "field": "priceMonthlyAmount",
+    "options": {
+      "locale": "it",
+      "templateKey": "netsonsVSeries.priceFormat.v-business",
+      "useGrouping": false,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "ncd43e6358e438e4311cc": {
+    "field": "priceMonthlyAmount",
+    "options": {
+      "locale": "en",
+      "templateKey": "netsonsVSeries.priceFormat.v-business",
+      "useGrouping": false,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n0ee12a6a2a1bff438d3b": {
+    "field": "offerFirstYearTotalAmount",
+    "options": {
+      "locale": "en",
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "nbd081814a19210fe168e": {
+    "field": "priceMonthlyAmount",
+    "options": {
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n3e5ff33d29568ba82d2e": {
+    "field": "offerMonthlyAmount",
+    "options": {
+      "locale": "it",
+      "useGrouping": false,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "nb6985d499752f3adddd9": {
+    "field": "priceMonthlyAmount",
+    "options": {
+      "locale": "it",
+      "useGrouping": false,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n5257eb154361457e4a85": {
+    "field": "offerFirstYearTotalAmount",
+    "options": {
+      "locale": "de-DE",
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n0724130e876ae2ee7d8e": {
+    "field": "priceMonthlyAmount",
+    "options": {
+      "locale": "it",
+      "useGrouping": true,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n10fe1fb3d391af5562e1": {
+    "field": "priceMonthlyAmount",
+    "options": {
+      "locale": "it",
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "ne1248bfea742e53c6ae4": {
+    "field": "offerMonthlyAmount",
+    "options": {
+      "locale": "it",
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n8ca95db020d901c8e597": {
+    "field": "transferAmount",
+    "options": {
+      "locale": "it",
+      "useGrouping": false,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "ncc8a6471909aad57edad": {
+    "field": "displayValue",
+    "options": {
+      "locale": "it",
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "nf88be2d32bdb371e5637": {
+    "field": "discountPercent",
+    "options": {
+      "locale": "it",
+      "useGrouping": false,
+      "maximumFractionDigits": 0,
+      "minimumFractionDigits": 0
+    }
+  },
+  "nf0a301563356b53e54ac": {
+    "field": "registrationAmount",
+    "options": {
+      "locale": "it",
+      "useGrouping": false,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n193e4fbe929d40dd32d0": {
+    "field": "renewalAmount",
+    "options": {
+      "locale": "it",
+      "useGrouping": false,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n2c81e8a0f3f4c5321294": {
+    "field": "transferOriginalAmount",
+    "options": {
+      "locale": "it",
+      "useGrouping": false,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n8b71be9601168a93d99f": {
+    "field": "registrationOriginalAmount",
+    "options": {
+      "locale": "it",
+      "useGrouping": false,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n3a4c3a00a6b8100dabd9": {
+    "field": "offerMonthlyAmount",
+    "options": {
+      "useGrouping": false,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "nbf457239e35e133bee6e": {
+    "field": "priceMonthlyAmount",
+    "options": {
+      "useGrouping": false,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "ne1e298fa819dea57c83a": {
+    "field": "offerDiscountPercent",
+    "options": {
+      "useGrouping": false,
+      "maximumFractionDigits": 0,
+      "minimumFractionDigits": 0
+    }
+  },
+  "n489af9505948f54d4815": {
+    "field": "offerDiscountPercent",
+    "options": {
+      "locale": "it",
+      "maximumFractionDigits": 0,
+      "minimumFractionDigits": 0
+    }
+  },
+  "n02786ee46598272af055": {
+    "field": "renewalAmount",
+    "options": {
+      "useGrouping": false,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n0ca36a59822383e3f422": {
+    "field": "offerMonthlyAmount",
+    "options": {
+      "locale": "it",
+      "templateKey": "nativeSharedData.productPriceCopy.cloudFaqPriceLead",
+      "useGrouping": false,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n1fb5e1e34fe5e2d2f328": {
+    "field": "priceMonthlyAmount",
+    "options": {
+      "locale": "it",
+      "templateKey": "sharedCopy.value_bd04732423",
+      "useGrouping": true,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  },
+  "n14b23ebc08833dbb3dc3": {
+    "field": "offerMonthlyAmount",
+    "options": {
+      "locale": "it",
+      "templateKey": "sharedCopy.value_bd04732423",
+      "useGrouping": true,
+      "maximumFractionDigits": 2,
+      "minimumFractionDigits": 2
+    }
+  }
+}

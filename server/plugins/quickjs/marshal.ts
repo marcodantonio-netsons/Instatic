@@ -11,7 +11,8 @@ import type { QuickJSContext, QuickJSHandle } from 'quickjs-emscripten'
  * the VM via `setProp` / function return).
  */
 export function jsToHandle(ctx: QuickJSContext, value: unknown): QuickJSHandle {
-  if (value === null || value === undefined) return ctx.undefined
+  if (value === null) return ctx.null
+  if (value === undefined) return ctx.undefined
   if (typeof value === 'string') return ctx.newString(value)
   if (typeof value === 'number') return ctx.newNumber(value)
   if (typeof value === 'boolean') return value ? ctx.true : ctx.false

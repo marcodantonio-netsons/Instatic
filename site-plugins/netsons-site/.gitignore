@@ -1,0 +1,10 @@
+node_modules/
+dist/
+frontend/
+modules/
+server/
+plugin.json
+src/localization/generatedCatalogues.ts
+src/numbers/generated/
+src/collation/generated/
+src/forms/runtimeValidators.js
