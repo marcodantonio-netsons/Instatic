@@ -4,7 +4,7 @@ Site-owned components and runtime behavior packaged through Instatic's supported
 
 ## Build and installation
 
-From this directory, run `bun install --frozen-lockfile`, `bun run typecheck` and `bun run build`. The reproducible package is `dist/netsons-site.plugin.zip`; generated assets and dependencies are excluded from Git. Install it through Instatic's Plugins workspace. CMS content is transferred separately through the native site-transfer format.
+With the host repository dependencies installed, run `bun install --frozen-lockfile`, `bun run build`, `bun run typecheck` and `bun test` from this directory. Build runs first because it generates the private language and Intl bundles. The reproducible package is `dist/netsons-site.plugin.zip`; generated assets and dependencies are excluded from Git. Install it through Instatic's Plugins workspace. CMS content is transferred separately through the native site-transfer format.
 
 The host API transport must preserve `null` separately from `undefined`. The accompanying correction in `server/plugins/quickjs/marshal.ts` fixes that general transport defect; its regression test covers nullable content fields, nested values and missing results. The archived official-host verification includes this correction.
 
