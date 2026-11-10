@@ -1,36 +1,25 @@
 import { escapeHtml } from '../shared/htmlSafety'
-import { gunzipSync,strFromU8 } from 'fflate'
-import { Value } from '@sinclair/typebox/value'
-import { catalogues } from './generatedCatalogues'
-import { LanguageCatalogueSchema, type TranslationMessages as Messages } from './schema'
-const cached=new Map<string,Messages>()
-const alphabet='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-function decodeBase64(text:string):Uint8Array{
- if(text.length%4!==0||!/^[A-Za-z0-9+/]*={0,2}$/.test(text))throw Error('Invalid compressed language asset')
- const result=new Uint8Array(text.length/4*3-(text.endsWith('==')?2:text.endsWith('=')?1:0))
- let offset=0
- for(let i=0;i<text.length;i+=4){const a=alphabet.indexOf(text[i]),b=alphabet.indexOf(text[i+1]),c=alphabet.indexOf(text[i+2]),d=alphabet.indexOf(text[i+3]);const n=(a<<18)|(b<<12)|((c<0?0:c)<<6)|(d<0?0:d);result[offset++]=n>>16;if(offset<result.length)result[offset++]=(n>>8)&255;if(offset<result.length)result[offset++]=n&255}
- return result
-}
-export function languageMessages(language:string):Messages{
- const hit=cached.get(language)
- if(hit){cached.delete(language);cached.set(language,hit);return hit}
- if(!Object.hasOwn(catalogues,language))throw Error('Unknown language '+language)
- const value:unknown=JSON.parse(strFromU8(gunzipSync(decodeBase64(catalogues[language]))))
- if(!Value.Check(LanguageCatalogueSchema,value)||value.language!==language)throw Error('Invalid language asset '+language)
- const messages:Messages=value.messages;cached.set(language,messages)
- if(cached.size>3)cached.delete(cached.keys().next().value!)
- return messages
-}
+import {
+ MISSING_CATALOGUE_VALUE,
+ OBJECT_CATALOGUE_VALUE,
+ catalogueKeyIndexes,
+ catalogueLanguages,
+ catalogueStringPool,
+ catalogueValueIdsByLanguage,
+} from './generatedCatalogues'
+
+const languages=new Set(catalogueLanguages)
 export function translate(language:string,key:string):string{
  if(!/^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z][A-Za-z0-9_-]*)*$/.test(key))throw Error('Invalid translation key '+key)
- let value:string|Messages=languageMessages(language)
- for(const part of key.split('.')){if(typeof value==='string'||!Object.hasOwn(value,part))throw Error('Missing translation '+language+':'+key);value=value[part]}
- if(typeof value!=='string')throw Error('Translation does not address text '+key)
- return value
+ if(!Object.hasOwn(catalogueValueIdsByLanguage,language))throw Error('Unknown language '+language)
+ const keyIndex=Object.hasOwn(catalogueKeyIndexes,key)?catalogueKeyIndexes[key]:undefined
+ if(keyIndex===undefined)throw Error('Missing translation '+language+':'+key)
+ const valueIndex=catalogueValueIdsByLanguage[language][keyIndex]
+ if(valueIndex===MISSING_CATALOGUE_VALUE)throw Error('Missing translation '+language+':'+key)
+ if(valueIndex===OBJECT_CATALOGUE_VALUE)throw Error('Translation does not address text '+key)
+ return catalogueStringPool[valueIndex]!
 }
 
-const languages=new Set(Object.keys(catalogues))
 const copyPattern=/\{i18n\.([A-Za-z][A-Za-z0-9_.-]*)\}/g
 const nativePattern=/\{((?:currentEntry|parentEntry|page|site|route)\.[^{}]+)\}/g
 const entities:Record<string,string>={'&amp;':'&','&lt;':'<','&gt;':'>','&quot;':'"','&#x27;':"'",'&#39;':"'"}

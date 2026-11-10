@@ -1,6 +1,6 @@
 import { readdir } from 'node:fs/promises'
 import { TypeCompiler } from '@sinclair/typebox/compiler'
-import { Type } from '@sinclair/typebox'
+import { Type, type Static } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
 import { zipSync, strToU8 } from 'fflate'
 import { parsePluginManifest } from '../../src/core/plugins/manifest'
@@ -20,14 +20,72 @@ const project: unknown = await Bun.file(root + '/package.json').json()
 const ProjectSchema = Type.Object({ version: Type.String({ minLength: 1 }) })
 if (!Value.Check(ProjectSchema, project)) throw Error('Invalid plugin project metadata')
 const languages = ['it', 'en', 'de', 'fr', 'es', 'pt', 'nl', 'pl', 'ro']
-const compressed: Record<string, string> = {}
+type LanguageCatalogue = Static<typeof LanguageCatalogueSchema>
+const cataloguesByLanguage: Record<string, LanguageCatalogue> = Object.create(null)
 for (const filename of (await readdir(root + '/locales')).filter(name => name.endsWith('.json')).sort()) {
   const raw: unknown = await Bun.file(root + '/locales/' + filename).json()
   if (!Value.Check(LanguageCatalogueSchema, raw) || filename !== raw.language + '.json' || !languages.includes(raw.language)) throw Error('Invalid language file ' + filename)
-  compressed[raw.language] = Buffer.from(Bun.gzipSync(strToU8(JSON.stringify(raw)), { level: 9 })).toString('base64')
+  if (Object.hasOwn(cataloguesByLanguage, raw.language)) throw Error('Duplicate language file ' + filename)
+  cataloguesByLanguage[raw.language] = raw
 }
-if (Object.keys(compressed).length !== languages.length) throw Error('Expected exactly nine language files')
-await Bun.write(root + '/src/localization/generatedCatalogues.ts', '// Generated from locales/*.json.\nexport const catalogues:Record<string,string>=' + JSON.stringify(compressed) + '\n')
+if (Object.keys(cataloguesByLanguage).length !== languages.length || languages.some(language => !Object.hasOwn(cataloguesByLanguage, language))) throw Error('Expected exactly nine language files')
+
+type TranslationMessages = LanguageCatalogue['messages']
+const allPaths = new Set<string>()
+const allStrings = new Set<string>()
+function collectCatalogue(messages: TranslationMessages, parentPath = ''): void {
+  for (const [key, value] of Object.entries(messages)) {
+    const path = parentPath ? `${parentPath}.${key}` : key
+    allPaths.add(path)
+    if (typeof value === 'string') allStrings.add(value)
+    else collectCatalogue(value, path)
+  }
+}
+for (const language of languages) collectCatalogue(cataloguesByLanguage[language].messages)
+
+const translationPaths = [...allPaths].sort()
+const stringPool = [...allStrings].sort()
+const pathIndexes = new Map(translationPaths.map((path, index) => [path, index]))
+const stringIndexes = new Map(stringPool.map((value, index) => [value, index]))
+const missingCatalogueValue = -1
+const objectCatalogueValue = -2
+const catalogueValueIds: Record<string, Int32Array> = Object.create(null)
+
+function compileCatalogue(messages: TranslationMessages, ids: Int32Array, parentPath = ''): void {
+  for (const [key, value] of Object.entries(messages)) {
+    const path = parentPath ? `${parentPath}.${key}` : key
+    const pathIndex = pathIndexes.get(path)
+    if (pathIndex === undefined) throw Error('Missing generated language path ' + path)
+    if (typeof value === 'string') {
+      const stringIndex = stringIndexes.get(value)
+      if (stringIndex === undefined) throw Error('Missing generated language value ' + path)
+      ids[pathIndex] = stringIndex
+    } else {
+      ids[pathIndex] = objectCatalogueValue
+      compileCatalogue(value, ids, path)
+    }
+  }
+}
+
+for (const language of languages) {
+  const ids = new Int32Array(translationPaths.length)
+  ids.fill(missingCatalogueValue)
+  compileCatalogue(cataloguesByLanguage[language].messages, ids)
+  catalogueValueIds[language] = ids
+}
+
+const pathIndexSource = translationPaths.map((path, index) => `[${JSON.stringify(path)}]:${index}`).join(',')
+const valueIdsSource = languages.map(language => `${JSON.stringify(language)}:new Int32Array([${Array.from(catalogueValueIds[language]).join(',')}])`).join(',')
+await Bun.write(root + '/src/localization/generatedCatalogues.ts', [
+  '// Generated from locales/*.json. Do not edit.',
+  `export const catalogueLanguages:readonly string[]=${JSON.stringify(languages)}`,
+  `export const catalogueStringPool:readonly string[]=${JSON.stringify(stringPool)}`,
+  `export const catalogueKeyIndexes:Record<string,number>={${pathIndexSource}}`,
+  `export const catalogueValueIdsByLanguage:Record<string,Int32Array>={${valueIdsSource}}`,
+  `export const MISSING_CATALOGUE_VALUE=${missingCatalogueValue}`,
+  `export const OBJECT_CATALOGUE_VALUE=${objectCatalogueValue}`,
+  '',
+].join('\n'))
 
 const intl = await Bun.build({ entrypoints: [root + '/src/numbers/privateIntlEntry.ts'], format: 'iife', target: 'browser', minify: { whitespace: true, syntax: false, identifiers: false } })
 if (!intl.success || intl.outputs.length !== 1) throw new AggregateError(intl.logs, 'Cannot bundle private Intl implementation')
