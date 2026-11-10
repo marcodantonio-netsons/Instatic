@@ -10,7 +10,7 @@ import { htmlAttributesAttr } from '../shared/attributeEmitter'
 import { escapeHtml,safeUrl } from '../shared/htmlSafety'
 import { anchorHtmlAttributes,ANCHOR_TARGET_OPTIONS } from '../shared/anchors'
 import { resolveHtmlTag,VOID_HTML_ELEMENTS } from '../shared/tags'
-import { languageFromPath } from '../localization'
+import { catalogueLanguages, languageFromPath } from '../localization'
 import { formatNumber } from '../numbers'
 import rawFormats from '../numbers/projections.json'
 import { NumberOptionsSchema } from '../numbers'
@@ -72,9 +72,30 @@ export const ContainerModule:PluginModuleDefinition={
   return {html:VOID_HTML_ELEMENTS.has(tag.toLowerCase())?`<${tag}${attrs}>`:`<${tag}${attrs}>${children.join('')}</${tag}>`}
  },
 }
-const ConditionSchema=Type.Object({show:Type.Boolean({default:true}),invert:Type.Boolean({default:false}),whenLanguage:Type.Union(['','it','en','de','fr','es','pt','nl','pl','ro'].map(value=>Type.Literal(value)),{default:''})})
-export const ConditionModule:PluginModuleDefinition={
- id:'netsons.site.condition',name:'Condition',category:'Netsons',version:'1.0.0',canHaveChildren:true,defaults:{...Value.Create(ConditionSchema),...routeDefaults},propsSchema:ConditionSchema,schema:{show:{type:'toggle',label:'Show content'},invert:{type:'toggle',label:'Invert'},whenLanguage:{type:'select',label:'Page language',options:['','it','en','de','fr','es','pt','nl','pl','ro'].map(value=>({label:value||'Any language',value}))}},
- render(input,children){const props=normalizeRenderProps(ConditionSchema,input);if(!Value.Check(ConditionSchema,props))throw Error('Invalid condition');const matches=props.show&&(!props.whenLanguage||props.whenLanguage===languageFromPath(String(input.routePath)));return {html:matches!==props.invert?children.join(''):''}},
+const conditionLanguages = ['', ...catalogueLanguages]
+const ConditionSchema = Type.Object({
+  show: Type.Boolean({ default: true }),
+  invert: Type.Boolean({ default: false }),
+  whenLanguage: Type.Union(conditionLanguages.map(value => Type.Literal(value)), { default: '' }),
+  matchValue: Type.String({ default: '' }),
+  equals: Type.Optional(Type.String()),
+})
+export const ConditionModule: PluginModuleDefinition = {
+  id: 'netsons.site.condition', name: 'Condition', category: 'Netsons', version: '1.0.0',
+  canHaveChildren: true, defaults: { ...Value.Create(ConditionSchema), ...routeDefaults }, propsSchema: ConditionSchema,
+  schema: {
+    show: { type: 'toggle', label: 'Show content' },
+    invert: { type: 'toggle', label: 'Invert' },
+    whenLanguage: { type: 'select', label: 'Page language', options: conditionLanguages.map(value => ({ label: value || 'Any language', value })) },
+    matchValue: { type: 'text', label: 'Value to compare' },
+    equals: { type: 'text', label: 'Equals' },
+  },
+  render(input, children) {
+    const props = normalizeRenderProps(ConditionSchema, input)
+    const matches = props.show
+      && (!props.whenLanguage || props.whenLanguage === languageFromPath(String(input.routePath)))
+      && (props.equals === undefined || props.matchValue === props.equals)
+    return { html: matches !== props.invert ? children.join('') : '' }
+  },
 }
 export default [TextModule,LinkModule,ButtonModule,ContainerModule,ConditionModule]

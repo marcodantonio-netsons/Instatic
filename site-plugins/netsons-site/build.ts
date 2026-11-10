@@ -105,10 +105,11 @@ const validators = {
 await Bun.write(root + '/src/forms/runtimeValidators.js', '// Generated from the shared form schemas.\n' + Object.entries(validators).map(([name, schema]) => `export const ${name} = (() => {\n${TypeCompiler.Code(schema)}\n})();\n`).join('\n'))
 
 // Load runtime definitions only after their generated dependencies exist.
-const [{ FORMS_CSS }, preferencesAsset, preferencesCss, preferencesHook, loopAssets, catalogue] = await Promise.all([
+const [{ FORMS_CSS }, preferencesAsset, preferencesCss, preferencesHook, loopAssets, catalogue, metadata, { default: modules }] = await Promise.all([
   import('./src/forms'), import('./src/preferences/browserAsset'),
   import('./src/preferences/documentCss'), import('./src/preferences/publishedHtml'),
   import('./src/loopControls/frontendAsset'), import('./src/catalogueQuery'),
+  import('./src/pageMetadata'), import('./src/modules'),
 ])
 async function bundle(source: string, target: string, browser = false) {
   const result = await Bun.build({ entrypoints: [root + '/src/' + source], target: 'browser', format: 'esm', minify: browser })
@@ -128,9 +129,9 @@ await Bun.write(root + '/dist/frontend/loop-controls.css', loopAssets.LOOP_CONTR
 
 const manifest = parsePluginManifest({
   id: 'netsons.site', name: 'Netsons Site', version: project.version, apiVersion: 1,
-  description: 'Shared components, language files, catalogue queries and visitor preferences.', license: 'MIT',
+  description: 'Shared components, language files, CMS metadata, catalogue queries and visitor preferences.', license: 'MIT',
   permissions: ['modules.register', 'frontend.assets', 'cms.hooks', 'loops.register', 'cms.content.read', 'cms.routes', 'cms.routes.public'],
-  contentAccess: catalogue.CATALOGUE_QUERY_CONTENT_TABLES.map(table => ({ table, modes: ['read'] })),
+  contentAccess: [...catalogue.CATALOGUE_QUERY_CONTENT_TABLES, metadata.PAGE_METADATA_TABLE, metadata.PAGE_GROUP_TABLE].map(table => ({ table, modes: ['read'] })),
   entrypoints: { modules: 'modules/index.js', server: 'server/index.js' },
   settings: preferencesHook.VISITOR_PREFERENCES_SETTINGS,
   frontend: { assets: [
@@ -150,4 +151,4 @@ for (const path of [manifest.entrypoints!.modules!, manifest.entrypoints!.server
 const bytes = zipSync(files, { level: 6 })
 await readPluginPackage(new File([bytes], 'netsons-site.plugin.zip', { type: 'application/zip' }))
 await Bun.write(root + '/dist/netsons-site.plugin.zip', bytes)
-console.log(JSON.stringify({ status: 'BUILT_AND_INSPECTED', bytes: bytes.length, modules: 37, languages: languages.length }))
+console.log(JSON.stringify({ status: 'BUILT_AND_INSPECTED', bytes: bytes.length, modules: modules.length, languages: languages.length }))

@@ -9,6 +9,7 @@ import {
 } from './generatedCatalogues'
 
 const languages=new Set(catalogueLanguages)
+export { catalogueLanguages }
 export function translate(language:string,key:string):string{
  if(!/^[A-Za-z][A-Za-z0-9_-]*(\.[A-Za-z][A-Za-z0-9_-]*)*$/.test(key))throw Error('Invalid translation key '+key)
  if(!Object.hasOwn(catalogueValueIdsByLanguage,language))throw Error('Unknown language '+language)
