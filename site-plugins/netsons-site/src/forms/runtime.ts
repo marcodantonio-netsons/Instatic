@@ -3,8 +3,10 @@ import type { PropertyCondition } from '../shared/forms/conditions'
 import { evaluateCondition } from '../shared/forms/conditions'
 import type { FormTransport, FormChallengeResponse, FormValidationResponseSchema, TurnstileApi } from '../shared/forms/schema'
 import type { FormCalculations, FormValueConstraint } from '../shared/forms/calculations'
-import { evaluateFormValues, evaluateFormExpression, formValueUrl } from '../shared/forms/values'
+import { createFormValueEvaluator, formValueUrl } from '../shared/forms/values'
 import { checkCondition, checkTransport, checkControl, checkCalculations, checkExpression, checkCheckboxGroup, checkValuesRequest, checkChallenge, checkJsonResponse, checkTurnstileConfiguration, checkTurnstileApi, checkValidationResponse, checkSuccessResponse, checkResponseContract } from './runtimeValidators.js'
+
+const { evaluateFormValues, evaluateFormExpression } = createFormValueEvaluator(Intl.NumberFormat)
 
 const FORM_SELECTOR = 'form[data-instatic-form-id][data-instatic-form-mode="cms"], form[data-instatic-form-id][data-instatic-form-mode="request"], form[data-instatic-form-id][data-instatic-form-mode="local"], form[data-instatic-form-id][data-instatic-form-mode="custom"][data-instatic-form-enhanced="true"]'
 const CONTROL_SELECTOR = '[data-instatic-form-control]'

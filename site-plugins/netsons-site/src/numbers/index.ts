@@ -1,4 +1,5 @@
 import { NumberFormat } from './generated/intl.js'
+export { NumberFormat } from './generated/intl.js'
 import { Type,type Static } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
 import { translate } from '../localization'

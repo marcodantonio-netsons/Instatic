@@ -1,8 +1,11 @@
+import { NumberFormat } from '../numbers'
 import { Value } from '@sinclair/typebox/value'
-import { FormCalculationsSchema, FormValueExpressionSchema, PropertyConditionSchema, evaluateCondition, evaluateFormValues, evaluateFormExpression, formValueUrl } from '../shared/forms'
+import { FormCalculationsSchema, FormValueExpressionSchema, PropertyConditionSchema, evaluateCondition, createFormValueEvaluator, formValueUrl } from '../shared/forms'
 import type { FormValueConstraint, PropertyCondition } from '../shared/forms'
 import type { FormProps } from './primitiveSchemas'
 import { escapeHtml, isSafeUrl } from '../shared/htmlSafety'
+
+const { evaluateFormValues, evaluateFormExpression } = createFormValueEvaluator(NumberFormat)
 
 type Attribute = { readonly name: string; value: string | null }
 type Element = {
