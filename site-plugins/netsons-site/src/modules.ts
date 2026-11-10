@@ -8,6 +8,7 @@ import { htmlAttributesAttr } from './shared/attributeEmitter'
 import navigation from './navigation'
 import scrollState from './scrollState'
 import { LanguageLinkModule } from './languageLinks'
+import { SvgModule } from './svg'
 import { Type } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
 import type { PluginModuleDefinition } from '@instatic/plugin-sdk'
@@ -29,4 +30,4 @@ const disclosure: PluginModuleDefinition = {
   return {html:`<details${htmlAttributesAttr(attrs)}${props.group?` name="${props.group}"`:''}${props.initiallyOpen?' open':''} data-instatic-disclosure="" data-instatic-close-on-escape="${props.closeOnEscape}" data-instatic-close-on-outside-pointer="${props.closeOnOutsidePointer}" data-instatic-close-on-focus-leave="${props.closeOnFocusLeave}">${children.join('')}</details>`}
  },
 }
-export default [disclosure,scrollState,LanguageLinkModule,...navigation,...primitives,...formsModules,...preferences,...loopControlModules].map(withSafePreview)
+export default [...[disclosure,scrollState,LanguageLinkModule,...navigation,...primitives,...formsModules,...preferences,...loopControlModules].map(withSafePreview), SvgModule]

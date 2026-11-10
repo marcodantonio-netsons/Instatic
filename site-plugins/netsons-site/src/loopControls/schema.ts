@@ -32,6 +32,7 @@ export type LoopConditionalProps = Static<typeof LoopConditionalPropsSchema>
 
 export const LoopMorePropsSchema = Type.Object({
   loopId: Type.String({ default: '' }),
+  mode: Type.Union([Type.Literal('page'), Type.Literal('all')], { default: 'page' }),
   label: Type.String({ default: 'Load more' }),
   loadingLabel: Type.String({ default: 'Loading…' }),
   retryLabel: Type.String({ default: 'Try again' }),

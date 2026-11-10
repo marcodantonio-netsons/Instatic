@@ -14,14 +14,17 @@ The host API transport must preserve `null` separately from `undefined`. The acc
 - `locales/*.json` owns translated copy. Generated language bundles are build outputs.
 - `src/catalogueQuery/query-configs.json` owns query configuration: table slugs, field names and bindings. It contains no product prices. Every consuming loop stores only its configuration ID.
 - Existing CMS visual components and shared classes retain the page structure and styling.
+- The `netsons-pages` CMS table owns each page's metadata. The `netsons-page-groups` table owns its shared language routes and alternate links. The publish hook reads both records, resolves language-file tokens and emits the document head and language links.
+- Legal PDFs and web manifests use ordinary project assets in `public/media/legal`; manifests use the JSON extension supported by the standard static server.
 
 ## Runtime boundaries
 
 - `src/modules.ts` is the shared module pack. Published renderers emit HTML; `preview` escapes raw editor inputs.
-- `src/server.ts` registers supported CMS hooks, loop source and public count route. Content access is read-only and restricted to the four public catalogue tables listed in its manifest.
+- `src/server.ts` registers supported CMS hooks, loop source and public count route. Content access is read-only and restricted to the four public catalogue tables and two metadata tables listed in its manifest.
 - Form, interaction, visitor-preference and loop-control frontend scripts are shared assets. Published pages receive no React runtime.
 - The appearance control uses the native `theme-alt` palette convention. Motion and decorative-media preferences retain their independent settings.
 - Query results and pagination use Instatic's native hole endpoint and renderer. The count endpoint and loop source share the same filtering logic.
+- The accessibility trigger loads UserWay through a shared plugin asset. Its publish filter adds only the provider origins required by that loader to the existing content-security policy.
 - Weighted knowledge search uses a private FormatJS CLDR collator in QuickJS. Search membership, scores, counts and tested pages match the native loop. In the sealed knowledge-search checks, two apostrophe-containing title ties sort differently from the local Bun ICU build: Italian item 68 and French item 14. This changes tie order only; both rows remain in the results.
 
 ## Editor and delivery limits

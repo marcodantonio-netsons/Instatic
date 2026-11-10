@@ -15,6 +15,7 @@ const generatedMoreAttributes = [
   'data-instatic-loop-load-more-label',
   'data-instatic-loop-loading-label',
   'data-instatic-loop-retry-label',
+  'data-instatic-loop-more-mode',
   'type',
   'hidden',
   'disabled',
@@ -152,6 +153,10 @@ export const LoopMoreModule: PluginModuleDefinition = {
   defaults: { ...Value.Create(LoopMorePropsSchema), routePath: '{route.path}' },
   schema: {
     loopId: { type: 'text', label: 'Loop ID' },
+    mode: { type: 'select', label: 'Load behavior', options: [
+      { label: 'Next page', value: 'page' },
+      { label: 'All remaining entries', value: 'all' },
+    ] },
     label: { type: 'text', label: 'Label', description: 'Use {remaining}, {loaded} or {total} for counts.' },
     loadingLabel: { type: 'text', label: 'Loading label' },
     retryLabel: { type: 'text', label: 'Retry label' },
@@ -162,7 +167,7 @@ export const LoopMoreModule: PluginModuleDefinition = {
     const loopId = readSingleLoopId(props.loopId)
     const customAttrs = htmlAttributesAttr(htmlAttributes(props.htmlAttributes, props.htmlAttributesJson), generatedMoreAttributes)
     return {
-      html: `<button type="button" data-instatic-loop-more="${escapeHtml(loopId)}" data-instatic-loop-load-more-label="${escapeHtml(props.label)}" data-instatic-loop-loading-label="${escapeHtml(props.loadingLabel)}" data-instatic-loop-retry-label="${escapeHtml(props.retryLabel)}"${children.length ? '' : ' data-instatic-loop-more-fallback=""'} hidden${customAttrs}>${children.length ? children.join('') : escapeHtml(props.label)}</button>`,
+      html: `<button type="button" data-instatic-loop-more="${escapeHtml(loopId)}" data-instatic-loop-more-mode="${props.mode}" data-instatic-loop-load-more-label="${escapeHtml(props.label)}" data-instatic-loop-loading-label="${escapeHtml(props.loadingLabel)}" data-instatic-loop-retry-label="${escapeHtml(props.retryLabel)}"${children.length ? '' : ' data-instatic-loop-more-fallback=""'} hidden${customAttrs}>${children.length ? children.join('') : escapeHtml(props.label)}</button>`,
     }
   },
 }

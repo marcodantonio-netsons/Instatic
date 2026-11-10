@@ -342,36 +342,57 @@ export function installLoopControlsRuntime(
   }
 
   async function renderLoopPage(loop: HTMLElement, pageNumber: number, replace: boolean, signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw new Error('Loop fragment request aborted')
     const requestUrl = loopRequestUrl(loop, pageNumber)
     const response = await active.fetch(requestUrl.toString(), {
       credentials: 'same-origin',
       headers: { accept: 'text/html' },
       signal,
     })
+    if (signal?.aborted) throw new Error('Loop fragment request aborted')
     if (!response.ok) throw new Error(`Loop fragment request failed: ${response.status}`)
     const html = await response.text()
+    if (signal?.aborted) throw new Error('Loop fragment request aborted')
     if (html.includes('data-instatic-stale="true"')) throw new Error('The published loop fragment is stale')
     const parsed = new active.DOMParser().parseFromString(html, 'text/html')
     const loopId = loop.getAttribute('data-instatic-loop') || ''
     const next = Array.from(parsed.querySelectorAll<HTMLElement>('[data-instatic-loop]'))
       .find(candidate => candidate.getAttribute('data-instatic-loop') === loopId)
     if (!next) throw new Error(`The native fragment did not contain loop ${loopId}`)
+    const returnedPage = next.getAttribute('data-instatic-loop-page')
+    const parsedPage = returnedPage && /^[1-9]\d*$/.test(returnedPage) ? Number(returnedPage) : null
+    if (!Number.isSafeInteger(pageNumber) || pageNumber < 1 || parsedPage !== pageNumber) {
+      throw new Error(`The native fragment returned an invalid page for loop ${loopId}`)
+    }
+    const hasMore = next.getAttribute('data-instatic-loop-has-more')
+    if (hasMore !== 'true' && hasMore !== 'false') {
+      throw new Error(`The native fragment returned invalid paging state for loop ${loopId}`)
+    }
 
     const previousLoaded = renderedItems(loop)
     const pageLoaded = next.children.length
     if (replace) loop.replaceChildren(...Array.from(next.childNodes))
     else loop.append(...Array.from(next.childNodes))
-    loop.setAttribute('data-instatic-loop-page', next.getAttribute('data-instatic-loop-page') || String(pageNumber))
-    loop.setAttribute('data-instatic-loop-has-more', next.getAttribute('data-instatic-loop-has-more') || 'false')
+    loop.setAttribute('data-instatic-loop-page', String(parsedPage))
+    loop.setAttribute('data-instatic-loop-has-more', hasMore)
     loop.setAttribute('data-netsons-loop-loaded', String(replace ? pageLoaded : previousLoaded + pageLoaded))
     void updateTotal(loop)
   }
 
   async function refreshConfigLoops(configId: string): Promise<void> {
-    const activeRefresh = activeConfigRefreshes.get(configId)
-    if (activeRefresh) return activeRefresh
     const targets = loops().filter(loop => loop.getAttribute('data-netsons-query-config') === configId)
     if (!targets.length) return
+    for (const button of document.querySelectorAll<HTMLButtonElement>('button[data-instatic-loop-more]')) {
+      const loop = resolveLoop(button.getAttribute('data-instatic-loop-more') || '')
+      if (!loop || !targets.includes(loop)) continue
+      const state = buttonStates.get(button)
+      state?.controller?.abort()
+      if (state) {
+        state.controller = undefined
+        state.busy = false
+        state.failed = false
+      }
+    }
     const promise = Promise.all(targets.map(async loop => {
       filterRequests.get(loop)?.abort()
       const controller = new active.AbortController()
@@ -394,7 +415,7 @@ export function installLoopControlsRuntime(
       }
     })).then(results => {
       const expected = referencedLoopsForConfig(configId)
-      if (results.every(Boolean) && expected.every(id => resolveLoop(id))) pendingRefreshConfigs.delete(configId)
+      if (activeConfigRefreshes.get(configId) === promise && results.every(Boolean) && expected.every(id => resolveLoop(id))) pendingRefreshConfigs.delete(configId)
     }).finally(() => {
       if (activeConfigRefreshes.get(configId) === promise) activeConfigRefreshes.delete(configId)
     })
@@ -409,6 +430,7 @@ export function installLoopControlsRuntime(
     if (!loop || !state || (loop.getAttribute('data-instatic-loop-has-more') !== 'true' && !state.failed)) return
     if (state.busy) return
     const page = Number(loop.getAttribute('data-instatic-loop-page') || '1')
+    const mode = button.getAttribute('data-instatic-loop-more-mode') === 'all' ? 'all' : 'page'
     state.busy = true
     state.failed = false
     loop.setAttribute('aria-busy', 'true')
@@ -417,17 +439,31 @@ export function installLoopControlsRuntime(
     state.controller = controller
     syncMoreButtons()
     try {
-      await renderLoopPage(loop, page + 1, false, controller.signal)
+      let previousPage = page
+      let nextPage = previousPage + 1
+      do {
+        await renderLoopPage(loop, nextPage, false, controller.signal)
+        const renderedPage = Number(loop.getAttribute('data-instatic-loop-page') || '0')
+        if (!Number.isSafeInteger(renderedPage) || renderedPage <= previousPage) {
+          throw new Error(`The native fragment did not advance loop ${id}`)
+        }
+        previousPage = renderedPage
+        if (mode === 'page' || loop.getAttribute('data-instatic-loop-has-more') !== 'true') break
+        nextPage = previousPage + 1
+      } while (!controller.signal.aborted)
     } catch (error) {
-      if (!controller.signal.aborted) {
+      if (state.controller === controller && !controller.signal.aborted) {
         console.error('[netsons.loop-controls] Could not load the next loop page:', error)
         state.failed = true
       }
     } finally {
-      state.busy = false
-      loop.removeAttribute('aria-busy')
-      syncMoreButtons()
-      updateSummaries()
+      if (state.controller === controller) {
+        state.controller = undefined
+        state.busy = false
+        loop.removeAttribute('aria-busy')
+        syncMoreButtons()
+        updateSummaries()
+      }
     }
   }
 
@@ -480,6 +516,7 @@ export function installLoopControlsRuntime(
       const state = buttonStates.get(button)
       state?.controller?.abort()
       if (state) {
+        state.controller = undefined
         state.busy = false
         state.failed = false
       }
