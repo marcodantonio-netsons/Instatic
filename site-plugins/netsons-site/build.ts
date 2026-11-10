@@ -7,6 +7,7 @@ import { parsePluginManifest } from '../../src/core/plugins/manifest'
 import { readPluginPackage } from '../../server/plugins/package'
 import { LanguageCatalogueSchema } from './src/localization/schema'
 import { buildCollation } from './build-collation'
+import { USERWAY_FRONTEND_ASSET, USERWAY_RUNTIME_ASSET_PATH, USERWAY_RUNTIME_JS } from './src/siteTools/userway'
 import {
   PropertyConditionSchema, FormTransportSchema, FormControlBehaviorSchema,
   FormChallengeResponseSchema, FormJsonResponseSchema, TurnstileConfigurationSchema,
@@ -126,6 +127,7 @@ await Bun.write(root + '/dist/frontend/visitor-preferences.js', preferencesAsset
 await Bun.write(root + '/dist/frontend/visitor-preferences.css', preferencesCss.VISITOR_PREFERENCES_DOCUMENT_CSS)
 await Bun.write(root + '/dist/frontend/loop-controls.js', loopAssets.LOOP_CONTROLS_RUNTIME_JS)
 await Bun.write(root + '/dist/frontend/loop-controls.css', loopAssets.LOOP_CONTROLS_CSS)
+await Bun.write(root + '/dist/' + USERWAY_RUNTIME_ASSET_PATH, USERWAY_RUNTIME_JS)
 
 const manifest = parsePluginManifest({
   id: 'netsons.site', name: 'Netsons Site', version: project.version, apiVersion: 1,
@@ -142,6 +144,7 @@ const manifest = parsePluginManifest({
     { kind: 'script', src: 'frontend/forms.js', placement: 'body-end', strategy: 'defer' },
     { kind: 'style', href: 'frontend/forms.css', placement: 'head-end' },
     ...loopAssets.LOOP_CONTROLS_FRONTEND_ASSETS,
+    USERWAY_FRONTEND_ASSET,
   ] },
   resources: [], adminPages: [],
 })

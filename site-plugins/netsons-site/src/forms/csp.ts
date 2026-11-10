@@ -18,6 +18,25 @@ interface CspDirective {
   sources: string[]
 }
 
+type CspDirectiveName =
+  | 'child-src'
+  | 'connect-src'
+  | 'default-src'
+  | 'font-src'
+  | 'form-action'
+  | 'frame-src'
+  | 'script-src'
+  | 'script-src-elem'
+  | 'style-src'
+
+export interface CspSourceAddition {
+  directive: CspDirectiveName
+  sources: readonly string[]
+  fallbackNames?: readonly CspDirectiveName[]
+  /** Add this source only when the directive already existed in that policy. */
+  onlyIfPresent?: boolean
+}
+
 interface CspRequirements {
   formActions: Set<string>
   requestConnections: Set<string>
@@ -266,6 +285,62 @@ function cspMetas(head: HtmlElement): HtmlElement[] {
   return metas
 }
 
+function validateCspSourceAddition(addition: CspSourceAddition): void {
+  if (!/^[a-z][a-z\d-]*$/i.test(addition.directive)) {
+    throw new Error('CSP source addition has an invalid directive name')
+  }
+  for (const fallbackName of addition.fallbackNames ?? []) {
+    if (!/^[a-z][a-z\d-]*$/i.test(fallbackName)) {
+      throw new Error('CSP source addition has an invalid fallback directive name')
+    }
+  }
+  for (const source of addition.sources) {
+    if (!source || CONTROL_CHARACTERS.test(source) || /[\s;"<>]/.test(source)
+      || (source.includes("'") && !/^'[^']+'$/.test(source)) || source.toLowerCase() === "'none'") {
+      throw new Error('CSP source addition has an invalid source expression')
+    }
+  }
+}
+
+/** Safely merge declared source tokens into every active CSP meta policy. */
+export function augmentCspSources(html: string, additions: readonly CspSourceAddition[]): string {
+  for (const addition of additions) validateCspSourceAddition(addition)
+  const document = parse(html, { sourceCodeLocationInfo: true })
+  const head = activeElements(document).find(element => element.tagName === 'head')
+  const metas = head ? cspMetas(head) : []
+  if (!metas.length) {
+    if (additions.some(addition => addition.sources.length > 0 && !addition.onlyIfPresent)) {
+      throw new Error('Published page requires CSP sources but has no CSP meta tag')
+    }
+    return html
+  }
+
+  const edits: TextEdit[] = []
+  for (const meta of metas) {
+    const content = attr(meta, 'content')
+    const contentLocation = meta.sourceCodeLocation?.attrs?.content
+    if (content === undefined || !contentLocation) throw new Error('Published CSP meta tag has no editable content attribute')
+
+    const directives = parseCspContent(content)
+    const initiallyPresent = new Set(directives.map(item => item.name.toLowerCase()))
+    let changed = false
+    for (const addition of additions) {
+      if (addition.onlyIfPresent && !initiallyPresent.has(addition.directive)) continue
+      changed = addSources(directives, addition.directive, addition.sources, addition.fallbackNames) || changed
+    }
+    if (changed) edits.push({
+      start: contentLocation.startOffset,
+      end: contentLocation.endOffset,
+      replacement: `content="${escapeHtml(serializeCspContent(directives))}"`,
+    })
+  }
+
+  edits.sort((left, right) => right.start - left.start)
+  let result = html
+  for (const edit of edits) result = result.slice(0, edit.start) + edit.replacement + result.slice(edit.end)
+  return result
+}
+
 /**
  * Add the narrow CSP sources required by rendered form actions and Turnstile.
  * The publisher injects this post-render, so only origins present in the final
@@ -286,34 +361,22 @@ export function augmentFormsCsp(html: string): string {
     return html
   }
 
-  const edits: TextEdit[] = []
-  for (const meta of metas) {
-    const content = attr(meta, 'content')
-    const contentLocation = meta.sourceCodeLocation?.attrs?.content
-    if (content === undefined || !contentLocation) throw new Error('Published CSP meta tag has no editable content attribute')
-
-    const directives = parseCspContent(content)
-    let changed = false
-    const formActionSources = new Set(requirements.formActions)
-    if (requirements.hasSameOriginFormAction && directive(directives, 'form-action')) formActionSources.add("'self'")
-    if (formActionSources.size) changed = addSources(directives, 'form-action', formActionSources) || changed
-    if (requirements.requestConnections.size) changed = addSources(directives, 'connect-src', requirements.requestConnections, ['default-src']) || changed
-    if (requirements.hasTurnstile) {
-      changed = addSources(directives, 'script-src', [CLOUDFLARE_ORIGIN], ['default-src']) || changed
-      if (directive(directives, 'script-src-elem')) {
-        changed = addSources(directives, 'script-src-elem', [CLOUDFLARE_ORIGIN], ['script-src']) || changed
-      }
-      changed = addSources(directives, 'frame-src', [CLOUDFLARE_ORIGIN], ['child-src', 'default-src']) || changed
-    }
-    if (changed) edits.push({
-      start: contentLocation.startOffset,
-      end: contentLocation.endOffset,
-      replacement: `content="${escapeHtml(serializeCspContent(directives))}"`,
-    })
+  const additions: CspSourceAddition[] = []
+  if (requirements.formActions.size) {
+    additions.push({ directive: 'form-action', sources: [...requirements.formActions] })
   }
-
-  edits.sort((left, right) => right.start - left.start)
-  let result = html
-  for (const edit of edits) result = result.slice(0, edit.start) + edit.replacement + result.slice(edit.end)
-  return result
+  if (requirements.hasSameOriginFormAction) {
+    additions.push({ directive: 'form-action', sources: ["'self'"], onlyIfPresent: true })
+  }
+  if (requirements.requestConnections.size) {
+    additions.push({ directive: 'connect-src', sources: [...requirements.requestConnections], fallbackNames: ['default-src'] })
+  }
+  if (requirements.hasTurnstile) {
+    additions.push(
+      { directive: 'script-src', sources: [CLOUDFLARE_ORIGIN], fallbackNames: ['default-src'] },
+      { directive: 'script-src-elem', sources: [CLOUDFLARE_ORIGIN], fallbackNames: ['script-src'], onlyIfPresent: true },
+      { directive: 'frame-src', sources: [CLOUDFLARE_ORIGIN], fallbackNames: ['child-src', 'default-src'] },
+    )
+  }
+  return augmentCspSources(html, additions)
 }
