@@ -360,8 +360,20 @@ in `data-instatic-version`. The fragment endpoint compares that fingerprint
 with the current published snapshot. A post publish, unpublish, delete, or
 process restart therefore cannot invalidate an unchanged page's fragments.
 `publishVersion` remains the process-local cache generation: bumping it still
-refreshes live fragment data and snapshot indexes. A genuinely different site
+refreshes live fragment data and the published snapshot memo. A genuinely different site
 snapshot rejects old fingerprints with an uncached stale sentinel.
+
+The fragment request requires `u` to identify a same-origin page path and query.
+It resolves that public route and composes its templates and shared components
+through the same render context as the full page. Node lookup is scoped to that
+composed tree, so shared node IDs retain the requested page's language and entry
+context. Page-route metadata reuses the memoized site document only when its
+immutable snapshot ID matches; independently published page versions retain
+their own snapshot and runtime manifest.
+
+After replacing a hole successfully, the browser runtime dispatches
+`instatic:content` so forms and other frontend behaviors initialize the inserted
+controls. Failed responses and stale sentinels leave the placeholder unchanged.
 
 After upgrading from counter-based hole versions, run a full-site publish once
 to regenerate existing baked HTML with snapshot fingerprints.
