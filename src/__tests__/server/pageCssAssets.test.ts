@@ -28,7 +28,7 @@ function makeFixture() {
   return { site, manifests }
 }
 function snapshot(site: SiteDocument, pageRowId: string, manifests: Map<string, PublishedPageRuntimeAssets>): PublishedPageSnapshot {
-  return { cmsSnapshotVersion: 1, site, pageRowId, runtimeAssets: manifests.get(pageRowId) }
+  return { cmsSnapshotVersion: 1, site, pageRowId, siteSnapshotId: 'site-snapshot', runtimeAssets: manifests.get(pageRowId) }
 }
 function dbFor(
   readSite: () => SiteDocument,

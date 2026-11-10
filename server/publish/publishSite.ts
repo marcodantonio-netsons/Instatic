@@ -78,12 +78,14 @@ interface PublishResult {
 function createSnapshot(
   site: SiteDocument,
   pageRowId: string,
+  siteSnapshotId: string,
   runtimeAssets?: PublishedPageRuntimeAssets,
   runtimePackageImportmap?: PublishedRuntimePackageImportmap,
 ): PublishedPageSnapshot {
   return {
     cmsSnapshotVersion: 1,
     pageRowId,
+    siteSnapshotId,
     site,
     ...(runtimeAssets && runtimeAssets.scripts.length > 0 ? { runtimeAssets } : {}),
     ...(runtimePackageImportmap ? { runtimePackageImportmap } : {}),
@@ -192,6 +194,7 @@ async function publishSiteDocumentLocked(
       const snapshot = createSnapshot(
         publishedSite,
         page.id,
+        siteSnapshotId,
         runtimeBuild.runtimeAssets,
         runtimePackageImportmap,
       )

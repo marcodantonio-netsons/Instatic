@@ -13,6 +13,7 @@ function snapshot(text: string): PublishedPageSnapshot {
   return {
     cmsSnapshotVersion: 1,
     pageRowId: 'page_home',
+    siteSnapshotId: 'site-snapshot',
     site: {
       id: 'project_1',
       name: 'Public Site',
@@ -73,6 +74,15 @@ function makeFakeDb(
       const row = runtimeAssets.find((asset) => asset.public_path === values[0])
       return { rows: row ? [row as Row] : [], rowCount: row ? 1 : 0 }
     }
+    if (!normalized.includes('site_snapshots.site_json') && normalized.includes('data_row_versions.site_snapshot_id') && normalized.includes('data_row_versions.slug =')) {
+      const page = activeSnapshot?.site.pages.find((candidate) => candidate.slug === values[0])
+      return {
+        rows: activeSnapshot && page
+          ? [{ row_id: page.id, site_snapshot_id: activeSnapshot.siteSnapshotId, runtime_assets_json: activeSnapshot.runtimeAssets ?? null } as unknown as Row]
+          : [],
+        rowCount: activeSnapshot && page ? 1 : 0,
+      }
+    }
     // getPublishedPageBySlug / getLatestPublishedSiteSnapshot — joins
     // data_row_versions to site_snapshots
     if (normalized.includes('site_snapshots.site_json')) {
@@ -80,6 +90,7 @@ function makeFakeDb(
         rows: activeSnapshot
           ? [{
               row_id: activeSnapshot.pageRowId,
+              site_snapshot_id: activeSnapshot.siteSnapshotId,
               site_json: activeSnapshot.site,
               runtime_assets_json: activeSnapshot.runtimeAssets ?? null,
               importmap_body: activeSnapshot.runtimePackageImportmap?.body ?? null,
@@ -171,6 +182,7 @@ describe('public rendering', () => {
   ): PublishedPageSnapshot => ({
       cmsSnapshotVersion: 1,
       pageRowId: 'page_home',
+      siteSnapshotId: 'site-snapshot',
       site: {
         id: 'project_1',
         name: 'Public Site',

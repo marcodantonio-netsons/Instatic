@@ -52,6 +52,7 @@ function makeSnapshot(targetTableId = 'newsletter_submissions'): PublishedPageSn
   return {
     cmsSnapshotVersion: 1,
     pageRowId: 'page-home',
+    siteSnapshotId: 'site-snapshot',
     site: {
       id: 'site',
       name: 'Site',

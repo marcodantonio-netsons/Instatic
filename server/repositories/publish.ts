@@ -47,6 +47,8 @@ export interface PublishedPageSnapshot {
   cmsSnapshotVersion: 1
   /** id of the `data_rows` row for this page (was `pageId` in the old schema). */
   pageRowId: string
+  /** Immutable `site_snapshots` row referenced by this page version. */
+  siteSnapshotId: string
   site: SiteDocument
   runtimeAssets?: PublishedPageRuntimeAssets
   /**
@@ -75,6 +77,7 @@ interface PublishStatusRow {
 /** Shared SELECT shape for the snapshot getters below. */
 interface SnapshotQueryRow {
   row_id: string
+  site_snapshot_id: string
   site_json: SiteDocument
   runtime_assets_json: PublishedPageRuntimeAssets | null
   importmap_body: string | null
@@ -125,12 +128,56 @@ function snapshotFromQueryRow(row: SnapshotQueryRow): PublishedPageSnapshot {
   return {
     cmsSnapshotVersion: 1,
     pageRowId: row.row_id,
+    siteSnapshotId: row.site_snapshot_id,
     site: row.site_json,
     ...(row.runtime_assets_json && row.runtime_assets_json.scripts.length > 0
       ? { runtimeAssets: row.runtime_assets_json }
       : {}),
     ...(row.importmap_body && row.importmap_sha256
       ? { runtimePackageImportmap: { body: row.importmap_body, sha256: row.importmap_sha256 } }
+      : {}),
+  }
+}
+
+export interface PublishedPageRouteMetadata {
+  pageRowId: string
+  siteSnapshotId: string
+  runtimeAssets?: PublishedPageRuntimeAssets
+}
+
+interface PageRouteMetadataQueryRow {
+  row_id: string
+  site_snapshot_id: string
+  runtime_assets_json: unknown
+}
+
+/** Read the active page version's identity and scoped runtime manifest without loading its site JSON. */
+export async function getPublishedPageRouteMetadataBySlug(
+  db: DbClient,
+  slug: string,
+): Promise<PublishedPageRouteMetadata | null> {
+  const { rows } = await db<PageRouteMetadataQueryRow>`
+    select data_rows.id as row_id,
+           data_row_versions.site_snapshot_id,
+           data_row_versions.runtime_assets_json
+    from data_rows
+    join data_row_versions on data_row_versions.id = data_rows.active_version_id
+    where data_rows.table_id = 'pages'
+      and data_row_versions.slug = ${slug}
+      and data_rows.status = 'published'
+      and data_rows.deleted_at is null
+    limit 1
+  `
+  const row = rows[0]
+  if (!row) return null
+  if (row.runtime_assets_json !== null && !compiledCheck(PublishedPageRuntimeAssetsSchema, row.runtime_assets_json)) {
+    throw new Error(`Invalid published runtime manifest for page "${row.row_id}"`)
+  }
+  return {
+    pageRowId: row.row_id,
+    siteSnapshotId: row.site_snapshot_id,
+    ...(row.runtime_assets_json && row.runtime_assets_json.scripts.length > 0
+      ? { runtimeAssets: row.runtime_assets_json }
       : {}),
   }
 }
@@ -386,6 +433,7 @@ export async function getPublishedPageBySlug(
 ): Promise<PublishedPageSnapshot | null> {
   const { rows } = await db<SnapshotQueryRow>`
     select data_rows.id as row_id,
+           site_snapshots.id as site_snapshot_id,
            site_snapshots.site_json,
            data_row_versions.runtime_assets_json,
            site_snapshots.importmap_body,
@@ -408,6 +456,7 @@ export async function getPublishedPageSnapshotById(
 ): Promise<PublishedPageSnapshot | null> {
   const { rows } = await db<SnapshotQueryRow>`
     select data_rows.id as row_id,
+           site_snapshots.id as site_snapshot_id,
            site_snapshots.site_json,
            data_row_versions.runtime_assets_json,
            site_snapshots.importmap_body,
@@ -463,6 +512,7 @@ export async function getLatestPublishedSiteSnapshot(
 ): Promise<PublishedPageSnapshot | null> {
   const { rows } = await db<SnapshotQueryRow>`
     select data_rows.id as row_id,
+           site_snapshots.id as site_snapshot_id,
            site_snapshots.site_json,
            site_snapshots.importmap_body,
            site_snapshots.importmap_sha256

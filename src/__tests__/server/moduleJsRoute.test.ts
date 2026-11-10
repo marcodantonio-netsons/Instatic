@@ -31,6 +31,7 @@ function makeSnapshot() {
   return {
     cmsSnapshotVersion: 1 as const,
     pageRowId: 'page_1',
+    siteSnapshotId: 'site-snapshot',
     site: {
       id: 'site_1',
       name: 'Test Site',

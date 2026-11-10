@@ -78,7 +78,7 @@ describe('module assets follow native public reachability', () => {
       widget: makeNode({ id: 'widget', moduleId: 'test.entry-widget', dynamicBindings: { count: { source: 'currentEntry', field: 'count' } } }),
     } })
     const site = makeSite({ pages: [page] })
-    const snapshot: PublishedPageSnapshot = { cmsSnapshotVersion: 1, pageRowId: page.id, site, runtimeAssets: { scripts: [] } }
+    const snapshot: PublishedPageSnapshot = { cmsSnapshotVersion: 1, pageRowId: page.id, siteSnapshotId: 'site-snapshot', site, runtimeAssets: { scripts: [] } }
     const row: PublishedDataRow = {
       id: 'row-version', rowId: 'actual-entry', tableId: 'news', tableSlug: 'news', tableKind: 'posts', tableRouteBase: '/news', versionNumber: 1,
       tableFields: [

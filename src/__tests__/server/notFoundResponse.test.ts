@@ -52,6 +52,7 @@ function makeSnapshot(withNotFound: boolean): PublishedPageSnapshot {
   return {
     cmsSnapshotVersion: 1,
     pageRowId: withNotFound ? 'page_nf' : 'page_home',
+    siteSnapshotId: 'site-snapshot',
     site: {
       id: 'site_1',
       name: 'Test Site',

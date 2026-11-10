@@ -24,6 +24,9 @@ function makeTemplateRouteFakeDb(handlers: QueryHandler[]) {
     if (sql.startsWith('select logical_id, name, slug, kind') && sql.includes('from data_tables')) {
       return { rows: [], rowCount: 0 } as unknown as DbResult
     }
+    if (!sql.includes('site_snapshots.site_json') && sql.includes('data_row_versions.site_snapshot_id') && sql.includes('data_row_versions.slug =')) {
+      return { rows: [], rowCount: 0 } as unknown as DbResult
+    }
     for (const handler of handlers) {
       const result = handler(sql, params)
       if (result) return result
@@ -64,6 +67,7 @@ describe('CMS dynamic template routes', () => {
     const snapshot: PublishedPageSnapshot = {
       cmsSnapshotVersion: 1,
       pageRowId: page.id,
+      siteSnapshotId: 'site-snapshot',
       site: makeSite({ pages: [page] }),
     }
 
@@ -207,6 +211,7 @@ describe('CMS dynamic template routes', () => {
       const snapshot: PublishedPageSnapshot = {
         cmsSnapshotVersion: 1,
         pageRowId: page.id,
+        siteSnapshotId: 'site-snapshot',
         site: makeSite({ pages: [page] }),
       }
 

@@ -3,7 +3,7 @@ import type { PublishedPageSnapshot } from '../repositories/publish'
 import type { PublishedDataRow } from '@core/data/schemas'
 import { isTemplatePage, resolveNotFoundTemplate } from '@core/templates'
 import { getDataRowRedirectByRoute, getPublishedDataRowByRoute } from '../repositories/data/publish'
-import { getPublishedPageBySlug } from '../repositories/publish'
+import { getPublishedPageBySlug, getPublishedPageRouteMetadataBySlug } from '../repositories/publish'
 import { getLatestSnapshotForVersion } from './publishedSnapshotCache'
 import { snapshotForEntryRoute, snapshotForNotFoundRoute } from './entryTemplateSnapshot'
 import { getPublishVersion } from './publishState'
@@ -79,7 +79,23 @@ export async function resolvePublicRoute(
 ): Promise<PublicRouteResolution> {
   // Page at the full slug.
   const pageSlug = publicSlugFromPath(url.pathname)
-  const pageSnapshot = await getPublishedPageBySlug(db, pageSlug)
+  const pageMetadata = await getPublishedPageRouteMetadataBySlug(db, pageSlug)
+  let pageSnapshot: PublishedPageSnapshot | null = null
+  if (pageMetadata) {
+    const latestSnapshot = await getLatestSnapshotForVersion(db, getPublishVersion())
+    pageSnapshot = latestSnapshot?.siteSnapshotId === pageMetadata.siteSnapshotId
+      ? {
+          cmsSnapshotVersion: latestSnapshot.cmsSnapshotVersion,
+          pageRowId: pageMetadata.pageRowId,
+          siteSnapshotId: latestSnapshot.siteSnapshotId,
+          site: latestSnapshot.site,
+          ...(pageMetadata.runtimeAssets ? { runtimeAssets: pageMetadata.runtimeAssets } : {}),
+          ...(latestSnapshot.runtimePackageImportmap
+            ? { runtimePackageImportmap: latestSnapshot.runtimePackageImportmap }
+            : {}),
+        }
+      : await getPublishedPageBySlug(db, pageSlug)
+  }
   if (pageSnapshot) {
     const page = pageSnapshot.site.pages.find((p) => p.id === pageSnapshot.pageRowId)
     if (page && !isTemplatePage(page)) {

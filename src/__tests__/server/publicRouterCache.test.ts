@@ -26,6 +26,7 @@ function makeSnapshot(): PublishedPageSnapshot {
   return {
     cmsSnapshotVersion: 1,
     pageRowId: 'page_test',
+    siteSnapshotId: 'site-snapshot',
     site: {
       id: 'site_1',
       name: 'Test Site',
@@ -76,12 +77,22 @@ function makeFakeDb(snapshot: PublishedPageSnapshot | null): DbClient {
     const sql = strings.reduce<string>((acc, str, i) => (i === 0 ? str : `${acc}$${i}${str}`), '')
     const normalized = sql.replace(/\s+/g, ' ').trim().toLowerCase()
 
+    if (!normalized.includes('site_snapshots.site_json') && normalized.includes('data_row_versions.site_snapshot_id') && normalized.includes('data_row_versions.slug =')) {
+      return {
+        rows: snapshot
+          ? [{ row_id: snapshot.pageRowId, site_snapshot_id: snapshot.siteSnapshotId, runtime_assets_json: snapshot.runtimeAssets ?? null } as unknown as Row]
+          : [],
+        rowCount: snapshot ? 1 : 0,
+      }
+    }
+
     // getPublishedPageBySlug — joins data_row_versions to site_snapshots
     if (normalized.includes('site_snapshots.site_json')) {
       return {
         rows: snapshot
           ? [{
               row_id: snapshot.pageRowId,
+              site_snapshot_id: snapshot.siteSnapshotId,
               site_json: snapshot.site,
               runtime_assets_json: snapshot.runtimeAssets ?? null,
               importmap_body: snapshot.runtimePackageImportmap?.body ?? null,

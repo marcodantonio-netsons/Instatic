@@ -52,6 +52,7 @@ function makeSnapshot(page: ReturnType<typeof makePage>): PublishedPageSnapshot 
   return {
     cmsSnapshotVersion: 1,
     pageRowId: page.id,
+    siteSnapshotId: 'site-snapshot',
     site: makeSite({ pages: [page] }),
   }
 }
