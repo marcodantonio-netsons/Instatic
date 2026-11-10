@@ -9,7 +9,8 @@
  *   2. The runtime source parses (no SyntaxError).
  *   3. The runtime registers an observer for every `<instatic-hole[data-instatic-hole]>` element.
  *   4. When an IntersectionObserver callback fires with isIntersecting=true,
- *      the runtime calls `fetch` with the correct URL and swaps `el.outerHTML`.
+ *      the runtime calls `fetch` with the correct URL, swaps `el.outerHTML`,
+ *      and notifies frontend behaviors that content was inserted.
  *
  * We drive the `IntersectionObserver` callbacks manually since happy-dom does
  * not fire them based on real viewport layout.
@@ -96,7 +97,7 @@ describe('HOLE_RUNTIME_JS — runtime behaviour with mock IntersectionObserver',
 
     ;(globalThis as Record<string, unknown>).fetch = (url: string) => {
       fetchedUrls.push(url)
-      return Promise.resolve({ text: () => Promise.resolve('<span>Loaded content</span>') })
+      return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('<span>Loaded content</span>') })
     }
 
     ;(globalThis as Record<string, unknown>).IntersectionObserver = class MockIO {
@@ -155,7 +156,7 @@ describe('HOLE_RUNTIME_JS — runtime behaviour with mock IntersectionObserver',
 
     ;(globalThis as Record<string, unknown>).fetch = (url: string) => {
       fetchedUrls.push(url)
-      return Promise.resolve({ text: () => Promise.resolve('<span>x</span>') })
+      return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('<span>x</span>') })
     }
     ;(globalThis as Record<string, unknown>).IntersectionObserver = class MockIO {
       constructor(_callback: (entries: IntersectionObserverEntry[]) => void) {}
@@ -216,6 +217,59 @@ describe('HOLE_RUNTIME_JS — runtime behaviour with mock IntersectionObserver',
 
       expect(fetchedUrls.length).toBe(0)
     } finally {
+      ;(globalThis as Record<string, unknown>).fetch = originalFetch
+      ;(globalThis as Record<string, unknown>).IntersectionObserver = originalIO
+      document.body.innerHTML = ''
+    }
+  })
+
+  it('notifies inserted-content consumers once after a valid replacement, not on failure or stale output', async () => {
+    document.body.innerHTML = `
+      <instatic-hole id="hole-success" data-instatic-hole="success" data-instatic-version="1"><div class="sk">success</div></instatic-hole>
+      <instatic-hole id="hole-failure" data-instatic-hole="failure" data-instatic-version="1"><div class="sk">failure</div></instatic-hole>
+      <instatic-hole id="hole-stale" data-instatic-hole="stale" data-instatic-version="1"><div class="sk">stale</div></instatic-hole>
+    `
+
+    let resolveSuccess: ((response: { ok: boolean; status: number; text: () => Promise<string> }) => void) | undefined
+    let capturedCallback: ((entries: IntersectionObserverEntry[]) => void) | undefined
+    const eventObservations: boolean[] = []
+    const originalFetch = globalThis.fetch
+    const originalIO = globalThis.IntersectionObserver
+    const onContent = () => eventObservations.push(document.querySelector('#inserted-content') !== null)
+    document.addEventListener('instatic:content', onContent)
+
+    ;(globalThis as Record<string, unknown>).fetch = (url: string) => {
+      if (url.includes('/success?')) return new Promise(resolve => { resolveSuccess = resolve })
+      if (url.includes('/failure?')) return Promise.resolve({ ok: false, status: 404, text: () => Promise.resolve('missing') })
+      return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('<instatic-hole-stale data-instatic-stale="true"></instatic-hole-stale>') })
+    }
+    ;(globalThis as Record<string, unknown>).IntersectionObserver = class MockIO {
+      constructor(callback: (entries: IntersectionObserverEntry[]) => void) { capturedCallback = callback }
+      observe(_el: Element) {}
+      unobserve(_el: Element) {}
+      disconnect() {}
+      takeRecords() { return [] }
+    } as unknown as typeof IntersectionObserver
+
+    try {
+      runInstaticHoleRuntime()
+      const children = Array.from(document.querySelectorAll('instatic-hole > .sk'))
+      expect(children).toHaveLength(3)
+      capturedCallback?.(children.map(target => ({ isIntersecting: true, target }) as IntersectionObserverEntry))
+      await new Promise(resolve => setTimeout(resolve, 0))
+      expect(eventObservations).toHaveLength(0)
+      expect(document.querySelector('#hole-failure .sk')).not.toBeNull()
+      expect(document.querySelector('#hole-stale .sk')).not.toBeNull()
+
+      resolveSuccess?.({ ok: true, status: 200, text: () => Promise.resolve('<section id="inserted-content">Loaded</section>') })
+      await new Promise(resolve => setTimeout(resolve, 0))
+
+      expect(eventObservations).toEqual([true])
+      expect(document.querySelector('#hole-success')).toBeNull()
+      expect(document.querySelector('#hole-failure .sk')).not.toBeNull()
+      expect(document.querySelector('#hole-stale .sk')).not.toBeNull()
+    } finally {
+      document.removeEventListener('instatic:content', onContent)
       ;(globalThis as Record<string, unknown>).fetch = originalFetch
       ;(globalThis as Record<string, unknown>).IntersectionObserver = originalIO
       document.body.innerHTML = ''
