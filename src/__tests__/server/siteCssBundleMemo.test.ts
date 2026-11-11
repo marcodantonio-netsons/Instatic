@@ -22,14 +22,12 @@ import {
   buildSiteCssBundle,
   buildPublishedSiteCssBundle,
 } from '../../../server/publish/siteCssBundle'
-import { buildPublishedSiteModuleJsMap } from '../../../server/publish/moduleJsBundle'
 import {
   bumpPublishVersion,
   resetPublishStateForTests,
 } from '../../../server/publish/publishState'
 import { makeModule, makeRegistry, makePage, makeSite } from '../publisher/helpers'
 import type { SiteDocument } from '@core/page-tree'
-import type { RenderResolvedMedia } from '@core/publisher'
 
 describe('buildPublishedSiteCssBundle — page-invariant memo', () => {
   let renderCalls = 0
@@ -38,7 +36,7 @@ describe('buildPublishedSiteCssBundle — page-invariant memo', () => {
       // Every node visited by the all-pages module-CSS walk runs this. Counting
       // invocations lets a test assert the walk happened exactly once per version.
       renderCalls += 1
-      return { html: '<h1>Hi</h1>', css: 'h1 { color: black; }', js: 'TEXT_MODULE_JS' }
+      return { html: '<h1>Hi</h1>', css: 'h1 { color: black; }' }
     },
   })
   const registry = makeRegistry({ 'base.text': styledTextDef })
@@ -51,21 +49,6 @@ describe('buildPublishedSiteCssBundle — page-invariant memo', () => {
       makePage({ id: 'p3', root: { moduleId: 'base.text', props: { text: 'C' } } }),
     ]
     return site
-  }
-
-  function mediaAsset(variantPath: string): ReadonlyMap<string, RenderResolvedMedia> {
-    return new Map([
-      ['/uploads/hero.png', {
-        publicPath: '/uploads/hero.png',
-        mimeType: 'image/png',
-        width: 640,
-        height: 360,
-        altText: '',
-        blurHash: null,
-        variants: [{ width: 640, height: 360, format: 'webp', path: variantPath, sizeBytes: 100 }],
-        posterPath: null,
-      }],
-    ])
   }
 
   beforeEach(() => {
@@ -120,7 +103,12 @@ describe('buildPublishedSiteCssBundle — page-invariant memo', () => {
     expect(after.style).not.toBe(before.style)
   })
 
-  it('uses a distinct walk for a different published site object at the same version', () => {
+  it('memo key is the publish version ALONE — a different site object at the same version reuses it', () => {
+    // Every consumer loads the published snapshot fresh from the DB (a new
+    // JSON-parsed object per query), so a site-identity key would never hit.
+    // Published content is fixed per version (every snapshot writer bumps), so
+    // the version alone is a sound key — and two distinct site objects at the
+    // same version must share one walk.
     const firstSite = makeMultiPageSite()
     const secondSite = makeMultiPageSite()
 
@@ -129,9 +117,9 @@ describe('buildPublishedSiteCssBundle — page-invariant memo', () => {
 
     const second = buildPublishedSiteCssBundle(secondSite, registry, secondSite.pages[0])
 
-    expect(renderCalls).toBe(callsAfterFirstSite + 3)
-    expect(second.framework).not.toBe(first.framework)
-    expect(second.style).not.toBe(first.style)
+    expect(renderCalls).toBe(callsAfterFirstSite)
+    expect(second.framework).toBe(first.framework)
+    expect(second.style).toBe(first.style)
   })
 
   it('an explicit publishVersion argument (publish-time bake) gets its own memo slot', () => {
@@ -146,72 +134,6 @@ describe('buildPublishedSiteCssBundle — page-invariant memo', () => {
     const next = buildPublishedSiteCssBundle(site, registry, site.pages[0], 1)
     expect(renderCalls).toBeGreaterThan(callsAfterCurrent)
     expect(next.framework).not.toBe(current.framework)
-  })
-
-  it('shares one published asset walk across CSS and JS for each explicit version', () => {
-    const site = makeMultiPageSite()
-    site.styleRules = {
-      hero: {
-        id: 'hero',
-        name: 'hero',
-        kind: 'class',
-        selector: '.hero',
-        order: 0,
-        styles: { backgroundImage: 'url(/uploads/hero.png)' },
-        contextStyles: {},
-        createdAt: 0,
-        updatedAt: 0,
-      },
-    }
-
-    const currentVersion = 0
-    const nextVersion = 1
-    const firstCss = buildPublishedSiteCssBundle(
-      site,
-      registry,
-      site.pages[0],
-      currentVersion,
-      { mediaAssets: mediaAsset('/uploads/hero-640-a.webp') },
-    )
-    const callsAfterCurrentCss = renderCalls
-    expect(callsAfterCurrentCss).toBe(3)
-
-    const currentJs = buildPublishedSiteModuleJsMap(site, registry, currentVersion)
-    expect([...currentJs]).toEqual([['base.text', 'TEXT_MODULE_JS']])
-    expect(renderCalls).toBe(callsAfterCurrentCss)
-
-    // A media-signature change rebuilds CSS, but the module asset walk has no
-    // media input and remains shared with the JS channel.
-    const changedMediaCss = buildPublishedSiteCssBundle(
-      site,
-      registry,
-      site.pages[0],
-      currentVersion,
-      { mediaAssets: mediaAsset('/uploads/hero-640-b.webp') },
-    )
-    expect(changedMediaCss.style).not.toBe(firstCss.style)
-    expect(renderCalls).toBe(callsAfterCurrentCss)
-
-    // The publish-time bake renders the next snapshot before the version bump;
-    // its explicit version gets one shared walk across CSS and JS too.
-    const nextCss = buildPublishedSiteCssBundle(
-      site,
-      registry,
-      site.pages[0],
-      nextVersion,
-      { mediaAssets: mediaAsset('/uploads/hero-640-b.webp') },
-    )
-    expect(renderCalls).toBe(callsAfterCurrentCss + 3)
-    expect(nextCss.framework).not.toBe(firstCss.framework)
-
-    const nextJs = buildPublishedSiteModuleJsMap(site, registry, nextVersion)
-    expect([...nextJs]).toEqual([['base.text', 'TEXT_MODULE_JS']])
-    expect(renderCalls).toBe(callsAfterCurrentCss + 3)
-
-    const replacementRegistry = makeRegistry({ 'base.text': styledTextDef })
-    const replacementJs = buildPublishedSiteModuleJsMap(site, replacementRegistry, nextVersion)
-    expect([...replacementJs]).toEqual([['base.text', 'TEXT_MODULE_JS']])
-    expect(renderCalls).toBe(callsAfterCurrentCss + 6)
   })
 
   it('emits byte-identical CSS to the un-memoised builder', () => {

@@ -34,7 +34,6 @@ export type PluginPropertyControl = PluginPropertyControlBase &
     | { type: 'select'; options: Array<{ label: string; value: unknown }> }
     | { type: 'toggle' }
     | { type: 'image' }
-    | { type: 'svg' }
     | { type: 'url' }
   )
 

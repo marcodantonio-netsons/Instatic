@@ -38,7 +38,7 @@ import { BRANCH_PREVIEW_EXIT_PATH } from '../branches/previewLinks'
 import { getBranch } from '../repositories/branches'
 import { getDataRowBySlug, listDataTables } from '../repositories/data'
 import { getDraftSiteDocument } from '../repositories/publish'
-import { buildSiteModuleJsMap } from './moduleJsBundle'
+import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 import { prefetchLoopData, publishedDataRowToEntryItem } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
@@ -229,7 +229,7 @@ export async function renderBranchPreview(
   // tokens, module scripts, the `publish.*` hooks), so a form or a plugin's
   // client script works on the preview too. The banner goes in last, past
   // the filters.
-  const moduleJsMap = buildSiteModuleJsMap(site, registry)
+  const moduleJsMap = buildPublishedSiteModuleJsMap(site, registry)
   const finalHtml = await applyPublishedHtmlPipeline(
     {
       html: rendered.html,

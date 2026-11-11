@@ -22,25 +22,6 @@ import type { IModuleRegistry } from '@core/module-engine'
 import { renderNode } from '@core/publisher'
 import type { RenderConfig, RenderAccumulators } from '@core/publisher'
 import { buildPageFrame, buildRouteFrame, buildSiteFrame } from '@core/templates/contextFrames'
-import { registerVersionedCacheReset } from './publishState'
-
-type PublishedAssets = { generation: number; versions: Map<number, RenderAccumulators> }
-let publishedAssets = new WeakMap<SiteDocument, WeakMap<IModuleRegistry, PublishedAssets>>()
-registerVersionedCacheReset(() => { publishedAssets = new WeakMap() })
-
-/** CSS and JS share one asset walk for each immutable published snapshot. */
-export function getPublishedSiteModuleAssets(site: SiteDocument, registry: IModuleRegistry, version: number): RenderAccumulators {
-  let registries = publishedAssets.get(site)
-  if (!registries) { registries = new WeakMap(); publishedAssets.set(site, registries) }
-  let entry = registries.get(registry)
-  if (!entry || entry.generation !== registry.generation()) {
-    entry = { generation: registry.generation(), versions: new Map() }
-    registries.set(registry, entry)
-  }
-  let assets = entry.versions.get(version)
-  if (!assets) { assets = collectSiteModuleAssets(site, registry); entry.versions.set(version, assets) }
-  return assets
-}
 
 export function collectSiteModuleAssets(
   site: SiteDocument,

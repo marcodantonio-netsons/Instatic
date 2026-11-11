@@ -1,5 +1,4 @@
 import { defineSiteModule } from '../shared/defineModule'
-import { Type } from '@sinclair/typebox'
 import { htmlAttributesAttr } from '../shared/attributeEmitter'
 import { MODULE_GENERATED_ATTRIBUTE_NAMES } from '../shared/generatedAttributes'
 import { ScrollRailPropsSchema, ScrollControlsPropsSchema, ScrollButtonPropsSchema, SectionNavPropsSchema, TabsPropsSchema, TabPropsSchema, TabPanelPropsSchema, TabLinkPropsSchema } from './props'
@@ -32,7 +31,6 @@ export const ScrollControlsModule = defineSiteModule({
 export const ScrollButtonModule = defineSiteModule({
   id: 'netsons.site.scroll-button', name: 'Scroll button', description: 'Moves the rail paired with its containing Scroll controls.', version: '1.0.0',  canHaveChildren: false, htmlTag: 'button',
   propsSchema: ScrollButtonPropsSchema,
-  publishSchema: Type.Object({ props: Type.Object({ label: Type.String({ minLength: 1, pattern: '\\S' }) }) }),
   schema: {
     direction: { type: 'select', label: 'Direction', options: [{ value: 'previous', label: 'Previous' }, { value: 'next', label: 'Next' }] },
     label: { type: 'text', label: 'Label' },

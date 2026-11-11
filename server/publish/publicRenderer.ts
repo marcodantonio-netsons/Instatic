@@ -91,7 +91,7 @@ async function renderMergedTemplate(
   documentMeta?: DocumentMetaOverride,
 ): Promise<{ html: string; jsModuleIds: string[]; publishVersion: number; cssBundle: SiteCssBundle }> {
   const publishVersion = ctx.publishVersion ?? getPublishVersion()
-  const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry, publishVersion)
+  const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry)
   const loopData = await prefetchLoopData(merged, snapshot.site, ctx.db, ctx.url)
   const mediaAssets = await prefetchMediaAssets(merged, snapshot.site, registry, ctx.db, {
     templateContext,

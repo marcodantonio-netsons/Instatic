@@ -44,7 +44,7 @@ import type {
   SiteCssBundle,
   SiteCssBundleId,
 } from '@core/publisher'
-import { collectSiteModuleAssets, getPublishedSiteModuleAssets } from './siteModuleAssets'
+import { collectSiteModuleAssets } from './siteModuleAssets'
 import { getPublishVersion, registerVersionedCacheReset } from './publishState'
 
 /**
@@ -75,7 +75,7 @@ export function buildSiteCssBundle(
   options: ResponsiveCssOptions = {},
 ): SiteCssBundle {
   return {
-    ...computePageInvariantBundles(site, options, Array.from(collectSiteModuleAssets(site, registry).cssMap.values()).join('\n')),
+    ...computePageInvariantBundles(site, registry, options),
     userStyles: makeBundleFile('userStyles', collectUserStylesheetCss(site, page)),
   }
 }
@@ -86,8 +86,8 @@ export function buildSiteCssBundle(
  * the O(all-pages) module-CSS walk runs once per publish version instead of
  * once per render. Only `userStyles` is rebuilt per call (it is page-scoped).
  *
- * The memo includes the immutable site, registry generation, publish version,
- * and background-media signature. `publishDraftSite` bumps the version
+ * Memo key = publish version ALONE. The published site content is fixed for a
+ * given version: `publishDraftSite` is the only snapshot writer and it bumps
  * the version right after committing, and incremental row publishes never
  * write the site document (they bump too, which just re-primes the memo with
  * identical content). The publish-time bake renders the NEXT version's content
@@ -114,12 +114,12 @@ export function buildPublishedSiteCssBundle(
 /** Build the three page-invariant bundle files from scratch. */
 function computePageInvariantBundles(
   site: SiteDocument,
+  registry: IModuleRegistry,
   options: ResponsiveCssOptions,
-  moduleCss: string,
 ): PageInvariantBundles {
   return {
     reset: makeBundleFile('reset', PUBLISHER_RESET_CSS),
-    framework: makeBundleFile('framework', buildFrameworkCss(site, moduleCss)),
+    framework: makeBundleFile('framework', buildFrameworkCss(site, registry)),
     style: makeBundleFile('style', collectClassCSS(site, options)),
   }
 }
@@ -128,9 +128,10 @@ function computePageInvariantBundles(
 // (the next read sees a new version → recompute), so a content change can never
 // serve stale framework/style CSS. Registered with the shared test-reset hook.
 //
-// Snapshot identity prevents cross-contamination between previews/publications.
-// The shared published asset cache is independent of background-media variants.
-let pageInvariantCache: { version: number; site: SiteDocument; registry: IModuleRegistry; generation: number; mediaSignature: string; bundles: PageInvariantBundles } | null = null
+// Deliberately NOT keyed on the site object: every consumer loads the snapshot
+// fresh (DB JSON parse per query), so an identity key would never hit — that
+// was exactly the bug that made every Layer B miss re-walk the whole site.
+let pageInvariantCache: { version: number; mediaSignature: string; bundles: PageInvariantBundles } | null = null
 registerVersionedCacheReset(() => {
   pageInvariantCache = null
 })
@@ -146,12 +147,11 @@ function memoizedPageInvariantBundles(
   options: ResponsiveCssOptions,
 ): PageInvariantBundles {
   const mediaSignature = styleMediaSignature(site, options)
-  if (pageInvariantCache && pageInvariantCache.version === version && pageInvariantCache.site === site && pageInvariantCache.registry === registry && pageInvariantCache.generation === registry.generation() && pageInvariantCache.mediaSignature === mediaSignature) {
+  if (pageInvariantCache && pageInvariantCache.version === version && pageInvariantCache.mediaSignature === mediaSignature) {
     return pageInvariantCache.bundles
   }
-  const moduleCss = Array.from(getPublishedSiteModuleAssets(site, registry, version).cssMap.values()).join('\n')
-  const bundles = computePageInvariantBundles(site, options, moduleCss)
-  pageInvariantCache = { version, site, registry, generation: registry.generation(), mediaSignature, bundles }
+  const bundles = computePageInvariantBundles(site, registry, options)
+  pageInvariantCache = { version, mediaSignature, bundles }
   return bundles
 }
 
@@ -173,8 +173,9 @@ function styleMediaSignature(site: SiteDocument, options: ResponsiveCssOptions):
  * Build the `framework.css` body: site-wide platform CSS plus any plugin
  * module CSS used anywhere on the site.
  */
-function buildFrameworkCss(site: SiteDocument, moduleCss: string): string {
+function buildFrameworkCss(site: SiteDocument, registry: IModuleRegistry): string {
   const frameworkCss = buildSiteFrameworkCss(site)
+  const moduleCss = Array.from(collectSiteModuleAssets(site, registry).cssMap.values()).join('\n')
   return [frameworkCss, moduleCss].filter(Boolean).join('\n')
 }
 

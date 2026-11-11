@@ -26,9 +26,7 @@
  * by the endpoint only for `perVisitor` holes.
  *
  * When the fetch resolves, `el.outerHTML = html` swaps the placeholder with
- * the server-rendered fragment in-place. The `instatic:content` event lets
- * runtime behaviors initialize controls inserted by the fragment. No morphdom
- * / idiomorph dependency.
+ * the server-rendered fragment in-place. No morphdom / idiomorph dependency.
  * A fetch failure is silently swallowed — the author's skeleton content in the
  * placeholder continues to show as a meaningful fallback.
  */
@@ -46,7 +44,6 @@ export function runInstaticHoleRuntime(): void {
       .then(function(html) {
         if (html.indexOf('data-instatic-stale="true"') !== -1) return;
         el.outerHTML = html;
-        document.dispatchEvent(new CustomEvent('instatic:content'));
       })
       .catch(function() {});
   }
