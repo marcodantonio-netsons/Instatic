@@ -5,7 +5,6 @@ import { escapeHtml } from '../shared/htmlSafety'
 import { languageFromPath, localizeRenderProps, translate } from '../localization'
 
 const SvgPropsSchema = Type.Object({
-  svg: Type.String({ default: '' }),
   title: Type.String({ default: '' }),
 }, { additionalProperties: false })
 
@@ -19,7 +18,7 @@ function localizeSvgMarkup(
   )
 }
 
-function resolvedProps(input: Record<string, unknown>): { svg: string; title: string } {
+function resolvedProps(input: Record<string, unknown>): { language: string; title: string } {
   if (typeof input.routePath !== 'string') throw Error('A resolved route path is required for SVG localization')
   const language = languageFromPath(input.routePath)
   const authored = Object.fromEntries(Object.entries(input).filter(([key]) => key !== 'routePath'))
@@ -30,16 +29,17 @@ function resolvedProps(input: Record<string, unknown>): { svg: string; title: st
   if (typeof localizedTitle !== 'string') throw Error('Invalid SVG accessible label')
 
   return {
-    // `svg` has already passed the publisher's `type: 'svg'` DOMPurify boundary.
-    // Translate only the authored tokens now, escaping inserted copy so it
-    // cannot add SVG markup after that boundary.
-    svg: localizeSvgMarkup(parsed.svg, language),
+    language,
     title: localizedTitle,
   }
 }
 
-function render(input: Record<string, unknown>) {
-  const { svg, title } = resolvedProps(input)
+function render(input: Record<string, unknown>, children: string[]) {
+  if (children.length !== 1) throw Error('Localized SVG requires one native SVG child')
+  const { language, title } = resolvedProps(input)
+  // The native base.svg child owns the host sanitizer. Translate only escaped
+  // copy after that boundary; the plugin needs no custom SDK property control.
+  const svg = localizeSvgMarkup(children[0], language)
   if (!svg.trim()) return { html: '' }
 
   const label = title.trim()
@@ -64,13 +64,12 @@ export const SvgModule: PluginModuleDefinition = {
   version: '1.0.0',
   defaults: { ...Value.Create(SvgPropsSchema), routePath: '{route.path}' },
   schema: {
-    svg: { type: 'svg', label: 'SVG' },
     title: { type: 'text', label: 'Accessible label', placeholder: 'e.g. Company logo' },
   },
   propsSchema: SvgPropsSchema,
-  canHaveChildren: false,
+  canHaveChildren: true,
   htmlTag: 'svg',
-  render: (props) => render(props),
+  render,
   preview: (props) => preview(props),
 }
 

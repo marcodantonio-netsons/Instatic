@@ -188,3 +188,4 @@ function propChangeKind(moduleId: string, propKey: string): PageChangeKind {
   if (!control) return 'structure'
   return resolvePropertyControlCategory(control) === 'content' ? 'content' : 'structure'
 }
+

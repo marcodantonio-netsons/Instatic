@@ -2,7 +2,7 @@
   "name": "netsons-site-instatic-plugin",
   "private": true,
   "type": "module",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "dependencies": {
     "@formatjs/intl-collator": "0.3.2",
     "@formatjs/intl-getcanonicallocales": "^3.3.0",

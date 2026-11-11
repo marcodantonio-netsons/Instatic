@@ -41,16 +41,6 @@ function runInstaticLoopRuntime(): void {
     const loopId = loopEl.getAttribute('data-instatic-loop')
     if (!loopId) return
 
-    const exactAuthored = Array.from(document.querySelectorAll<HTMLButtonElement>('button[data-instatic-loop-more]'))
-      .filter((button) => button.getAttribute('data-instatic-loop-more') === loopId)
-    const suffixAuthored = exactAuthored.length === 0
-      ? Array.from(document.querySelectorAll<HTMLButtonElement>('button[data-instatic-loop-more]'))
-        .filter((button) => loopId.endsWith('_' + (button.getAttribute('data-instatic-loop-more') || '')))
-      : []
-    // Authored controls belong to their plugin runtime. Registering a native
-    // handler on them would duplicate requests and discard plugin filters.
-    if (exactAuthored.length === 1 || (exactAuthored.length === 0 && suffixAuthored.length === 1)) return
-
     const button = document.createElement('button')
     button.type = 'button'
     button.className = 'instatic-loop-load-more'

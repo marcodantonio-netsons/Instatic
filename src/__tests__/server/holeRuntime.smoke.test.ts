@@ -223,7 +223,7 @@ describe('HOLE_RUNTIME_JS — runtime behaviour with mock IntersectionObserver',
     }
   })
 
-  it('notifies inserted-content consumers only after a valid replacement', async () => {
+  it('preserves placeholders for failed or stale responses and replaces successful content', async () => {
     document.body.innerHTML = `
       <instatic-hole id="hole-success" data-instatic-hole="success" data-instatic-version="1"><div class="sk">success</div></instatic-hole>
       <instatic-hole id="hole-failure" data-instatic-hole="failure" data-instatic-version="1"><div class="sk">failure</div></instatic-hole>
@@ -232,11 +232,8 @@ describe('HOLE_RUNTIME_JS — runtime behaviour with mock IntersectionObserver',
 
     let resolveSuccess: ((response: { ok: boolean; status: number; text: () => Promise<string> }) => void) | undefined
     let capturedCallback: ((entries: IntersectionObserverEntry[]) => void) | undefined
-    const eventObservations: boolean[] = []
     const originalFetch = globalThis.fetch
     const originalIO = globalThis.IntersectionObserver
-    const onContent = () => eventObservations.push(document.querySelector('#inserted-content') !== null)
-    document.addEventListener('instatic:content', onContent)
 
     ;(globalThis as Record<string, unknown>).fetch = (url: string) => {
       if (url.includes('/success?')) return new Promise(resolve => { resolveSuccess = resolve })
@@ -257,19 +254,18 @@ describe('HOLE_RUNTIME_JS — runtime behaviour with mock IntersectionObserver',
       expect(children).toHaveLength(3)
       capturedCallback?.(children.map(target => ({ isIntersecting: true, target }) as IntersectionObserverEntry))
       await new Promise(resolve => setTimeout(resolve, 0))
-      expect(eventObservations).toHaveLength(0)
+      expect(document.querySelector('#inserted-content')).toBeNull()
       expect(document.querySelector('#hole-failure .sk')).not.toBeNull()
       expect(document.querySelector('#hole-stale .sk')).not.toBeNull()
 
       resolveSuccess?.({ ok: true, status: 200, text: () => Promise.resolve('<section id="inserted-content">Loaded</section>') })
       await new Promise(resolve => setTimeout(resolve, 0))
 
-      expect(eventObservations).toEqual([true])
+      expect(document.querySelector('#inserted-content')).not.toBeNull()
       expect(document.querySelector('#hole-success')).toBeNull()
       expect(document.querySelector('#hole-failure .sk')).not.toBeNull()
       expect(document.querySelector('#hole-stale .sk')).not.toBeNull()
     } finally {
-      document.removeEventListener('instatic:content', onContent)
       ;(globalThis as Record<string, unknown>).fetch = originalFetch
       ;(globalThis as Record<string, unknown>).IntersectionObserver = originalIO
       document.body.innerHTML = ''

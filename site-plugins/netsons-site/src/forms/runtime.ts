@@ -634,13 +634,28 @@ export function installFormRuntime(browser: Window & typeof globalThis) {
       else attach(form)
     }
   })
-  document.addEventListener('instatic:content', () => {
-    for (const form of document.querySelectorAll<HTMLFormElement>(FORM_SELECTOR)) {
+  const mutations = new browser.MutationObserver((records) => {
+    const forms = new Set<HTMLFormElement>()
+    const linkedFormIds = new Set<string>()
+    for (const record of records) for (const node of record.addedNodes) {
+      if (!(node instanceof browser.Element) || !node.isConnected) continue
+      const owner = node.closest(FORM_SELECTOR)
+      if (isForm(owner)) forms.add(owner)
+      for (const form of node.querySelectorAll<HTMLFormElement>(FORM_SELECTOR)) forms.add(form)
+      const links = Array.from(node.querySelectorAll<HTMLElement>('[data-instatic-form-link][data-instatic-form-id]'))
+      if (node instanceof browser.HTMLElement && node.matches('[data-instatic-form-link][data-instatic-form-id]')) links.push(node)
+      for (const link of links) linkedFormIds.add(data(link, 'form-id'))
+    }
+    if (linkedFormIds.size) for (const form of document.querySelectorAll<HTMLFormElement>(FORM_SELECTOR)) {
+      if (linkedFormIds.has(data(form, 'form-id'))) forms.add(form)
+    }
+    for (const form of forms) {
       const current = attached.get(form)
       if (!current) attach(form)
       else try { applyValueBindings(form, current.values) } catch { state(form, 'unavailable') }
     }
   })
+  mutations.observe(document, { childList: true, subtree: true })
   document.addEventListener('focusin', (event) => {
     const form = event.target instanceof browser.Element ? event.target.closest(FORM_SELECTOR) : null
     if (isForm(form)) attach(form)

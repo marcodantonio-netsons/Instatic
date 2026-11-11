@@ -12,8 +12,9 @@ const languages = ['it', 'en', 'de', 'fr', 'es', 'pt', 'nl', 'pl', 'ro'] as cons
 const routeFor = (language: string) => language === 'it' ? '/shared/example' : `/${language}/shared/example`
 
 function renderAtPublisherBoundary(svg: string, title: string, routePath = '/shared/example'): string {
-  const escaped = escapeProps({ svg, title }, SvgModule.schema)
-  return SvgModule.render({ ...escaped, routePath }, []).html
+  const child = NativeSvgModule.render(escapeProps({ svg, title: '' }, NativeSvgModule.schema) as never, []).html
+  const escaped = escapeProps({ title }, SvgModule.schema)
+  return SvgModule.render({ ...escaped, routePath }, [child]).html
 }
 
 describe('netsons.site.svg', () => {
@@ -28,7 +29,9 @@ describe('netsons.site.svg', () => {
     expect(pluginHtml).toBe(NativeSvgModule.render(nativeProps as never, []).html)
   })
 
-  it('uses the host SVG sanitizer before emitting authored markup', () => {
+  it('uses a native child for the host SVG sanitizer without extending the plugin SDK', () => {
+    expect(SvgModule.canHaveChildren).toBe(true)
+    expect(SvgModule.schema).not.toHaveProperty('svg')
     const html = renderAtPublisherBoundary(
       '<svg onload="alert(1)"><script>alert(1)</script><foreignObject><p>x</p></foreignObject><path d="M0 0"/></svg>',
       'Safe logo',

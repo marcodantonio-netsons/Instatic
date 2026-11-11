@@ -331,9 +331,9 @@ snapshot rejects old fingerprints with an uncached stale sentinel.
 The fragment endpoint requires the originating local URL in `u`. It resolves
 that public route and its composed template tree before finding the node;
 shared node IDs cannot select another page. The cached site is reused only
-when its immutable snapshot ID matches the route. After a successful,
-non-stale fragment replacement, the runtime dispatches `instatic:content` so
-behaviors can initialize the new controls.
+when its immutable snapshot ID matches the route. Fragment consumers observe
+inserted DOM through their own frontend assets; the host does not dispatch a
+plugin-specific initialization event.
 
 After upgrading from counter-based hole versions, run a full-site publish once
 to regenerate existing baked HTML with snapshot fingerprints.

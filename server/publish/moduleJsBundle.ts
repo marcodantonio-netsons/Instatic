@@ -20,7 +20,8 @@
 import type { SiteDocument } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
 import { addCspSources, escapeHtml, rewriteCspMeta } from '@core/publisher'
-import { collectSiteModuleAssets, getPublishedSiteModuleAssets } from './siteModuleAssets'
+import { collectSiteModuleAssets } from './siteModuleAssets'
+import { getPublishVersion, registerVersionedCacheReset } from './publishState'
 
 /** Build the moduleId → JS map fresh. Use for draft/preview/arbitrary sites. */
 export function buildSiteModuleJsMap(
@@ -29,6 +30,17 @@ export function buildSiteModuleJsMap(
 ): ReadonlyMap<string, string> {
   return collectSiteModuleAssets(site, registry).jsMap
 }
+
+// Memo keyed by publish version + site object, mirroring the page-invariant
+// CSS bundle memo. A bump invalidates it; the shared test-reset hook clears it.
+let moduleJsCache: {
+  version: number
+  site: SiteDocument
+  map: ReadonlyMap<string, string>
+} | null = null
+registerVersionedCacheReset(() => {
+  moduleJsCache = null
+})
 
 /**
  * Published-render variant: memoised per publishVersion + site object so the
@@ -39,9 +51,14 @@ export function buildSiteModuleJsMap(
 export function buildPublishedSiteModuleJsMap(
   site: SiteDocument,
   registry: IModuleRegistry,
-  version: number,
 ): ReadonlyMap<string, string> {
-  return getPublishedSiteModuleAssets(site, registry, version).jsMap
+  const version = getPublishVersion()
+  if (moduleJsCache && moduleJsCache.version === version && moduleJsCache.site === site) {
+    return moduleJsCache.map
+  }
+  const map = buildSiteModuleJsMap(site, registry)
+  moduleJsCache = { version, site, map }
+  return map
 }
 
 /**

@@ -138,7 +138,7 @@ export async function handleRowPreview(
     mediaAssets,
     loopEndpointBaseUrl: LOOP_ENDPOINT_BASE_URL,
   })
-  const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry, getPublishVersion())
+  const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry)
 
   const finalHtml = await applyPublishedHtmlPipeline(
     {

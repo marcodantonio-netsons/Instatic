@@ -2,8 +2,6 @@
 
 Minimal raw-zip starter plugin for Instatic. Use this when you want to inspect the runtime `plugin.json` shape directly; new TypeScript-authored plugins should usually start with `bun instatic-plugin init`.
 
-Module packs can declare an SVG property with `{ type: 'svg', label: 'SVG' }`. The publisher sanitizes that property through the host SVG boundary; an editor preview must also treat its raw inputs as untrusted.
-
 ## Quick start
 
 ```bash

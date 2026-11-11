@@ -51,7 +51,7 @@ function loadModuleJsMapForVersion(
   return moduleJsMapCache.get(version, async () => {
     const snapshot = await getLatestPublishedSiteSnapshot(db)
     if (!snapshot) return null
-    return buildPublishedSiteModuleJsMap(snapshot.site, registry, version)
+    return buildPublishedSiteModuleJsMap(snapshot.site, registry)
   })
 }
 
