@@ -19,13 +19,10 @@ import {
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { undoBranchMerge } from '@admin/state/branchStore'
 
-interface BranchReviewData {
+export interface BranchReviewData {
   plan: MergePlan | null
   review: BranchReviewState | null
   loadError: string | null
-  language: string
-  setLanguage: (language: string) => void
-  localization: MergePlan['localization']
   /** Re-fetch both the plan and the review state. */
   reload: () => Promise<void>
   request: (note: string) => Promise<BranchMergeRequest>
@@ -39,10 +36,9 @@ interface BranchReviewData {
 async function fetchReviewData(
   branchId: string,
   signal?: AbortSignal,
-  language?: string,
 ): Promise<{ plan: MergePlan; review: BranchReviewState }> {
   const [plan, review] = await Promise.all([
-    getCmsBranchMergePlan(branchId, 'merge', signal, language),
+    getCmsBranchMergePlan(branchId, 'merge', signal),
     getCmsBranchReview(branchId, signal),
   ])
   return { plan, review }
@@ -52,16 +48,13 @@ export function useBranchReview(branchId: string): BranchReviewData {
   const [plan, setPlan] = useState<MergePlan | null>(null)
   const [review, setReview] = useState<BranchReviewState | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [language, updateLanguage] = useState('')
-  const [loadedLanguage, setLoadedLanguage] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
-    fetchReviewData(branchId, controller.signal, language || undefined)
+    fetchReviewData(branchId, controller.signal)
       .then((next) => {
         if (controller.signal.aborted) return
         setPlan(next.plan)
-        setLoadedLanguage(language)
         setReview(next.review)
         setLoadError(null)
       })
@@ -69,16 +62,14 @@ export function useBranchReview(branchId: string): BranchReviewData {
         if (isAbortError(err) || controller.signal.aborted) return
         console.error('[branch-review] load failed:', err)
         setLoadError(getErrorMessage(err, 'Could not load the review'))
-        pushToast({ kind: 'error', title: 'Could not load the review', body: getErrorMessage(err, 'Unknown review error') })
       })
     return () => controller.abort()
-  }, [branchId, language])
+  }, [branchId])
 
   async function reload(): Promise<void> {
     try {
-      const next = await fetchReviewData(branchId, undefined, language || undefined)
+      const next = await fetchReviewData(branchId)
       setPlan(next.plan)
-      setLoadedLanguage(language)
       setReview(next.review)
       setLoadError(null)
     } catch (err) {
@@ -98,12 +89,9 @@ export function useBranchReview(branchId: string): BranchReviewData {
   }
 
   return {
-    plan: loadedLanguage === language ? plan : null,
+    plan,
     review,
     loadError,
-    language,
-    setLanguage: (next) => { setLoadError(null); updateLanguage(next) },
-    localization: plan?.localization,
     reload,
     request: async (note) => {
       const request = await requestCmsBranchMerge(branchId, note)

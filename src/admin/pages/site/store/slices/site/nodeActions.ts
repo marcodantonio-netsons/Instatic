@@ -572,12 +572,7 @@ export function createNodeActions(helpers: SiteSliceHelpers): NodeActions {
           current.source === binding.source &&
           current.field === binding.field &&
           current.format === binding.format &&
-          current.fallback === binding.fallback &&
-          current.numberFormat?.locale === binding.numberFormat?.locale &&
-          current.numberFormat?.templateKey === binding.numberFormat?.templateKey &&
-          current.numberFormat?.minimumFractionDigits === binding.numberFormat?.minimumFractionDigits &&
-          current.numberFormat?.maximumFractionDigits === binding.numberFormat?.maximumFractionDigits &&
-          current.numberFormat?.useGrouping === binding.numberFormat?.useGrouping
+          current.fallback === binding.fallback
         ) {
           return false
         }

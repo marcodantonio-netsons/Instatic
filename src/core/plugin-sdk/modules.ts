@@ -7,13 +7,12 @@
  * `PluginModuleDefinition` objects (or a function returning one).
  *
  * The shape is **JSON-friendly** on purpose: only `render` and `preview` may
- * be functions; everything else (defaults, schema, assets) is plain data.
+ * be functions; everything else (defaults, schema, css path) is plain data.
  * The host wraps the definition into a full `ModuleDefinition` registered
  * with the canvas module registry.
  */
 
-import { Type, type Static, type TSchema } from '@core/utils/typeboxHelpers'
-import { ModuleAssetUsageSchema, type ModuleAssets } from '@core/module-engine-schema'
+import type { TSchema } from '@core/utils/typeboxHelpers'
 
 // ---------------------------------------------------------------------------
 // Property control — a JSON-friendly subset of the host PropertySchema.
@@ -45,11 +44,19 @@ export type PluginPropertySchema = Record<string, PluginPropertyControl>
 // Render output — same shape as host ModuleDefinition.render
 // ---------------------------------------------------------------------------
 
-export const PluginRenderOutputSchema = Type.Object({
-  html: Type.String(),
-  assetUsage: Type.Optional(ModuleAssetUsageSchema),
-}, { additionalProperties: false })
-export type PluginRenderOutput = Static<typeof PluginRenderOutputSchema>
+export interface PluginRenderOutput {
+  html: string
+  css?: string
+  /**
+   * Optional vanilla-JS runtime for this module TYPE — deduped per moduleId
+   * and served as an external per-module asset on published pages
+   * (`/_instatic/module-js/<moduleId>.js`). Requires the plugin's GRANTED
+   * `frontend.assets` permission; without the grant the host drops it (one
+   * console warning per module). Must be a self-contained IIFE binding via
+   * document-level event delegation; never executed in the admin canvas.
+   */
+  js?: string
+}
 
 export type PluginRenderFn = (
   props: Record<string, unknown>,
@@ -113,22 +120,17 @@ export interface PluginModuleDefinition {
   description?: string
   category: string
   version: string
-  /** Invariant type assets. JS requires the GRANTED frontend.assets permission. */
-  assets?: ModuleAssets
   /** Default property values matching `schema` keys. */
   defaults: Record<string, unknown>
   /** Property controls that drive the editor Properties Panel. */
   schema: PluginPropertySchema
   /**
    * Optional TypeBox schema for publisher-boundary prop coercion. When set,
-   * `parseModuleProps` parses and default-fills props before calling
-   * `render()`, repairing invalid props individually with their module defaults
-   * while preserving authored siblings and injected keys. Absence is tolerated — the publisher passes rawProps through
+   * `validateNodeProps` coerces and default-fills props before calling
+   * `render()`. Absence is tolerated — the publisher passes rawProps through
    * unchanged for modules with no schema.
    */
   propsSchema?: TSchema
-  /** Hard TypeBox validation of resolved `{ props, settings }` before rendering. */
-  publishSchema?: TSchema
   /** Whether the module can hold child modules. */
   canHaveChildren?: boolean
   /**

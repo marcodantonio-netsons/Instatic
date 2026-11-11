@@ -33,14 +33,7 @@ export function createPublishMcpTool(runtime?: McpPublishRuntime): AiTool {
         throw new Error('MCP publish runtime uploads directory is not configured.')
       }
 
-      let result: Awaited<ReturnType<typeof publishDraftSite>>
-      try {
-        result = await publishDraftSite(ctx.db, ctx.userId, runtime.uploadsDir)
-      } catch (err) {
-        // A disconnected MCP client cannot receive a long-running publish failure.
-        console.error('[mcp:site_publish] Publication failed:', err)
-        throw err
-      }
+      const result = await publishDraftSite(ctx.db, ctx.userId, runtime.uploadsDir)
       await createAuditEvent(ctx.db, {
         actorUserId: ctx.userId,
         action: 'publish',

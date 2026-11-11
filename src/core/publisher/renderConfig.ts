@@ -29,8 +29,7 @@
 
 import type { Page, SiteDocument } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
-import type { TemplateRenderDataContext } from '@core/templates'
-import type { FormRenderContext } from '@core/forms'
+import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import type { LoopFetchResult } from '@core/loops/types'
 
 /**
@@ -76,8 +75,6 @@ export interface RenderResolvedMedia {
  * passes that down.
  */
 export interface RenderConfig {
-  readonly formContext?: FormRenderContext
-  readonly formValuesById?: ReadonlyMap<string, Record<string, unknown>>
   readonly page: Page
   readonly site: SiteDocument
   readonly registry: IModuleRegistry
@@ -106,7 +103,7 @@ export interface RenderConfig {
   readonly dynamicNodeIds?: ReadonlySet<string>
   /**
    * Fingerprint of the frozen published site, supplied by the server. Stamped
-   * into holes and loop continuations so cache invalidation cannot make unchanged pages
+   * into hole placeholders so cache invalidation cannot make unchanged pages
    * stale. An omitted hash cannot hydrate from the public fragment endpoint.
    */
   readonly snapshotHash?: string

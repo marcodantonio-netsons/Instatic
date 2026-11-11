@@ -14,7 +14,7 @@
  * template, loop, and page-frame context.
  */
 
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { PropertyControl } from '@core/module-engine'
 import type { DynamicPropBinding } from '@core/page-tree'
 import type { LoopSourceField } from '@core/loops/types'
@@ -32,16 +32,10 @@ import { BracesIcon } from 'pixel-art-icons/icons/braces'
 import { DataBindingPicker } from '@admin/shared/DataBindingPicker'
 import { _cachedMeta, loadDataMeta } from '@admin/shared/DataBindingPicker/cache'
 import { bindingToToken } from '@core/templates/tokenInterpolation'
-import { buildPublicFileReferences } from '@core/files/references'
 import { resolveBindingLabel } from '@admin/shared/DataBindingPicker/helpers'
 import { cn } from '@ui/cn'
-import { Select } from '@ui/components/Select'
 import styles from './DynamicBindingControl.module.css'
 import controlStyles from '@ui/components/ControlRow/ControlRow.module.css'
-
-const NumberBindingOptions = lazy(() => import('./NumberBindingOptions').then((module) => ({
-  default: module.NumberBindingOptions,
-})))
 
 // ---------------------------------------------------------------------------
 // Props
@@ -109,7 +103,6 @@ export function DynamicBindingControl({
   children,
 }: DynamicBindingControlProps) {
   const [pickerOpen, setPickerOpen] = useState(false)
-  const [pickerAction, setPickerAction] = useState<'token' | 'binding'>(insertMode ? 'token' : 'binding')
   // Refs the popover uses for positioning + trigger-click handling.
   //  - `wrapperRef`: anchor — popover opens below this element (the input
   //    + {} affordance row), spanning its width.
@@ -128,54 +121,22 @@ export function DynamicBindingControl({
       .then((m) => setResolvedMeta(m))
       .catch(() => { /* ignore — label falls back to field id */ })
   }, [])
+
   const activePage = useEditorStore(selectActivePage)
   const activeSite = useEditorStore((s) => s.site)
   const activePageTableSlug = activePage
     ? primaryTemplateTableSlug(activePage)
     : null
-  let pageFrame: ReturnType<typeof buildPageFrame> | null = null
-  let siteFrame = null
-  try {
-    pageFrame = activePage && activeSite ? buildPageFrame(activePage, activeSite) : null
-    siteFrame = activeSite ? buildSiteFrame(activeSite, activePage?.language) : null
-  } catch (_error) {
-    // Canvas reports language/relationship errors; keep their authoring controls editable.
-  }
+  const pageFrame = activePage ? buildPageFrame(activePage) : null
+  const siteFrame = activeSite ? buildSiteFrame(activeSite) : null
   const routeFrame = pageFrame ? buildRouteFrame(pageFrame.permalink) : null
-  const publicFiles = activeSite ? buildPublicFileReferences(activeSite.files) : undefined
 
   // ── Bound state (structured whole-prop binding) ─────────────────────────
   // In insert mode the binding lives inline in the prop value as a token,
   // so we never enter this branch — the children render normally and
   // tokens appear in the text input as ordinary characters.
-  if (binding) {
-    const activeBinding = binding
-    const bindingLabel = resolveBindingLabel(activeBinding, availableFields, sourceLabel, resolvedMeta, publicFiles)
-    const boundTable = activeBinding.source === 'currentEntry'
-      ? resolvedMeta?.tables.find((table) => table.id === loopTableId)
-        ?? resolvedMeta?.tables.find((table) => table.slug === activePageTableSlug)
-      : null
-    const selectedFieldIsNumeric = activeBinding.field.includes('.')
-      ? false
-      : boundTable?.fields.some((field) => field.id === activeBinding.field && field.type === 'number') ?? false
-    const canFormatNumber =
-      (control.type === 'text' || control.type === 'textarea' || control.type === 'richtext') &&
-      (selectedFieldIsNumeric || activeBinding.format === 'number')
-
-    function updateNumberFormat(
-      patch: Partial<NonNullable<DynamicPropBinding['numberFormat']>>,
-    ) {
-      const options = { ...activeBinding.numberFormat, ...patch }
-      const numberFormat = Object.fromEntries(
-        Object.entries(options).filter(([, value]) => value !== undefined),
-      ) as NonNullable<DynamicPropBinding['numberFormat']>
-      onSet({
-        ...activeBinding,
-        format: 'number',
-        numberFormat: Object.keys(numberFormat).length > 0 ? numberFormat : undefined,
-      })
-    }
-
+  if (binding && !insertMode) {
+    const bindingLabel = resolveBindingLabel(binding, availableFields, sourceLabel, resolvedMeta)
     return (
       <div
         className={cn(
@@ -209,41 +170,6 @@ export function DynamicBindingControl({
             <CloseIcon size={11} aria-hidden="true" />
           </Button>
         </div>
-        {canFormatNumber && (
-          <div className={styles.formatSettings}>
-            <label htmlFor={`binding-format-${propKey}`}>Value format</label>
-            <Select
-              id={`binding-format-${propKey}`}
-              fieldSize="sm"
-              value={activeBinding.format === 'number' ? 'number' : 'plain'}
-              options={[
-                { value: 'plain', label: 'Raw value' },
-                { value: 'number', label: 'Number' },
-              ]}
-              onChange={(event) => {
-                if (event.currentTarget.value === 'number') {
-                  onSet({ ...activeBinding, format: 'number' })
-                } else {
-                  const { numberFormat: _numberFormat, ...plainBinding } = activeBinding
-                  onSet({ ...plainBinding, format: 'plain' })
-                }
-              }}
-            />
-            {activeBinding.format === 'number' && (
-              <div className={styles.numberSettingsWrapper}>
-                <Suspense fallback={<div className={styles.formatLoading} role="status">Loading number settings…</div>}>
-                  <NumberBindingOptions
-                    key={`${binding.source}:${binding.field}:${binding.numberFormat?.locale ?? ''}`}
-                    propKey={propKey}
-                    binding={activeBinding}
-                    pageLanguage={siteFrame?.language}
-                    onUpdateNumberFormat={updateNumberFormat}
-                  />
-                </Suspense>
-              </div>
-            )}
-          </div>
-        )}
       </div>
     )
   }
@@ -263,9 +189,9 @@ export function DynamicBindingControl({
           size="xs"
           iconOnly
           className={styles.affordanceBtn}
-          aria-label={pickerAction === 'token' ? `Insert binding for ${label}` : `Bind ${label}`}
+          aria-label={insertMode ? `Insert binding for ${label}` : `Bind ${label}`}
           aria-expanded={pickerOpen}
-          tooltip={pickerAction === 'token' ? 'Insert data token' : 'Bind to data field'}
+          tooltip={insertMode ? 'Insert data token' : 'Bind to data field'}
           onClick={() => setPickerOpen((o) => !o)}
           type="button"
         >
@@ -282,20 +208,18 @@ export function DynamicBindingControl({
           scopedTableId={loopTableId}
           scopedTableSlug={activePageTableSlug}
           scopeLabel={loopTableId ? 'Loop row' : 'Current row'}
+          loadPublishedPreview={Boolean(loopTableId)}
           systemPreviewValues={{
             page: pageFrame,
             site: siteFrame,
             route: routeFrame,
           }}
-          publicFiles={publicFiles}
-          insertMode={pickerAction === 'token'}
-          allowStructuredBinding={insertMode && (control.type === 'text' || control.type === 'textarea')}
-          onModeChange={setPickerAction}
+          insertMode={insertMode}
           anchorRef={wrapperRef}
           triggerRef={triggerRef}
           onClose={() => setPickerOpen(false)}
           onPick={(b) => {
-            if (pickerAction === 'token' && onInsertToken) {
+            if (insertMode && onInsertToken) {
               // Insert a token at the input's caret. Leave the popover
               // open so the user can keep clicking to insert more tokens
               // without re-opening the picker each time.

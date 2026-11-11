@@ -4,9 +4,6 @@ import type {
   DataTable,
 } from '@core/data/schemas'
 import { isValidEmail } from '../utils/email'
-import { evaluateCondition } from '@core/module-engine-schema'
-import { evaluateFormValues } from '@core/form-values'
-import type { FormCalculations, FormValueConstraint } from '@core/forms-schema'
 import type {
   FormControlBinding,
   FormSubmissionLimits,
@@ -25,37 +22,20 @@ export function validateFormSubmission(input: {
   controls: FormControlBinding[]
   values: Record<string, unknown>
   limits?: FormSubmissionLimits
-  calculations?: FormCalculations
 }): FormValidationResult {
   const limits = input.limits ?? {}
   const errors: FormValidationError[] = []
   const cells: Record<string, unknown> = {}
   const maxFields = limits.maxFields ?? DEFAULT_MAX_FIELDS
   const maxStringLength = limits.maxStringLength ?? DEFAULT_MAX_STRING_LENGTH
-  const submitted = { ...input.values }
-  for (const control of input.controls) {
-    const name = control.name ?? control.fieldId, value = submitted[name]
-    if (control.trimOnSubmit && typeof value === 'string') submitted[name] = value.trim()
-  }
-  const defaults = Object.fromEntries(input.controls.filter((control) => control.initialValue !== undefined).map((control) => [control.name ?? control.fieldId, control.initialValue]))
-  const constraints: FormValueConstraint[] = input.controls.filter((control) => control.minValueField || control.maxValueField).map((control) => ({ fieldName: control.name ?? control.fieldId, minValueField: control.minValueField, maxValueField: control.maxValueField, min: control.min, max: control.max }))
-  let resolved: Record<string, unknown>
-  try { resolved = Object.keys(input.calculations ?? {}).length || constraints.length ? evaluateFormValues(input.calculations ?? {}, { ...defaults, ...submitted }, constraints) : submitted }
-  catch { return { ok: false, errors: [{ fieldId: '*', code: 'invalid_value', message: 'Invalid calculated form values.' }] } }
 
   const controlByName = new Map<string, FormControlBinding>()
-  const activeControls = input.controls.filter((control) => !control.disabled && (!control.disabledWhen || !evaluateCondition(control.disabledWhen, resolved)) && (control.conditions ?? []).every((condition) => evaluateCondition(condition, resolved)))
   const fieldById = new Map(input.table.fields.map((field) => [field.id, field]))
-  for (const original of activeControls) {
-    const control = { ...original, ...(original.requiredWhen ? { required: evaluateCondition(original.requiredWhen, resolved) } : {}), ...(original.minValueField ? { min: Number(resolved[original.minValueField]) } : {}), ...(original.maxValueField ? { max: Number(resolved[original.maxValueField]) } : {}) }
-    const name = control.name ?? control.fieldId
-    const previous = controlByName.get(name)
-    controlByName.set(name, previous && ['radio','checkbox-group'].includes(control.inputType ?? '') && previous.inputType === control.inputType
-      ? { ...control, required: previous.required || control.required, options: [...(previous.options ?? []), ...(control.options ?? [])] }
-      : control)
+  for (const control of input.controls) {
+    controlByName.set(control.name ?? control.fieldId, control)
   }
 
-  const entries = Object.entries(submitted)
+  const entries = Object.entries(input.values)
   if (entries.length > maxFields) {
     errors.push({
       fieldId: '*',
@@ -85,24 +65,6 @@ export function validateFormSubmission(input: {
       continue
     }
 
-    if ((control.inputType === 'radio' && typeof rawValue !== 'string') || (control.options && (Array.isArray(rawValue) ? rawValue : [rawValue]).some((value) => typeof value !== 'string' || !control.options!.includes(value)))) {
-      errors.push({ fieldId: control.fieldId, code: 'invalid_option', message: 'Select an offered option.' })
-      continue
-    }
-    if (control.inputType === 'checkbox-group') {
-      const selected = Array.isArray(rawValue) ? rawValue : [rawValue]
-      if (new Set(selected).size !== selected.length || selected.length < (control.minSelected ?? 0) || Boolean(control.maxSelected && selected.length > control.maxSelected)) {
-        errors.push({ fieldId: control.fieldId, code: 'invalid_value', message: 'Invalid selection count.' }); continue
-      }
-    }
-    if (control.valueSourceField && rawValue !== (control.valueTargetField ? String(resolved[control.valueSourceField] ?? '') : submitted[control.valueSourceField])) {
-      errors.push({ fieldId: control.fieldId, code: 'invalid_value', message: 'Invalid synchronized value.' })
-      continue
-    }
-    if (control.syncGroup && [...controlByName.values()].some((peer) => peer.syncGroup === control.syncGroup && submitted[peer.name ?? peer.fieldId] !== rawValue)) {
-      errors.push({ fieldId: control.fieldId, code: 'invalid_value', message: 'Invalid shared group value.' })
-      continue
-    }
     const coerced = coerceFieldValue(field, rawValue)
     if (!coerced.ok) {
       errors.push({ fieldId: field.id, code: coerced.code, message: coerced.message })
@@ -118,13 +80,12 @@ export function validateFormSubmission(input: {
     cells[field.id] = coerced.value
   }
 
-  for (const control of controlByName.values()) {
+  for (const control of input.controls) {
     const field = fieldById.get(control.fieldId)
     if (!field) continue
     const name = control.name ?? control.fieldId
     const required = control.required ?? Boolean(field.required)
-    if (Object.hasOwn(submitted, name)) continue
-    if (control.inputType === 'checkbox-group' && control.minSelected) { errors.push({ fieldId: field.id, code: 'required', message: 'Choose the required number of options.' }); continue }
+    if (Object.hasOwn(input.values, name)) continue
     if (!required && field.type === 'boolean') {
       cells[field.id] = false
       continue
@@ -194,7 +155,6 @@ function coerceFieldValue(field: DataField, value: unknown): CoerceResult {
     case 'pageTree':
     case 'fieldSchema':
     case 'repeater':
-    case 'localizedText':
       return { ok: false, code: 'unsupported_field', message: 'This field cannot be submitted by a form.' }
   }
 }

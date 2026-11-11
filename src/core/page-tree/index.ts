@@ -8,8 +8,6 @@
 // this pattern.
 // ---------------------------------------------------------------------------
 
-export { PageTranslationGroupSchema, PageTranslationError, parsePageTranslationGroup } from './pageTranslation'
-
 // Schemas — exported as both runtime constants (for parse/compiled validation)
 // and types (via Static<typeof X>).
 export { BaseNodeSchema,  parseBaseNodeFields } from './baseNode'
@@ -23,9 +21,6 @@ export {
   parsePageNodeTree,
 } from './operationSchema'
 export { PageSchema } from './page'
-export { PageSeoSchema, SeoAlternateSchema, SeoMetaSchema, SeoLinkSchema, SeoStructuredDataSchema,
-  SEO_LINK_RELATIONS, PageSeoValidationError, parsePageSeo, assertSeoUrl } from './pageSeo'
-export type { PageSeo, SeoAlternate, SeoMeta, SeoLink } from './pageSeo'
 export {
   CSSDeclarationPriorityBagSchema,
   StyleRuleOriginSchema,
@@ -46,7 +41,6 @@ export {   parsePageTemplate } from './pageTemplate'
 
 // Types — derived from schemas. Schemas are the source of truth.
 export type { Breakpoint } from './breakpoint'
-export { DynamicBindingConfigurationError } from './dynamicBinding'
 export type { DynamicPropBinding } from './dynamicBinding'
 export type { PageTemplateConfig, TemplateTarget } from './pageTemplate'
 export type { PageNode } from './pageNode'
@@ -61,8 +55,6 @@ export type {
   StyleRuleOrigin,
 } from './styleRule'
 export type { Condition, ConditionDef } from './condition'
-export { CSSRuleGroupSchema, CSSAtRuleSchema, isValidCssLayerName } from './cssGrouping'
-export type { CSSRuleGroup, CSSAtRule } from './cssGrouping'
 export type { SiteSettings } from './siteSettings'
 export type { SiteShell, SiteDocument } from './siteDocument'
 export type {
@@ -166,7 +158,6 @@ export { reindexNodeParents } from './parentIndex'
 export { removeNodeSubtrees, deleteSubtree } from './subtreeRemoval'
 
 export { cloneNodeWithRemap } from './cloneNode'
-export { remapNodeReferenceProps } from './nodeReferences'
 
 export { cloneScopedClassesForNodeMap } from './scopedClassClone'
 

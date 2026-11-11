@@ -23,10 +23,8 @@
  *                             Hash rotates when site framework settings or the
  *                             set of plugin modules in use change.
  *
- *   style.<hash>.css       — Page-reachable user-authored class registry,
- *                             including reachable VCs/slots and emitted-script
- *                             modifiers. Hash reflects that page's selected
- *                             rules and responsive media variants.
+ *   style.<hash>.css       — User-authored class registry (`collectClassCSS`).
+ *                             Hash rotates on every class edit.
  *
  *   userStyles.<hash>.css  — User-authored global stylesheets from
  *                             `site.files[type === 'style']`. Concatenated in

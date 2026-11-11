@@ -14,7 +14,6 @@ describe('module-engine property schema', () => {
       accent: { type: 'color', label: 'Accent', format: 'hex' },
       variant: { type: 'select', label: 'Variant', options: [{ label: 'A', value: 'a' }] },
       enabled: { type: 'toggle', label: 'Enabled' },
-      preferences: { type: 'preferenceValues', label: 'Preference values' },
       image: { type: 'image', label: 'Image' },
       video: { type: 'media', label: 'Video', mediaKind: 'video' },
       url: { type: 'url', label: 'URL' },
@@ -47,9 +46,6 @@ describe('module-engine property schema', () => {
     expect(Value.Check(PropertyControlSchema, {
       type: 'slider',
       label: 'Range',
-    })).toBe(false)
-    expect(Value.Check(PropertyControlSchema, {
-      type: 'preferenceValues', label: 'Preference values', json: true,
     })).toBe(false)
   })
 })

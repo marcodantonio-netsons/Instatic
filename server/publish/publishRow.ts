@@ -15,9 +15,7 @@
  */
 import type { DbClient } from '../db/client'
 import type { DataRow, DataRowVersion } from '@core/data/schemas'
-import { composeTemplateChain, resolveTemplateChain } from '@core/templates'
-import { assertPagePublicFileBindings } from '@core/publisher'
-import { readEntrySeoOverride } from '@core/data/cells'
+import { resolveTemplateChain } from '@core/templates'
 import {
   getPublishedDataRowByRoute,
   getRowTableRouteBase,
@@ -37,9 +35,8 @@ import { runPublishFlush } from './publishFlush'
 import { getDataRow } from '../repositories/data'
 import { MAIN_SCOPE } from '../branches/scope'
 import { publishPageRowLocked } from './publishSite'
-import { assertPublicAssetRouteAvailable } from './publicSiteAssets'
 
-interface PublishDataRowResult {
+export interface PublishDataRowResult {
   row: DataRow
   version: DataRowVersion
 }
@@ -74,20 +71,6 @@ async function publishDataRowLocked(
   if (!draft) throw new Error('data row not found')
   if (draft.tableId === 'pages') return publishPageRowLocked(db, draft, publisherUserId, uploadsDir)
 
-  const siteSnapshot = await getLatestPublishedSiteSnapshot(db)
-  if (siteSnapshot) {
-    const [draftRow, tableInfo] = await Promise.all([
-      getDataRow(db, MAIN_SCOPE, rowId), getRowTableRouteInfo(db, rowId),
-    ])
-    if (draftRow && tableInfo) {
-      const chain = resolveTemplateChain(siteSnapshot.site, { kind: 'entry', tableSlug: tableInfo.tableSlug })
-      if (chain.length > 0) {
-        assertPublicAssetRouteAvailable(siteSnapshot.site.files, publicDataPath(tableInfo.tableRouteBase, draftRow.slug))
-        assertPagePublicFileBindings(composeTemplateChain(chain, { kind: 'entry' }), siteSnapshot.site,
-          undefined, readEntrySeoOverride(draftRow.cells))
-      }
-    }
-  }
   const { row, version, previousRoute } = await persistDataRowPublish(db, rowId, publisherUserId)
 
   // Layer A: incremental artefact update outside the transaction.
@@ -98,7 +81,7 @@ async function publishDataRowLocked(
     // synchronous statement right after this await resolves, so a hole-shell
     // baked here carries the version that becomes current with no gap.
     const nextPublishVersion = getPublishVersion() + 1
-    await writeDataRowArtefact(db, uploadsDir, row, previousRoute, nextPublishVersion, siteSnapshot).catch((err) => {
+    await writeDataRowArtefact(db, uploadsDir, row, previousRoute, nextPublishVersion).catch((err) => {
       console.error('[publish:row] static artefact write failed (live renderer remains active):', err)
     })
   }
@@ -131,7 +114,6 @@ async function writeDataRowArtefact(
   publishedRow: DataRow,
   previousRoute: PreviousPublishedRoute | null,
   publishVersion: number,
-  siteSnapshot: Awaited<ReturnType<typeof getLatestPublishedSiteSnapshot>>,
 ): Promise<void> {
   const tableInfo = await getRowTableRouteInfo(db, publishedRow.id)
   if (!tableInfo) return
@@ -146,6 +128,7 @@ async function writeDataRowArtefact(
 
   // Resolve the full template chain for this row's table (everywhere layout +
   // entry template). No chain → no entry route to bake.
+  const siteSnapshot = await getLatestPublishedSiteSnapshot(db)
   if (!siteSnapshot) return
 
   const chain = resolveTemplateChain(siteSnapshot.site, { kind: 'entry', tableSlug: tableInfo.tableSlug })

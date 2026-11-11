@@ -386,21 +386,10 @@ describe('filesSlice.updateFileContent', () => {
 // ── updateFileBlob ────────────────────────────────────────────────────────────
 
 describe('filesSlice.updateFileBlob', () => {
-  it('rejects an invalid binary write atomically and keeps the previous payload', () => {
-    setupSite()
-    const id = getStore().createFile('public/logo.png', 'asset')
-    const blob = { mimeType: 'image/png', base64: 'YWJj' }
-    getStore().updateFileBlob(id, blob)
-    expect(() => getStore().updateFileBlob(id, { mimeType: 'text/html', base64: 'YWJj' })).toThrow()
-    expect(() => getStore().updateFileBlob(id, { mimeType: 'image/png', base64: 'bad==' })).toThrow()
-    expect(useEditorStore.getState().site!.files.find((file) => file.id === id)?.blob).toEqual(blob)
-    expect(() => getStore().renameFile(id, 'public/admin/logo.png')).toThrow()
-    expect(useEditorStore.getState().site!.files.find((file) => file.id === id)?.path).toBe('public/logo.png')
-  })
   it('stores blob on an asset file', () => {
     setupSite()
     const id = getStore().createFile('public/logo.png', 'asset')
-    const blob = { mimeType: 'image/png', base64: 'YWJjMTIz' }
+    const blob = { mimeType: 'image/png', base64: 'abc123==' }
     getStore().updateFileBlob(id, blob)
     expect(useEditorStore.getState().site!.files.find((f) => f.id === id)?.blob).toEqual(blob)
   })
@@ -426,7 +415,7 @@ describe('filesSlice.updateFileBlob', () => {
         : state.site,
     }))
 
-    getStore().updateFileBlob(id, { mimeType: 'image/png', base64: 'YWJjMTIz' })
+    getStore().updateFileBlob(id, { mimeType: 'image/png', base64: 'abc123==' })
 
     const file = useEditorStore.getState().site!.files.find((f) => f.id === id)!
     expect(file.generated).toBe(true)
@@ -580,17 +569,17 @@ describe('validateSite — files field', () => {
         id: 'a1',
         path: 'public/img.png',
         type: 'asset',
-        blob: { mimeType: 'image/png', base64: 'YWJj' },
+        blob: { mimeType: 'image/png', base64: 'abc==' },
         createdAt: 1000,
         updatedAt: 2000,
       },
     ]
     const site = validateSite(raw)
     expect(site.files[0].blob?.mimeType).toBe('image/png')
-    expect(site.files[0].blob?.base64).toBe('YWJj')
+    expect(site.files[0].blob?.base64).toBe('abc==')
   })
 
-  it('rejects malformed blobs without silently discarding binary content', () => {
+  it('drops malformed blob and still includes the file', () => {
     const raw = minimalValidRaw()
     raw.files = [
       {
@@ -602,7 +591,9 @@ describe('validateSite — files field', () => {
         updatedAt: 2000,
       },
     ]
-    expect(() => validateSite(raw)).toThrow(SiteValidationError)
+    const site = validateSite(raw)
+    expect(site.files).toHaveLength(1)
+    expect(site.files[0].blob).toBeUndefined()
   })
 
   it('does not throw a SiteValidationError for an empty files array', () => {

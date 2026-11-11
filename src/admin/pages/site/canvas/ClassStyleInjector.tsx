@@ -1,12 +1,10 @@
 /**
  * ClassStyleInjector — injects/updates user class CSS into the target
- * document for the active canvas page or Visual Component.
+ * document whenever the site's class registry changes.
  *
  * This is a pure side-effect component (renders null). It subscribes to
  * `site.styleRules` via a stable selector and imperatively manages a single
- * <style id="mc-classes"> element in the target document's <head>. Reachable
- * classes and active canvas-script modifiers share the publisher's walker;
- * all-site inventory usage remains separate.
+ * <style id="mc-classes"> element in the target document's <head>.
  *
  * Multi-document support
  * ──────────────────────
@@ -34,7 +32,7 @@
  *   relevant slices actually change (not on every site edit).
  * - `generateCanvasClassCSS` is identity-memoized on its 8 inputs (see
  *   `createCanvasClassCssMemo`). All breakpoint-frame injectors render with
- *   the same store snapshot in the same commit, so the active document's CSS is
+ *   the same store snapshot in the same commit, so the full registry CSS is
  *   generated ONCE per change and frames 2..N reuse the cached string. Only
  *   the per-frame viewport-unit resolution still runs per injector — its
  *   output genuinely differs per frame width.
@@ -47,6 +45,7 @@ import {
   collectBackgroundImagePaths,
   collectSiteStyleBackgroundImagePaths,
   treeShakeStyleRulesBySignature,
+  usedStyleRuleIdSignature,
 } from '@core/publisher'
 import { useResponsiveEditorMediaAssets } from '@admin/pages/media/hooks/useResponsiveBackgroundStyle'
 import { selectorStatePseudo } from '@site/cssStatePseudo'
@@ -57,7 +56,6 @@ import {
   generatePreviewClassCSS,
 } from './canvasClassCss'
 import { resolveViewportUnits, type Viewport } from '@core/utils/viewportUnits'
-import { createCanvasStyleRuleIdSelector } from './canvasStyleUsage'
 
 interface ClassStyleInjectorProps {
   /**
@@ -100,13 +98,14 @@ const EMPTY_CONDITIONS: ConditionDef[] = []
  * run, defeating the generator's input-identity memo across frames.
  */
 const EMPTY_STYLE_RULES: Record<string, StyleRule> = {}
-const selectCanvasStyleRuleIds = createCanvasStyleRuleIdSelector()
 
 export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjectorProps = {}) {
   // Subscribe to class registry — shallow equality so we only re-run when
   // the classes object reference changes (Mutative always creates a new ref on mutation)
   const classes = useEditorStore((s) => s.site?.styleRules ?? null)
-  const usedClassIdSignature = useEditorStore(selectCanvasStyleRuleIds)
+  const usedClassIdSignature = useEditorStore((s) =>
+    s.site ? usedStyleRuleIdSignature(s.site) : '',
+  )
   const breakpoints = useEditorStore((s) => s.site?.breakpoints ?? EMPTY_BREAKPOINTS)
   const conditions = useEditorStore((s) => s.site?.conditions ?? EMPTY_CONDITIONS)
   const frameworkColors = useEditorStore((s) => s.site?.settings.framework?.colors ?? null)

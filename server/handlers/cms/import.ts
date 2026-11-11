@@ -38,9 +38,6 @@
  *                                  shell replace is a structural edit)
  */
 import { validateBundlePublication, BundlePublicationError } from '../../repositories/bundlePublication'
-import { assertLocalizedDataImport } from '../../repositories/data/localization'
-import { LocalizedDataReferenceAccessError } from '@core/data/localizedCells'
-import { LocalizationError } from '@core/localization'
 import { applySiteBundle, removeDeletedMediaFiles } from './importApply'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
@@ -119,9 +116,6 @@ export async function handleImportRoute(
   if (publicationInvalid) return publicationInvalid
   const publicationDenied = await authorizeImportedPublication(req, db, user, bundle)
   if (publicationDenied) return publicationDenied
-
-  const localizationInvalid = await validateImportedLocalization(db, scope, user, bundle, strategy)
-  if (localizationInvalid) return localizationInvalid
 
   const applied = await applySiteBundle(db, scope, {
     bundle,
@@ -260,24 +254,6 @@ export function validateImportedPublication(bundle: SiteBundle): Response | null
     return null
   } catch (err) {
     if (err instanceof BundlePublicationError) return jsonResponse({ error: err.message }, { status: 400 })
-    throw err
-  }
-}
-
-/** Validate localized references and retained rows before an import writes or wipes data. */
-export async function validateImportedLocalization(
-  db: DbClient,
-  scope: BranchScope,
-  user: AuthUser,
-  bundle: SiteBundle,
-  strategy: ImportStrategy,
-): Promise<Response | null> {
-  try {
-    await assertLocalizedDataImport(db, scope, user, bundle, strategy)
-    return null
-  } catch (err) {
-    if (err instanceof LocalizedDataReferenceAccessError) return jsonResponse({ error: err.message }, { status: 403 })
-    if (err instanceof LocalizationError) return jsonResponse({ error: err.message }, { status: 422 })
     throw err
   }
 }

@@ -34,18 +34,6 @@
     overflow-y: hidden;
 }
 
-.bindingMode {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(150px, 1fr);
-    align-items: center;
-    gap: var(--space-m);
-    padding: var(--space-m) var(--space-2xl);
-    border-bottom: 1px solid var(--border);
-    color: var(--text-subtle);
-    font-size: var(--text-xs);
-    flex-shrink: 0;
-}
-
 /* ── Auto-scope chip ─────────────────────────────────────────────────────── */
 
 .scopeChip {

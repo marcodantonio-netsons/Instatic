@@ -8,7 +8,6 @@
  *   cells.title              → page.title
  *   cells.slug (= row.slug)  → page.slug (denormalized on data_rows.slug)
  *   cells.body               → { nodes, rootNodeId } (pageTree field)
- *   cells.seo*               → page.seo (native text/url/repeater/JSON text fields)
  *   cells.templateEnabled    → page.template.enabled
  *   cells.templateTarget     → page.template.target (stored as JSON object)
  *   cells.templatePriority   → page.template.priority
@@ -20,9 +19,8 @@
  */
 
 import type { Page, PageNode, PageTemplateConfig } from '@core/page-tree'
-import { parsePageTranslationGroup, parsePageNode, parsePageTemplate, DynamicBindingConfigurationError } from '@core/page-tree'
+import { parsePageNode, parsePageTemplate } from '@core/page-tree'
 import type { DataRow, DataRowCells } from '@core/data/schemas'
-import { readPageSeoCells, writePageSeoCells } from './pageSeoCells'
 
 // ---------------------------------------------------------------------------
 // DataRow → Page
@@ -33,8 +31,7 @@ import { readPageSeoCells, writePageSeoCells } from './pageSeoCells'
  *
  * The conversion is best-effort: missing or malformed cells fall back to safe
  * defaults (empty title, empty nodes, etc.) so a corrupt row doesn't prevent
- * loading the rest of the site. Authored SEO cells are validated strictly so
- * a malformed metadata value is reported rather than discarded. Structural validation (slug syntax, rootNodeId
+ * loading the rest of the site. Structural validation (slug syntax, rootNodeId
  * presence) is enforced by `validatePages` in `@core/persistence/validate`.
  */
 export function pageFromRow(row: DataRow): Page {
@@ -61,20 +58,15 @@ export function pageFromRow(row: DataRow): Page {
     }
   }
 
-  const translationGroup = parsePageTranslationGroup(cells.translationGroup, `pages.${row.id}.translationGroup`)
   const title = typeof cells.title === 'string' ? cells.title : ''
 
   // Template reconstruction
   const template = readTemplateFromCells(cells)
-  const seo = readPageSeoCells(cells)
 
   return {
     id: row.id,
-    ...(translationGroup ? { translationGroup } : {}),
     slug: row.slug,
     title,
-    ...(typeof cells.language === 'string' && cells.language.length > 0 ? { language: cells.language } : {}),
-    ...(seo ? { seo } : {}),
     nodes,
     rootNodeId,
     ...(template !== null ? { template } : {}),
@@ -88,8 +80,7 @@ function parseNode(id: string, raw: unknown): PageNode | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   try {
     return parsePageNode({ id, ...(raw as Record<string, unknown>) }, `nodes.${id}`)
-  } catch (err) {
-    if (err instanceof DynamicBindingConfigurationError) throw err
+  } catch {
     // A node the parser cannot make sense of is dropped, not crashed on:
     // validatePages reports the structural problem where it can be fixed.
     return null
@@ -118,7 +109,6 @@ function readTemplateFromCells(cells: DataRowCells): PageTemplateConfig | null {
  */
 export function pageToCells(page: Page): DataRowCells {
   const cells: DataRowCells = {
-    ...writePageSeoCells(page.seo),
     title: page.title,
     slug: page.slug,
     body: {
@@ -126,9 +116,6 @@ export function pageToCells(page: Page): DataRowCells {
       rootNodeId: page.rootNodeId,
     },
   }
-
-  if (page.language) cells.language = page.language
-  if (page.translationGroup) cells.translationGroup = page.translationGroup
 
   if (page.template) {
     cells.templateEnabled = true

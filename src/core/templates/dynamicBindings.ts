@@ -26,151 +26,17 @@
  */
 
 import type { DynamicPropBinding } from '@core/page-tree'
-import { resolveTranslation } from '@core/localization'
 import { renderMarkdownToHtml } from '@core/markdown/renderMarkdown'
 import { isRichtextPropKey, RICHTEXT_CONTENT_CONFIG, sanitizeRichtext } from '@core/sanitize'
-import { mapJsonStrings } from '@core/utils/jsonStrings'
 import type { TemplateRenderDataContext } from './renderDataContext'
 
 export type { TemplateRenderDataContext } from './renderDataContext'
 import {
   containsTokens,
   interpolateTokens,
-  readFrameField,
+  readFrame,
+  walkFieldPath,
 } from './tokenInterpolation'
-
-export type DynamicBindingNumberFormatErrorCode = 'invalid-value' | 'invalid-options' | 'invalid-template'
-
-/** A numeric binding could not be represented with the authored decimal options. */
-export class DynamicBindingNumberFormatError extends Error {
-  readonly path: string
-  readonly code: DynamicBindingNumberFormatErrorCode
-
-  constructor(
-    path: string,
-    code: DynamicBindingNumberFormatErrorCode,
-    message: string,
-    options?: ErrorOptions,
-  ) {
-    super(`${path}: ${message}`, options)
-    this.name = 'DynamicBindingNumberFormatError'
-    this.path = path
-    this.code = code
-  }
-}
-
-function formatBoundNumber(
-  value: unknown,
-  binding: DynamicPropBinding,
-  context: TemplateRenderDataContext,
-  path: string,
-): string {
-  const number = typeof value === 'number'
-    ? value
-    : typeof value === 'string' && value.trim() !== ''
-      ? Number(value.trim())
-      : Number.NaN
-  if (!Number.isFinite(number)) {
-    throw new DynamicBindingNumberFormatError(
-      path,
-      'invalid-value',
-      `The value bound from "${binding.source}.${binding.field}" must be a finite number`,
-    )
-  }
-
-  const numberFormat = binding.numberFormat ?? {}
-  const minimumFractionDigits = numberFormat.minimumFractionDigits
-  const maximumFractionDigits = numberFormat.maximumFractionDigits
-  for (const [option, digits] of [
-    ['minimumFractionDigits', minimumFractionDigits],
-    ['maximumFractionDigits', maximumFractionDigits],
-  ] as const) {
-    if (digits !== undefined && (!Number.isInteger(digits) || digits < 0 || digits > 20)) {
-      throw new DynamicBindingNumberFormatError(
-        path,
-        'invalid-options',
-        `${option} must be an integer between 0 and 20`,
-      )
-    }
-  }
-  if (
-    minimumFractionDigits !== undefined &&
-    maximumFractionDigits !== undefined &&
-    minimumFractionDigits > maximumFractionDigits
-  ) {
-    throw new DynamicBindingNumberFormatError(
-      path,
-      'invalid-options',
-      'minimumFractionDigits cannot exceed maximumFractionDigits',
-    )
-  }
-
-  const locale = numberFormat.locale ?? context.site?.language
-  if (!locale) {
-    throw new DynamicBindingNumberFormatError(
-      path,
-      'invalid-options',
-      'A site language or locale override is required for number formatting',
-    )
-  }
-  let formatted: string
-  try {
-    formatted = new Intl.NumberFormat(locale, {
-      style: 'decimal',
-      ...(minimumFractionDigits !== undefined ? { minimumFractionDigits } : {}),
-      ...(maximumFractionDigits !== undefined ? { maximumFractionDigits } : {}),
-      ...(numberFormat.useGrouping !== undefined ? { useGrouping: numberFormat.useGrouping } : {}),
-    }).format(number)
-  } catch (cause) {
-    throw new DynamicBindingNumberFormatError(
-      path,
-      'invalid-options',
-      `Invalid number format options for "${binding.source}.${binding.field}"`,
-      { cause },
-    )
-  }
-
-  const templateKey = numberFormat.templateKey
-  if (templateKey === undefined) return formatted
-  const templatePath = `${path}.numberFormat.templateKey`
-  const normalizedTemplateKey = templateKey.trim()
-  if (!normalizedTemplateKey) {
-    throw new DynamicBindingNumberFormatError(
-      templatePath,
-      'invalid-template',
-      'A nonempty language template key is required',
-    )
-  }
-  const language = context.site?.language
-  if (!language) {
-    throw new DynamicBindingNumberFormatError(
-      templatePath,
-      'invalid-template',
-      'An active page language is required to resolve the language template',
-    )
-  }
-
-  let template: string
-  try {
-    template = resolveTranslation(context.site?.translations, normalizedTemplateKey, language)
-  } catch (cause) {
-    throw new DynamicBindingNumberFormatError(
-      templatePath,
-      'invalid-template',
-      `Unable to resolve number format template "${normalizedTemplateKey}"`,
-      { cause },
-    )
-  }
-  const valuePlaceholders = template.match(/\{value\}/g)?.length ?? 0
-  if (valuePlaceholders !== 1) {
-    throw new DynamicBindingNumberFormatError(
-      templatePath,
-      'invalid-template',
-      'The language template must contain exactly one literal "{value}" placeholder',
-    )
-  }
-  return template.replace('{value}', formatted)
-}
 
 /**
  * Resolve a single binding to its runtime value.
@@ -196,9 +62,11 @@ function formatBoundNumber(
 function resolveBindingValue(
   binding: DynamicPropBinding,
   context: TemplateRenderDataContext,
-  path: string,
 ): unknown {
-  const value = readFrameField(binding.source, binding.field, context)
+  const frame = readFrame(binding.source, context)
+  if (!frame) return undefined
+
+  const value = walkFieldPath(frame, binding.field)
 
   // Markdown shim: when a binding targets the `body` cell (post-type rows)
   // or any `richText` field stored as markdown and the binding requests
@@ -214,10 +82,6 @@ function resolveBindingValue(
   ) {
     const interpolated = containsTokens(value) ? interpolateTokens(value, context) : value
     return renderMarkdownToHtml(interpolated)
-  }
-
-  if (binding.format === 'number' && value !== undefined && value !== null) {
-    return formatBoundNumber(value, binding, context, path)
   }
 
   return value
@@ -256,25 +120,6 @@ export function effectiveNodeBindings(node: {
   return node.dynamicBindings
 }
 
-/** Effective values after whole-prop bindings, before inline token interpolation. */
-export function resolveBoundProps(
-  staticProps: Record<string, unknown>,
-  bindings: Record<string, DynamicPropBinding> | undefined,
-  context: TemplateRenderDataContext | undefined,
-): Record<string, unknown> {
-  if (!context || !bindings) return staticProps
-  const resolved = { ...staticProps }
-  for (const [propKey, binding] of Object.entries(bindings)) {
-    const value = resolveBindingValue(binding, context, `dynamicBindings.${propKey}`)
-    if (value === undefined || value === null) {
-      if (binding.fallback === 'empty') resolved[propKey] = ''
-      continue
-    }
-    resolved[propKey] = value
-  }
-  return resolved
-}
-
 export function resolveDynamicProps(
   staticProps: Record<string, unknown>,
   bindings: Record<string, DynamicPropBinding> | undefined,
@@ -288,8 +133,18 @@ export function resolveDynamicProps(
 
   // Step 1: structured whole-prop binding overrides (for non-string props, this
   // is the only way a prop gets a dynamic value).
-  const boundProps = resolveBoundProps(staticProps, bindings, context)
-  let resolved: Record<string, unknown> | null = boundProps === staticProps ? null : boundProps
+  let resolved: Record<string, unknown> | null = null
+  if (bindings) {
+    resolved = { ...staticProps }
+    for (const [propKey, binding] of Object.entries(bindings)) {
+      const value = resolveBindingValue(binding, context)
+      if (value === undefined || value === null) {
+        if (binding.fallback === 'empty') resolved[propKey] = ''
+        continue
+      }
+      resolved[propKey] = value
+    }
+  }
 
   // Step 2: token interpolation for every string-typed prop value. Both
   // the original static props and any string overwritten by step 1 are
@@ -319,16 +174,22 @@ export function resolveDynamicProps(
   for (const key of Object.keys(target)) {
     const v = target[key]
 
-    // Structured authoring (attributes, expressions, nested module settings)
-    // uses the same token frames as scalar props, without interpreting data
-    // strings as richtext. The shared JSON walker also drives request detection.
-    // Component arguments are a deferred bag: their values become props in
-    // the instantiated tree, where interpolation happens once. Resolving the
-    // bag here would remove escapes before the actual destination sees them.
-    if (key === 'propOverrides') continue
-    if (v && typeof v === 'object') {
-      const mapped = mapJsonStrings(v, (value) => containsTokens(value) ? interpolateTokens(value, context) : value)
-      if (mapped !== v) { ensureCopy(); resolved![key] = mapped }
+    // `htmlAttributes` is the one prop that holds strings a level down, and
+    // its values are authored the same way every other string prop is — an
+    // `href` written on a link interpolates, so a `src` written on a custom
+    // tag has to as well. Without this the token ships to the browser as
+    // literal text and the attribute silently points nowhere.
+    if (key === HTML_ATTRIBUTES_PROP_KEY) {
+      if (!isStringRecord(v)) continue
+      const withTokens = Object.entries(v).filter(([, av]) => containsTokens(av))
+      if (withTokens.length === 0) continue
+      ensureCopy()
+      const attrs = { ...v }
+      for (const [attrName, attrValue] of withTokens) {
+        // Never markdown-rendered: an attribute value is a value, not a body.
+        attrs[attrName] = interpolateTokens(attrValue, context)
+      }
+      resolved![key] = attrs
       continue
     }
 
@@ -357,4 +218,12 @@ export function resolveDynamicProps(
   }
 
   return resolved ?? staticProps
+}
+
+/** Prop holding author-set HTML attributes — see the loop in `resolveDynamicProps`. */
+const HTML_ATTRIBUTES_PROP_KEY = 'htmlAttributes'
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  return Object.values(value).every((entry) => typeof entry === 'string')
 }

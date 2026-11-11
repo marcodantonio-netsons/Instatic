@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test'
+import type { SiteDocument } from '@core/page-tree'
 import { publishPage, collectHoleSubtreeModuleIds } from '@core/publisher'
 import { makeModule, makePage, makeRegistry, makeSite } from './helpers'
 
@@ -8,8 +9,7 @@ const registry = makeRegistry({
     render: (_p, children) => ({ html: `<main>${children.join('')}</main>` }),
   }),
   'test.jsy': makeModule('test.jsy', {
-    assets: { js: 'JS_BODY' },
-    render: () => ({ html: '<div></div>' }),
+    render: () => ({ html: '<div></div>', js: 'JS_BODY' }),
   }),
   'test.live': makeModule('test.live', {
     canHaveChildren: true,
@@ -60,7 +60,6 @@ describe('collectHoleSubtreeModuleIds', () => {
         {
           id: 'vc-1',
           name: 'Test VC',
-          params: [], breakpoints: [], classIds: [], createdAt: 0,
           tree: {
             rootNodeId: 'vc-root',
             nodes: {
@@ -74,7 +73,7 @@ describe('collectHoleSubtreeModuleIds', () => {
               },
             },
           },
-        },
+        } as unknown as SiteDocument['visualComponents'][number],
       ],
     })
     const ids = collectHoleSubtreeModuleIds(page, site, new Set(['ref']))

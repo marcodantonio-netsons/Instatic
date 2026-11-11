@@ -7,7 +7,7 @@ import { SelectorsPanel } from '@site/panels/SelectorsPanel'
 import { PropertiesPanel } from '@site/panels/PropertiesPanel/PropertiesPanel'
 import {
   buildClassTokenUsageMap,
-  createSelectorUsageMapSelector,
+  buildSelectorUsageMap,
   formatSelectorUsage,
   getReusableClasses,
   getSelectorStyleSummary,
@@ -19,7 +19,6 @@ import { makeNode, makePage, makeSite } from '../fixtures'
 import '@modules/base/index'
 
 const SRC_ROOT = join(import.meta.dir, '../../')
-const buildSelectorUsageMap = createSelectorUsageMapSelector()
 
 afterEach(cleanup)
 

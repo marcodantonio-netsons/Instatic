@@ -12,7 +12,6 @@ A template is an ordinary `pages` row carrying a `target` (everywhere, one/more 
 - **Chain resolver:** `resolveTemplateChain(site, ctx)` in `src/core/templates/templateMatching.ts` → `Page[]` ordered outer → inner. At most one template per breadth level (highest priority wins, document order breaks ties). Two breadth levels today: `everywhere` (outermost) → `postTypes` (innermost).
 - **404 resolver:** `resolveNotFoundTemplate(site)` → the highest-priority `notFound` template or null. A `notFound` template never enters a route chain — the public router renders it directly when a GET falls through every route (see "The Not found (404) template" below).
 - **Chain composer:** `composeTemplateChain(chain, terminal)` in `src/core/templates/templateCompose.ts` → one merged `Page` ready for `publishPage`.
-- **Public scopes:** `publishedRenderScopes(site)` in `src/core/templates/publishedRenderScopes.ts` yields composed ordinary pages, the winning 404 and entry-template chains for declared table slugs. Page and 404 scopes retain their terminal `sourcePage` for authoritative binding frames. Unused raw templates are never independent public scopes; entry-specific row data is supplied by the entry renderer.
 - **`base.outlet`** is the polymorphic outlet content flows into. A template *should* contain one. Having NO outlet is not blocked (you add it after converting the page to a template — requiring it first would be circular). The editor enforces a one-outlet-per-document invariant at the store's mutation chokepoints (`insertNode`, `duplicateNode(s)`, `pasteNode`), each surfacing a warning toast when blocked; the module pickers additionally render the outlet as a disabled tile with the reason (non-template page, VC mode, or outlet already placed) so authors rarely hit the block at all. The composer remains defensive for data pre-dating the guard: no outlet → template skipped; multiple → first wins.
 - Template pages are never served at their own slug; the live router and the static bake both skip them.
 - Dynamic bindings and token interpolation work exactly as before — the merged tree is a plain page tree.
@@ -29,6 +28,7 @@ src/core/templates/
 ├── templateCompose.ts                 — composeTemplateChain, TerminalContent
 ├── contextFrames.ts                   — PageFrame, SiteFrame, RouteFrame + builders
 ├── dynamicBindings.ts                 — TemplateRenderDataContext + resolveDynamicProps
+├── templatePreviewData.ts             — buildPreviewCells, dataTablePreviewToLoopItem
 └── tokenInterpolation.ts             — parseTokenString, interpolateTokens, walkFieldPath
 
 src/modules/base/outlet/               — base.outlet module (Content Outlet)
@@ -107,7 +107,7 @@ Splice rule (applied from innermost outward):
 - Templates with **no `base.outlet`** are filtered out of the chain first — an unfinished template can't host content, so it simply doesn't apply (never an error). If that leaves the chain empty, a page renders as-is and an entry renders its innermost matched template as chrome only.
 - Each remaining template's **first `base.outlet` node** is the splice point; any extra outlets are left in place and render empty.
 - The inner content is spliced at the outlet position. Inner node ids are re-keyed with a prefix so merged trees never have collisions.
-- **One document body:** an inner `base.body` is removed on splice and its children are inserted directly. No container is invented. `composeDocumentBody` merges all body presentation onto the outermost `<body>`: class IDs concatenate in outer→inner order with stable deduplication; inline styles and scalar props merge per property; HTML attributes merge per normalized name; breakpoint overrides merge per breakpoint/property. A conflict (`id`, `lang`, `dir`, or another authored field) belongs to the closest inner document. An authored inner field also replaces an outer whole-prop binding for that field; the selected bindings and inline tokens resolve after composition. Structural identity and children remain owned by the outer body. Canvas and publication use the same composer, so body classes and direct-child selectors describe the same DOM.
+- **Inner `base.body` drop:** the inner tree's `base.body` wrapper is removed on splice — the outermost template owns the document `<body>`. If the inner `base.body` carries non-empty `props` or `breakpointOverrides`, its children are wrapped in a `base.container` bearing those values so body-level styling is not lost.
 
 Result: one merged `Page` consumed by `publishPage` unchanged — one CSS collection pass, one media prefetch, one HTML emit.
 
@@ -230,19 +230,9 @@ Text props mix literal text + tokens:
 
 `parseTokenString(input)` returns `TokenSegmentNode[]`; `interpolateTokens(input, ctx)` evaluates and concatenates. Tokens that resolve to `undefined` render as the empty string.
 
-Dotted `currentEntry` and `parentEntry` paths can select a repeater record by its stable `id`, then continue through its fields. The same path works in inline tokens and structured bindings:
-
-```text
-{currentEntry.matrix.feature-2.cells.initialValue}
-```
-
-`feature-2` must exactly match an item's `id`. The segment selects by ID, never by array position; a numeric-looking segment such as `0` works only when an item actually has `id: "0"`. Primitive arrays and missing IDs do not resolve, so inline tokens become empty and structured bindings keep their static prop value.
-
 Interpolation applies to string-typed props during the tree walk **and** to the document `<title>` + `<meta name="description">` (`buildDocumentMetaTags` in `src/core/publisher/render.ts`), so a site-wide `metaTitle` like `{currentEntry.name} | Acme` publishes per-entry SEO titles on entry routes.
 
 Source: `src/core/templates/tokenInterpolation.ts`.
-
-Configured [language files](localization.md) add `site.language` and `site.translations.*` to this same frame. A token such as `{site.translations.header.contact}` resolves from the current page's language during canvas rendering and static publication. Missing translation keys are explicit authoring errors, including when a binding specifies fallback text.
 
 ### Where tokens are substituted
 
@@ -259,12 +249,12 @@ All three render surfaces — the publisher (`renderNode.ts`), the editor canvas
 
 ## Editor canvas preview
 
-When editing a template page, the canvas previews against **live data**. `useTemplatePreviewContext` in `src/admin/pages/site/hooks/useTemplatePreviewContext.ts` builds the `currentEntry`:
+When editing a template page, the canvas previews against **live data**, falling back to synthetic sample data only when none exists. `useTemplatePreviewContext` in `src/admin/pages/site/hooks/useTemplatePreviewContext.ts` builds the `currentEntry`:
 
-- **`postTypes` target:** fetches authorized published rows for `target.tableSlugs[0]` via `previewCmsDataLoopItems`, using the canonical page language, and seeds the entry stack with the first row or the author-picked row. Empty sources have no current entry. Failed requests and an unavailable explicit selection surface errors with native retry controls; they never become sample content.
+- **`postTypes` target:** fetches a window of published rows for `target.tableSlugs[0]` via `previewCmsDataLoopItems` and seeds the entry stack with the first one (or the author-picked one — see below). When the table has **no** published rows, it falls back to a synthetic sample row via `dataTablePreviewToLoopItem(table)` so the layout stays visible.
 - **`everywhere` target:** no current entry — the outlet previews the first non-template page's tree read-only via `ReadOnlyNodeTree` (or the author-picked page).
 
-The source selector, canvas and live link share this preview owner. Localized cells resolve through the normal catalogue projection, while field schemas remain available for binding authoring even when no real entry exists. Modules handle absent media through their normal empty state.
+Synthetic fallback values are generic placeholders: `'Example Post Title'` for the `title` field, `null` for `media` fields. Modules must handle `null` media gracefully — the canvas shows "No image selected" for an unbound or null image source.
 
 #### Floating controls — `TemplateModeControl` / `VisualComponentModeControl`
 
@@ -294,18 +284,12 @@ The design canvas renders the active document the way it publishes: **inside its
 
 ### Dynamic binding picker
 
-The Properties panel wraps every bindable control in `DynamicBindingControl` (`src/admin/pages/site/property-controls/DynamicBindingControl/`). The picker offers two actions for text and textarea controls:
+The Properties panel wraps every bindable control in `DynamicBindingControl` (`src/admin/pages/site/property-controls/DynamicBindingControl/`). Two interaction modes:
 
-- **Insert token** (default for text / string controls): clicking the `{}` affordance opens a picker popover. Clicking a field row inserts a `{source.field}` token into the text value at the caret. The popover **stays open** so authors can insert multiple tokens in one session without re-opening.
-- **Bind whole value**: the action selector switches the same picker to structured binding. Clicking a field commits an entry to `node.dynamicBindings[propKey]` and the picker **closes immediately**. This is available for text and textarea controls as well as image / media controls.
+- **Insert mode** (text / string controls): clicking the `{}` affordance opens a picker popover. Clicking a field row inserts a `{source.field}` token into the text value at the caret. The popover **stays open** so authors can insert multiple tokens in one session without re-opening.
+- **Bind mode** (image / media controls): clicking the affordance opens the picker. Clicking a field commits a structured entry to `node.dynamicBindings[propKey]` and the picker **closes immediately**.
 
 Neither mode has a Confirm step — a single click is the action.
-
-### Decimal number bindings
-
-A structured binding may set `format: 'number'` and optional `numberFormat` settings (`locale`, `templateKey`, `minimumFractionDigits`, `maximumFractionDigits`, `useGrouping`). The resolver formats a finite number or numeric string with `Intl.NumberFormat` decimal style. It uses the active page language from the native render context unless a BCP 47 locale override is authored; otherwise it uses the platform's standard decimal defaults. An optional `templateKey` resolves a language-file string from the active page language and replaces its single literal `{value}` placeholder with the formatted number. The numeric `locale` controls decimal presentation only; it does not change which language catalogue supplies the surrounding text. A missing key or a pattern with anything other than one `{value}` placeholder raises a typed path error. Missing bound fields retain the existing static/empty fallback behavior, and invalid numbers or format settings raise typed path errors instead of becoming zero or silently losing the binding.
-
-For prices, bind the numeric amount and use a language template for currency symbol, position, and spacing; translate billing periods, renewal terms, and other wording separately. For example, one catalogue value can use `€{value}` in English and `{value} €` in Italian without duplicating the amount. Without a `templateKey`, number bindings keep the existing decimal-only output; raw numeric source values remain usable by calculations.
 
 **Auto-scope:** when the active page is a `postTypes` template, the picker auto-scopes to the first targeted table. Field rows appear directly under a `"<TableName> fields"` group header with a chip labelled `"Current row — <TableName>"`. No source-selection step is shown.
 
@@ -319,7 +303,7 @@ DataMeta is fetched once from `/data/_meta` and cached module-level in `cache.ts
 
 ## Template management in the editor
 
-The **Site Explorer** panel (`src/admin/pages/site/panels/SiteExplorerPanel/`) shows **Pages** and **Templates** in separate labelled sections. Clicking a template row opens it in the canvas like a page; the canvas preview uses the authorized real entry from `useTemplatePreviewContext`.
+The **Site Explorer** panel (`src/admin/pages/site/panels/SiteExplorerPanel/`) shows **Pages** and **Templates** in separate labelled sections. Clicking a template row opens it in the canvas like a page; the canvas preview uses the synthetic entry from `useTemplatePreviewContext`.
 
 ### Converting a page to a template
 
@@ -435,8 +419,9 @@ node.props.text = 'Posted by {currentEntry.author.displayName} on {currentEntry.
   - `src/core/templates/tokenInterpolation.ts` — `parseTokenString`, `interpolateTokens`
   - `src/modules/base/outlet/index.ts` — `base.outlet` module
   - `src/admin/pages/site/property-controls/DynamicBindingControl/` — binding affordance + picker popover
-  - `src/admin/pages/site/hooks/useTemplatePreviewContext.ts` — canonical page context and real entry previews
+  - `src/admin/pages/site/hooks/useTemplatePreviewContext.ts` — synthetic preview context for the canvas
   - `src/admin/pages/site/hooks/useActiveLivePath.ts` — resolves the toolbar "Open live page" path for templates
+  - `src/core/templates/templatePreviewData.ts` — `buildPreviewCells`, `dataTablePreviewToLoopItem`
   - `server/publish/publicRenderer.ts` — chain-aware render paths
   - `src/admin/pages/site/hooks/useInsertModule.ts` — hook-level outlet guard (toast + null return)
   - `src/admin/pages/site/store/slices/site/nodeActions.ts` — store-level outlet backstop in `insertNode`

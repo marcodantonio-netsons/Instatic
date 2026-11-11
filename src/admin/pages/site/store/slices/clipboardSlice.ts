@@ -23,13 +23,12 @@
  * engine saved layouts use, so paste and layout insertion cannot drift.
  */
 
-import type { Page } from '@core/page-tree'
+import type { StyleRule, Page, PageNode } from '@core/page-tree'
 import { getParent } from '@core/page-tree'
 import { firstOutletId, treeHasOutlet } from '@core/templates'
 import { pushToast } from '@ui/components/Toast'
-import { getErrorMessage } from '@core/utils/errorMessage'
 import {
-  collectSubtreeStyles,
+  collectReferencedClasses,
   collectSubtreeNodes,
   insertSnapshotSubtrees,
 } from '@site/store/subtreeSnapshot'
@@ -52,7 +51,12 @@ import { buildSiteHelpers } from './site/helpers'
  * `rootNodeIds` is ordered: a multi-select copy preserves selection order,
  * a single-node copy is a 1-length array.
  */
-type ClipboardEntry = Omit<ClipboardPayload, 'version'>
+interface ClipboardEntry {
+  rootNodeIds: string[]
+  nodes: Record<string, PageNode>
+  classes: Record<string, StyleRule>
+  copiedAt: number
+}
 
 interface ClipboardSlice {
   /** Latest copied / cut subtree(s). Null when the clipboard is empty. */
@@ -144,7 +148,6 @@ export const createClipboardSlice: EditorStoreSliceCreator<ClipboardSlice> = (
         rootNodeIds: persisted.rootNodeIds,
         nodes: persisted.nodes,
         classes: persisted.classes,
-        conditions: persisted.conditions,
         copiedAt: persisted.copiedAt,
       }
     : null
@@ -155,7 +158,6 @@ export const createClipboardSlice: EditorStoreSliceCreator<ClipboardSlice> = (
       rootNodeIds: entry.rootNodeIds,
       nodes: entry.nodes,
       classes: entry.classes,
-      conditions: entry.conditions,
       copiedAt: entry.copiedAt,
     }
     writeClipboardPayload(payload)
@@ -173,26 +175,21 @@ export const createClipboardSlice: EditorStoreSliceCreator<ClipboardSlice> = (
     const filtered = nodeIds.filter((id) => id !== page.rootNodeId)
     if (filtered.length === 0) return false
 
-    if (!state.site) return false
-    try {
-      const tops = topLevelOnly(page, filtered)
-      const subtrees = collectSubtreeNodes(page, tops)
-      if (!subtrees) return false
-      const styles = collectSubtreeStyles(subtrees.nodes, state.site)
-      const entry: ClipboardEntry = {
-        rootNodeIds: subtrees.rootNodeIds,
-        nodes: subtrees.nodes,
-        ...styles,
-        copiedAt: Date.now(),
-      }
-      set({ clipboardEntry: entry })
-      persistEntry(entry)
-      return true
-    } catch (err) {
-      console.error('[clipboard] Copy failed:', err)
-      pushToast({ kind: 'error', title: 'Copy failed', body: getErrorMessage(err, 'Unable to copy the selected nodes'), location: 'site-editor' })
-      return false
+    const tops = topLevelOnly(page, filtered)
+    const subtrees = collectSubtreeNodes(page, tops)
+    if (!subtrees) return false
+
+    const siteClasses = state.site?.styleRules ?? {}
+    const classes = collectReferencedClasses(subtrees.nodes, siteClasses)
+    const entry: ClipboardEntry = {
+      rootNodeIds: subtrees.rootNodeIds,
+      nodes: subtrees.nodes,
+      classes,
+      copiedAt: Date.now(),
     }
+    set({ clipboardEntry: entry })
+    persistEntry(entry)
+    return true
   }
 
   return {
@@ -259,25 +256,19 @@ export const createClipboardSlice: EditorStoreSliceCreator<ClipboardSlice> = (
       // framework name-match, regular reuse/import) lives in the shared
       // snapshot engine.
       const newRootIds: string[] = []
-      try {
-        mutateSiteState((draft, site) => {
-          const draftPage = site.pages.find((p) => p.id === draft.activePageId)
-          if (!draftPage) return false
+      mutateSiteState((draft, site) => {
+        const draftPage = site.pages.find((p) => p.id === draft.activePageId)
+        if (!draftPage) return false
 
-          newRootIds.push(...insertSnapshotSubtrees(
-            draftPage,
-            site,
-            entry,
-            location,
-          ))
+        newRootIds.push(...insertSnapshotSubtrees(
+          draftPage,
+          site,
+          { rootNodeIds: entry.rootNodeIds, nodes: entry.nodes, classes: entry.classes },
+          location,
+        ))
 
-          return newRootIds.length > 0
-        })
-      } catch (err) {
-        console.error('[clipboard] Paste failed:', err)
-        pushToast({ kind: 'error', title: 'Paste failed', body: getErrorMessage(err, 'Unable to paste the copied nodes'), location: 'site-editor' })
-        return null
-      }
+        return newRootIds.length > 0
+      })
 
       return newRootIds.length > 0 ? newRootIds : null
     },

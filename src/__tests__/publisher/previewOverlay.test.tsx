@@ -269,10 +269,9 @@ describe('PreviewOverlay — source enforcement', () => {
     expect(overlaySrc).toContain('data-testid="preview-iframe"')
   })
 
-  it('preserves resource credentials while scripts and forms remain sandboxed', () => {
-    expect(overlaySrc).toContain('sandbox="allow-same-origin"')
-    expect(overlaySrc).not.toContain('sandbox="allow-same-origin allow-scripts"')
-    expect(overlaySrc).not.toContain('allow-forms')
+  it('iframe uses sandbox="" (fully sandboxed — maximum security)', () => {
+    // sandbox="" with no value applies all restrictions (no scripts, no navigation, etc.)
+    expect(overlaySrc).toContain('sandbox=""')
   })
 
   it('handles Escape key to close (Guideline #225)', () => {
@@ -330,8 +329,10 @@ describe('publishPage — 2-node tree golden test (Phase 7)', () => {
 
   const headingModule = makeModule('base.text', {
     canHaveChildren: false,
-    assets: { css: '/* base.text */\n.instatic-heading { font-family: sans-serif; margin: 0; }' },
-    render: (props) => ({ html: `<h1 class="instatic-heading">${props['text'] ?? ''}</h1>` }),
+    render: (props) => ({
+      html: `<h1 class="instatic-heading">${props['text'] ?? ''}</h1>`,
+      css: '/* base.text */\n.instatic-heading { font-family: sans-serif; margin: 0; }',
+    }),
   })
 
   const reg = makeRegistry({ 'base.body': rootModule, 'base.text': headingModule })

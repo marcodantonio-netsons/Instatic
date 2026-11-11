@@ -16,7 +16,7 @@
 
 import type { LoopSourceField } from '@core/loops/types'
 
-export type SystemSourceId = 'page' | 'site' | 'route' | 'file'
+export type SystemSourceId = 'page' | 'site' | 'route'
 
 interface SystemSource {
   id: SystemSourceId
@@ -38,7 +38,6 @@ const PAGE_SOURCE: SystemSource = {
     { id: 'slug', label: 'Slug' },
     { id: 'permalink', label: 'Permalink', format: 'url' },
     { id: 'parentSlug', label: 'Parent slug' },
-    { id: 'language', label: 'Page language' },
   ],
 }
 
@@ -52,7 +51,6 @@ const SITE_SOURCE: SystemSource = {
   description: 'Site-wide author-facing fields.',
   fields: [
     { id: 'name', label: 'Site name' },
-    { id: 'language', label: 'Document language' },
   ],
 }
 
@@ -78,5 +76,4 @@ export const SYSTEM_SOURCES: readonly SystemSource[] = [
   PAGE_SOURCE,
   SITE_SOURCE,
   ROUTE_SOURCE,
-  { id: 'file', label: 'Public files', description: 'Passive files published at their authored public URL.', fields: [] },
 ]

@@ -17,8 +17,8 @@
  *
  * Syntax:
  *   - `{source.field}`               — single segment field
- *   - `{source.field.nested.path}`   — dotted path through nested objects and
- *                                       repeater items selected by stable ID
+ *   - `{source.field.nested.path}`   — dotted path (relation traversal
+ *                                       lands here in Phase 6)
  *   - `\{not-a-token}`               — backslash escape, emits a literal
  *                                       `{not-a-token}` with no replacement
  *
@@ -29,9 +29,6 @@
 
 import type { DynamicPropBinding } from '@core/page-tree'
 import type { TemplateRenderDataContext } from './renderDataContext'
-import { LocalizationError, resolveTranslation } from '@core/localization'
-import { readPageTranslationField } from './pageTranslations'
-import { readPublicFileField } from '@core/files/references'
 
 // ---------------------------------------------------------------------------
 // Source identifiers — must match DynamicBindingSourceSchema
@@ -43,7 +40,6 @@ const VALID_SOURCES: ReadonlySet<DynamicPropBinding['source']> = new Set([
   'page',
   'site',
   'route',
-  'file',
 ])
 
 function isValidSource(s: string): s is DynamicPropBinding['source'] {
@@ -85,7 +81,7 @@ interface TextSegment {
   kind: 'text'
   value: string
 }
-export interface TokenReference {
+interface TokenSegment {
   kind: 'token'
   source: DynamicPropBinding['source']
   /** Dotted field path, e.g. "title" or "author.name". Always non-empty. */
@@ -100,16 +96,7 @@ export interface TokenReference {
   /** Original `{...}` text for verbatim emit when the source is unknown. */
   raw: string
 }
-type TokenSegmentNode = TextSegment | TokenReference
-
-interface ExpandedTokenReference {
-  token: TokenReference
-  value: unknown
-  framePresent: boolean
-  translationStack: readonly string[]
-  /** Present for a language-file token after its value has been expanded. */
-  expandedTranslation?: string
-}
+type TokenSegmentNode = TextSegment | TokenSegment
 
 /**
  * Parse a string into a flat list of text and token segments.
@@ -220,54 +207,25 @@ export function readFrame(
       return (context.site as unknown as Record<string, unknown>) ?? null
     case 'route':
       return (context.route as unknown as Record<string, unknown>) ?? null
-    case 'file':
-      return context.files ?? null
     default:
       return null
   }
 }
 
 /**
- * Walk a dotted field path against a frame. Arrays are traversed only when a
- * segment exactly matches an item's own string `id`; numeric segments never
- * select by position. Stops at null/undefined or any unsupported intermediate.
+ * Walk a dotted field path against a frame. Stops at null/undefined or
+ * any non-object intermediate (arrays included — deep iteration is a
+ * separate concern, not a single-value lookup).
  */
 export function walkFieldPath(frame: Record<string, unknown>, path: string): unknown {
   const segments = path.split('.')
   let cursor: unknown = frame[segments[0]!]
   for (let i = 1; i < segments.length; i++) {
     if (cursor === null || cursor === undefined) return undefined
-    const segment = segments[i]!
-    if (Array.isArray(cursor)) {
-      const item = cursor.find((candidate) =>
-        candidate !== null && typeof candidate === 'object' && !Array.isArray(candidate) &&
-        Object.hasOwn(candidate, 'id') && (candidate as Record<string, unknown>).id === segment,
-      )
-      if (item === undefined) return undefined
-      cursor = item
-      continue
-    }
-    if (typeof cursor !== 'object') return undefined
-    cursor = (cursor as Record<string, unknown>)[segment]
+    if (typeof cursor !== 'object' || Array.isArray(cursor)) return undefined
+    cursor = (cursor as Record<string, unknown>)[segments[i]!]
   }
   return cursor
-}
-
-/** Shared field resolution keeps catalogue diagnostics identical for both binding forms. */
-export function readFrameField(
-  source: DynamicPropBinding['source'],
-  field: string,
-  context: TemplateRenderDataContext,
-): unknown {
-  if (source === 'page' && field.startsWith('translations.')) {
-    return readPageTranslationField(context.page?.translations, field.slice('translations.'.length))
-  }
-  if (source === 'file') return readPublicFileField(context.files, field)
-  if (source === 'site' && field.startsWith('translations.')) {
-    return resolveTranslation(context.site?.translations, field.slice('translations.'.length), context.site?.language ?? 'en')
-  }
-  const frame = readFrame(source, context)
-  return frame ? walkFieldPath(frame, field) : undefined
 }
 
 // ---------------------------------------------------------------------------
@@ -283,28 +241,7 @@ export function readFrameField(
  * input untouched without parsing — saves an allocation per static
  * prop value on a typical page.
  */
-const MAX_TRANSLATION_TEMPLATE_DEPTH = 32
-
-/**
- * Transform token references while recursively visiting only language-file
- * values. Data returned by currentEntry, page, site, route, and file remains a
- * one-pass value and is never parsed as another template.
- */
-function transformExpandedTokenReferences(
-  input: string,
-  context: TemplateRenderDataContext,
-  transform: (reference: ExpandedTokenReference) => string,
-): string {
-  return transformTokenReferences(input, context, transform, [], true)
-}
-
-function transformTokenReferences(
-  input: string,
-  context: TemplateRenderDataContext,
-  transform: (reference: ExpandedTokenReference) => string,
-  translationStack: readonly string[],
-  resolveNonTranslationValues: boolean,
-): string {
+export function interpolateTokens(input: string, context: TemplateRenderDataContext): string {
   if (!containsTokens(input)) return input
   const segments = parseTokenString(input)
   if (segments.length === 0) return input
@@ -315,76 +252,40 @@ function transformTokenReferences(
       out += seg.value
       continue
     }
-    const isSiteTranslation = seg.source === 'site' && seg.field.startsWith('translations.')
-    const frame = resolveNonTranslationValues || isSiteTranslation ? readFrame(seg.source, context) : null
-    const rawValue = resolveNonTranslationValues || isSiteTranslation
-      ? readFrameField(seg.source, seg.field, context)
-      : undefined
-    let expandedTranslation: string | undefined
-    if (isSiteTranslation && typeof rawValue === 'string') {
-      const translationKey = seg.field.slice('translations.'.length)
-      const translationPath = `translations.${translationKey}`
-      if (translationStack.includes(translationKey)) {
-        throw new LocalizationError(
-          translationPath,
-          `Circular translation template: ${[...translationStack, translationKey].join(' -> ')}`,
-        )
-      }
-      if (translationStack.length >= MAX_TRANSLATION_TEMPLATE_DEPTH) {
-        throw new LocalizationError(
-          translationPath,
-          `Translation templates exceed the maximum nesting depth of ${MAX_TRANSLATION_TEMPLATE_DEPTH}`,
-        )
-      }
-      expandedTranslation = transformTokenReferences(
-        rawValue,
-        context,
-        transform,
-        [...translationStack, translationKey],
-        resolveNonTranslationValues,
-      )
-    }
-    out += transform({
-      token: seg,
-      value: rawValue,
-      framePresent: Boolean(frame),
-      translationStack,
-      ...(expandedTranslation !== undefined ? { expandedTranslation } : {}),
-    })
-  }
-  return out
-}
-
-/** Walk every authored token, including tokens nested in language-file values. */
-export function visitExpandedTokenReferences(
-  input: string,
-  context: TemplateRenderDataContext,
-  visit: (token: TokenReference, translationStack: readonly string[]) => void,
-): void {
-  transformTokenReferences(input, context, ({ token, translationStack }) => {
-    visit(token, translationStack)
-    return ''
-  }, [], false)
-}
-
-export function interpolateTokens(input: string, context: TemplateRenderDataContext): string {
-  return transformExpandedTokenReferences(input, context, ({ token, value, framePresent, expandedTranslation }) => {
-    if (expandedTranslation !== undefined) return expandedTranslation
+    const frame = readFrame(seg.source, context)
+    const rawValue = frame ? walkFieldPath(frame, seg.field) : undefined
     // A token resolves to its fallback (if any) when:
     //   - the frame is absent
     //   - the field path is undefined / null
     //   - the value is an empty string (treat "" as "missing" for the
     //     fallback decision so authors get meaningful copy)
     const missing =
-      !framePresent ||
-      value === undefined ||
-      value === null ||
-      (typeof value === 'string' && value.length === 0)
-    if (missing) return token.fallback ?? ''
-    if (typeof value === 'string') return value
-    if (typeof value === 'number' || typeof value === 'boolean') return String(value)
-    // Objects / arrays resolve to NOTHING, deliberately. A binding that
-    // misses is blank; it never dumps an internal frame shape into HTML.
-    return token.fallback ?? ''
-  })
+      !frame ||
+      rawValue === undefined ||
+      rawValue === null ||
+      (typeof rawValue === 'string' && rawValue.length === 0)
+    if (missing) {
+      if (seg.fallback !== undefined) out += seg.fallback
+      continue
+    }
+    if (typeof rawValue === 'string') {
+      out += rawValue
+    } else if (typeof rawValue === 'number' || typeof rawValue === 'boolean') {
+      out += String(rawValue)
+    } else {
+      // Objects / arrays resolve to NOTHING, deliberately.
+      //
+      // This branch used to JSON.stringify the value "so mistakes stay
+      // visible". That is an author-facing debug affordance running in the
+      // public publish path: `{currentEntry.author}` against a reference
+      // object published the account's display name, role slug and role name
+      // into live HTML. A binding that misses is a blank, never a dump of
+      // whatever internal shape happened to sit behind the key — the frame
+      // cannot know which of its values are safe to print.
+      //
+      // Treated as missing, so an author-supplied fallback still applies.
+      if (seg.fallback !== undefined) out += seg.fallback
+    }
+  }
+  return out
 }

@@ -23,7 +23,6 @@ function pluginRepeaterItemFieldToDataField(
 ): RepeaterItemField {
   switch (field.type) {
     case 'text':
-    case 'localizedText':
     case 'longText':
     case 'number':
     case 'boolean':
@@ -83,7 +82,6 @@ export function pluginContentFieldsToDataFields(
   for (const field of fields) {
     switch (field.type) {
       case 'text':
-      case 'localizedText':
       case 'longText':
       case 'number':
       case 'boolean':

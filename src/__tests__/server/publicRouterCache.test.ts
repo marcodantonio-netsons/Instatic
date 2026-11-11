@@ -46,6 +46,21 @@ function makeSnapshot(): PublishedPageSnapshot {
             },
           },
         },
+        {
+          id: 'page_other',
+          title: 'Other Page',
+          slug: 'other',
+          rootNodeId: 'root',
+          nodes: {
+            root: {
+              id: 'root',
+              moduleId: 'base.body',
+              props: {},
+              breakpointOverrides: {},
+              children: [],
+            },
+          },
+        },
       ],
       files: [],
       visualComponents: [],
@@ -77,29 +92,30 @@ function makeFakeDb(snapshot: PublishedPageSnapshot | null): DbClient {
     const sql = strings.reduce<string>((acc, str, i) => (i === 0 ? str : `${acc}$${i}${str}`), '')
     const normalized = sql.replace(/\s+/g, ' ').trim().toLowerCase()
 
-    if (!normalized.includes('site_snapshots.site_json') && normalized.includes('data_row_versions.site_snapshot_id') && normalized.includes('data_row_versions.slug =')) {
+    // getPublishedPageRouteMetadataBySlug — page identity without site_json
+    if (normalized.includes("data_rows.table_id = 'pages'") && normalized.includes('runtime_assets_json') && !normalized.includes('site_snapshots.site_json')) {
+      const page = snapshot?.site.pages.find((candidate) => candidate.slug === String(values[0] ?? ''))
       return {
-        rows: snapshot
-          ? [{ row_id: snapshot.pageRowId, site_snapshot_id: snapshot.siteSnapshotId, runtime_assets_json: snapshot.runtimeAssets ?? null } as unknown as Row]
+        rows: page
+          ? [{ row_id: page.id, site_snapshot_id: snapshot!.siteSnapshotId, runtime_assets_json: null } as unknown as Row]
           : [],
-        rowCount: snapshot ? 1 : 0,
+        rowCount: page ? 1 : 0,
       }
     }
 
-    // getPublishedPageBySlug — joins data_row_versions to site_snapshots
+    // The full site snapshot is loaded only after route metadata found a page.
     if (normalized.includes('site_snapshots.site_json')) {
+      if (!snapshot) throw new Error('Unexpected full snapshot read without route metadata')
       return {
-        rows: snapshot
-          ? [{
+        rows: [{
               row_id: snapshot.pageRowId,
               site_snapshot_id: snapshot.siteSnapshotId,
               site_json: snapshot.site,
               runtime_assets_json: snapshot.runtimeAssets ?? null,
               importmap_body: snapshot.runtimePackageImportmap?.body ?? null,
               importmap_sha256: snapshot.runtimePackageImportmap?.sha256 ?? null,
-            } as unknown as Row]
-          : [],
-        rowCount: snapshot ? 1 : 0,
+            } as unknown as Row],
+        rowCount: 1,
       }
     }
 
@@ -129,9 +145,9 @@ function makeRedirectDb(): DbClient {
     const sql = strings.reduce<string>((acc, str, i) => (i === 0 ? str : `${acc}$${i}${str}`), '')
     const normalized = sql.replace(/\s+/g, ' ').trim().toLowerCase()
 
-    // getPublishedPageBySlug → not found
+    // No route metadata exists for a page; a full site_json read is a regression.
     if (normalized.includes('site_snapshots.site_json')) {
-      return { rows: [], rowCount: 0 }
+      throw new Error('Unexpected full snapshot read without route metadata')
     }
     // getDataRowRedirectByRoute → return a redirect
     if (normalized.includes('from data_row_redirects')) {

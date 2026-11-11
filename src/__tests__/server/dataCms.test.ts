@@ -22,6 +22,15 @@ type QueryHandler = (sql: string, params: unknown[]) => DbResult | undefined
 function makeDataFakeDb(handlers: QueryHandler[]) {
   return createFakeDb(async (rawSql, params): Promise<DbResult> => {
     const sql = rawSql.replace(/\s+/g, ' ').trim().toLowerCase()
+    // Public routing checks for a published page at the requested slug before
+    // resolving a content-row route. These fixtures cover row-only routes.
+    if (
+      sql.startsWith('select data_rows.id as row_id') &&
+      sql.includes("data_rows.table_id = 'pages'") &&
+      sql.includes('data_row_versions.slug =')
+    ) {
+      return { rows: [], rowCount: 0 }
+    }
     for (const handler of handlers) {
       const result = handler(sql, params)
       if (result) return result

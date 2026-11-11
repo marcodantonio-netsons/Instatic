@@ -32,9 +32,6 @@ export {
 } from '../page-tree/styleRule'
 export type { StyleRule } from '../page-tree/styleRule'
 
-export { ConditionDefSchema, parseConditions } from '../page-tree/condition'
-export type { ConditionDef } from '../page-tree/condition'
-
 export { reindexNodeParents } from '../page-tree/parentIndex'
 export {
   collectSubtreeIds,
@@ -47,5 +44,5 @@ export {
 } from '../page-tree/selectors'
 export { deleteSubtree, removeNodeSubtrees } from '../page-tree/subtreeRemoval'
 
-export { DynamicPropBindingSchema, DynamicBindingConfigurationError } from '../page-tree/dynamicBinding'
+export { DynamicPropBindingSchema } from '../page-tree/dynamicBinding'
 export type { DynamicPropBinding } from '../page-tree/dynamicBinding'

@@ -38,7 +38,6 @@ import {
 import { StyleRuleSchema, parseStyleRuleRegistry } from './styleRule'
 import { SiteSettingsSchema, parseSiteSettings } from './siteSettings'
 import { SiteFileSchema, type SiteFile, type SiteFileType } from '@core/files/schemas'
-import { parseSiteFileBlob } from '@core/files/publicAssets'
 import { SiteRuntimeConfigSchema, type SiteRuntimeConfig } from '@core/site-runtime/schemas'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime/runtimeConfig'
 import { SitePackageJsonSchema, type SitePackageJson } from '@core/site-dependencies/manifest'
@@ -113,8 +112,9 @@ export type SiteDocument = SiteShell & {
 const VALID_SITE_FILE_TYPES: SiteFileType[] = ['component', 'script', 'style', 'asset', 'config', 'doc']
 
 /**
- * Parse a SiteFile. An absent blob is an authoring placeholder; a present
- * binary payload is a hard boundary and must validate without data loss.
+ * Parse a SiteFile. Keeps the file with blob=undefined when the blob is
+ * malformed (mimeType or base64 missing/wrong type) — mirrors the
+ * "lenient" blob semantics documented on SiteFileSchema.blob.
  *
  * Returns null only for missing required fields (id, path, type).
  */
@@ -125,8 +125,15 @@ function parseSiteFile(raw: unknown): SiteFile | null {
   if (typeof r.path !== 'string') return null
   if (!VALID_SITE_FILE_TYPES.includes(r.type as SiteFileType)) return null
 
-  const blob = r.blob === undefined ? undefined : parseSiteFileBlob(r.blob, `files.${r.path}.blob`)
-  if (blob && r.type !== 'asset') throw new Error(`files.${r.path}.blob: Only asset files have binary payloads`)
+  // Blob: silently becomes undefined when mimeType or base64 is not a string
+  let blob: SiteFile['blob'] = undefined
+  if (r.blob && typeof r.blob === 'object' && !Array.isArray(r.blob)) {
+    const b = r.blob as Record<string, unknown>
+    if (typeof b.mimeType === 'string' && typeof b.base64 === 'string') {
+      blob = { mimeType: b.mimeType, base64: b.base64 }
+    }
+    // malformed blob → blob remains undefined; file is still included
+  }
 
   const createdAt = typeof r.createdAt === 'number' ? r.createdAt : Date.now()
   const updatedAt = typeof r.updatedAt === 'number' ? r.updatedAt : Date.now()
@@ -190,7 +197,7 @@ export function parseSiteDocument(raw: unknown): SiteShell {
   // Tolerant: invalid entries dropped, missing → [].
   const conditions: ConditionDef[] = parseConditions(r.conditions)
 
-  // Files — required array; present binary payloads are validated before use.
+  // Files — required array, per-entry leniency (parseSiteFile keeps files with malformed blobs)
   const files: SiteFile[] = Array.isArray(r.files)
     ? r.files.flatMap((item) => {
         const file = parseSiteFile(item)

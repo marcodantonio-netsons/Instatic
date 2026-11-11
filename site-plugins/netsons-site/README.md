@@ -8,6 +8,8 @@ With the host repository dependencies installed, run `bun install --frozen-lockf
 
 The host API transport must preserve `null` separately from `undefined`. The accompanying correction in `server/plugins/quickjs/marshal.ts` fixes that general transport defect; its regression test covers nullable content fields, nested values and missing results. The archived official-host verification includes this correction.
 
+The host is based on official `0.0.21` (`2e6b4263`). Remaining engine changes are generic fixes: route-scoped fragment resolution with immutable snapshot identity, successful-fragment lifecycle notification, authored pagination ownership, the existing SVG property control in the SDK, and page-context/shared caching for published module assets. Draft and preview asset collection stays fresh. The previously committed page-field migrations remain unchanged as database history; the runtime no longer depends on those fields.
+
 ## Sources of truth
 
 - Products, domain extensions, prices and comparison matrices remain in the CMS data tables. The plugin reads those tables; it does not contain a price list.
@@ -24,6 +26,8 @@ The host API transport must preserve `null` separately from `undefined`. The acc
 - Form, interaction, visitor-preference and loop-control frontend scripts are shared assets. Published pages receive no React runtime.
 - The appearance control uses the native `theme-alt` palette convention. Motion and decorative-media preferences retain their independent settings.
 - Query results and pagination use Instatic's native hole endpoint and renderer. The count endpoint and loop source share the same filtering logic.
+- Authored paging controls load either the next page or all remaining pages through the native fragment endpoint. A newer filter aborts earlier requests before they can update the results.
+- The localized SVG module uses the host SVG sanitizer, escapes translated values and provides a safe placeholder in the editor.
 - The accessibility trigger loads UserWay through a shared plugin asset. Its publish filter adds only the provider origins required by that loader to the existing content-security policy.
 - Weighted knowledge search uses a private FormatJS CLDR collator in QuickJS. Search membership, scores, counts and tested pages match the native loop. In the sealed knowledge-search checks, two apostrophe-containing title ties sort differently from the local Bun ICU build: Italian item 68 and French item 14. This changes tie order only; both rows remain in the results.
 

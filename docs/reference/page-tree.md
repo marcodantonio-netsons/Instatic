@@ -10,7 +10,7 @@ This doc shows the type, the mutation API, and how to correctly route mutations 
 
 - Every tree of nodes in the CMS uses the shape `NodeTree<TNode> = { nodes: Record<string, TNode>, rootNodeId: string }`. **There is no other tree primitive.**
 - The TypeBox schema and the generic type live in **one file**: `src/core/page-tree/treeSchema.ts`.
-- A `Page` **is** a `NodeTree<PageNode>` (it adds metadata fields on top). `Page.seo` is typed authored document metadata; its canonical schema is `src/core/page-tree/pageSeo.ts`, with normal row cells and page-document co-editing. See [publisher metadata](../features/publisher.md#authored-page-metadata).
+- A `Page` **is** a `NodeTree<PageNode>` (it adds metadata fields on top).
 - A `VisualComponent` **has** a `NodeTree` exposed as `vc.tree`.
 - A slot fill is the children subtree of a `base.slot-instance` node — it lives directly in the consumer page tree, no separate prop.
 - All mutations live in `src/core/page-tree/mutations.ts` and operate **generically** on any `NodeTree<TNode>`. They know nothing about page vs. VC.
@@ -74,7 +74,7 @@ The rules:
 
 `inlineStyles` is the per-node **inline-style layer**: a camelCase CSS bag (same shape as a `StyleRule`'s `styles`) that the publisher emits as a literal `style="…"` attribute on the node's root element (or on `<body>` for the root `base.body` node). It is independent of `classIds` (a node can have both) and is **base-only** — like a real HTML `style=""` attribute it cannot be breakpoint- or condition-scoped. Values are sanitised at the publish boundary by `bagToInlineStyle` → `sanitiseCssValue`. Edited via the Properties panel's "Style inline" mode (store actions `setNodeInlineStyles` / `removeNodeInlineStyleProperty`); the HTML importer also writes it when it harvests an element's inline background image.
 
-`PageNode` and `VCNode` share `BaseNode`, including optional runtime `dynamicBindings`. Both the page parser and the component parser preserve the same binding schema and use `parseBaseNodeFields`.
+`PageNode` (in `src/core/page-tree/pageNode.ts`) extends `BaseNode` with an optional `dynamicBindings` field for template data-binding. `VCNode` (in `src/core/visualComponents/schemas.ts`) is a direct re-export — `VCNode === BaseNode`.
 
 ### Where each kind of tree lives
 
@@ -175,7 +175,7 @@ All mutations live in `src/core/page-tree/mutations.ts`. They take a `NodeTree<P
 - `isHomePage(page)` — returns `true` when `page.slug === 'index'`. The home page is the one published at the site root.
 - `findHomePage(pages)` — returns the `Page` with `slug === 'index'`, or `undefined`. Used by `lifecycleActions` to default the editor to the home page on load and by `SiteExplorerPanel` to pin it to the top of the list.
 - `normalizePageSlug(value)` — lowercases, normalises each slash-delimited path segment, strips invalid characters, and collapses hyphens.
-- `pageSlugError(slug)` — returns a validation error message or `null` if the slug is valid. Valid page slugs are lowercase hyphenated segments separated by single slashes; the first segment cannot be a server-owned public route (`admin`, `api`, `assets`, `health`, `uploads`, `_instatic`). The same URL ownership policy applies to public SiteFile assets.
+- `pageSlugError(slug)` — returns a validation error message or `null` if the slug is valid. Valid page slugs are lowercase hyphenated segments separated by single slashes; the first segment cannot be a reserved public route (`admin`, `api`, `assets`, `health`).
 - `pageSlugDuplicateError(slug, pages, currentPageId?)` — checks for slug collisions across the page list.
 - `createUniquePageSlug(title, pages)` — generates a collision-free slug from a page title (normalises + reserved-slug guard + uniqueness).
 
@@ -213,7 +213,7 @@ Gated by `src/__tests__/architecture/no-vc-mode-branches-in-mutations.test.ts`: 
 
 ### Why this is correct
 
-`PageNode` and `VCNode` both use `BaseNode`, including runtime bindings. The 11 mutations operate on that common shape; component mode needs no alternate binding or mutation implementation.
+`PageNode` adds `dynamicBindings` to `BaseNode`. `VCNode === BaseNode`. The 11 mutations only touch fields that exist on the base — they never read `dynamicBindings`, so the cast in VC-mode is safe.
 
 ---
 

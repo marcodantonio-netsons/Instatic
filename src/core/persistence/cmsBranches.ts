@@ -98,9 +98,8 @@ export async function revokeCmsBranchPreview(id: string): Promise<void> {
   })
 }
 
-export async function getCmsBranchMergePlan(id: string, direction: MergeDirection, signal?: AbortSignal, language?: string): Promise<MergePlan> {
-  const query = language === undefined ? '' : `?${new URLSearchParams({ language })}`
-  const payload = await apiRequest(`${BRANCHES_PATH}/${encodeURIComponent(id)}/${direction}${query}`, {
+export async function getCmsBranchMergePlan(id: string, direction: MergeDirection, signal?: AbortSignal): Promise<MergePlan> {
+  const payload = await apiRequest(`${BRANCHES_PATH}/${encodeURIComponent(id)}/${direction}`, {
     schema: MergePlanEnvelopeSchema,
     signal,
     fallbackMessage: direction === 'merge' ? 'Failed to plan the merge' : 'Failed to plan the update',

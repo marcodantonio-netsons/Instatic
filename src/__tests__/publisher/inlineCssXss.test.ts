@@ -13,8 +13,7 @@ describe('inline CSS emission — </style> breakout (ISS-007)', () => {
   test('neutralises </style> from a user stylesheet', () => {
     const registry = makeRegistry({
       'base.text': makeModule('base.text', {
-        assets: { css: '' },
-        render: (props) => ({ html: `<h1>${(props as { text: string }).text}</h1>` }),
+        render: (props) => ({ html: `<h1>${(props as { text: string }).text}</h1>`, css: '' }),
       }),
     })
     const site = makeSite({

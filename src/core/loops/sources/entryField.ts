@@ -12,14 +12,9 @@ import type {
   LoopFetchResult,
   LoopItem,
 } from '../types'
-import { LoopQueryConfigurationError } from '../queryBindings'
-import { safeParseValue, Type } from '@core/utils/typeboxHelpers'
 
 export const ENTRY_FIELD_SOURCE_ID = 'entry.field'
 export const ENTRY_FIELD_FILTER_KEY = 'fieldId'
-export const ENTRY_FIELD_ITEM_ID_FILTER_KEY = 'itemId'
-
-const EntryFieldItemIdSchema = Type.String()
 
 export interface EntryFieldMedia {
   publicPath: string
@@ -30,19 +25,10 @@ export interface EntryFieldMedia {
 }
 
 export interface ResolveEntryFieldItemsOptions {
-  itemId?: string
   offset?: number
   limit?: number
   direction?: 'asc' | 'desc'
   mediaByReference?: ReadonlyMap<string, EntryFieldMedia>
-}
-
-/** Validate the authored itemId filter at each render boundary. */
-export function readEntryFieldItemIdFilter(value: unknown, path: string): string | undefined {
-  if (value === undefined) return undefined
-  const parsed = safeParseValue(EntryFieldItemIdSchema, value)
-  if (!parsed.ok) throw new LoopQueryConfigurationError('Item ID must be a string', path)
-  return parsed.value
 }
 
 function itemId(value: unknown, index: number): string {
@@ -58,9 +44,8 @@ function projectItem(
   value: unknown,
   index: number,
   mediaByReference: ReadonlyMap<string, EntryFieldMedia> | undefined,
-  identity?: string,
 ): LoopItem {
-  const id = identity ?? itemId(value, index)
+  const id = itemId(value, index)
 
   if (typeof value === 'string') {
     const media = mediaByReference?.get(value)
@@ -113,28 +98,15 @@ export function resolveEntryFieldItems(
   if (!Array.isArray(value)) return { items: [], totalItems: 0 }
 
   const direction = options.direction === 'desc' ? 'desc' : 'asc'
+  const ordered = direction === 'desc' ? [...value].reverse() : value
   const offset = Math.max(0, Math.floor(options.offset ?? 0))
-  if (!options.itemId) {
-    const ordered = direction === 'desc' ? [...value].reverse() : value
-    const limit = Math.max(1, Math.floor(options.limit ?? (ordered.length || 1)))
-    const slice = ordered.slice(offset, offset + limit)
-    return {
-      items: slice.map((item, index) => projectItem(item, offset + index, options.mediaByReference)),
-      totalItems: value.length,
-    }
-  }
-
-  const filtered = value
-    .map((item, index) => ({ item, identity: itemId(item, index) }))
-    .filter(({ identity }) => identity === options.itemId)
-  const ordered = direction === 'desc' ? [...filtered].reverse() : filtered
   const limit = Math.max(1, Math.floor(options.limit ?? (ordered.length || 1)))
   const slice = ordered.slice(offset, offset + limit)
 
   return {
-    items: slice.map(({ item, identity }, index) =>
-      projectItem(item, offset + index, options.mediaByReference, identity)),
-    totalItems: filtered.length,
+    items: slice.map((item, index) =>
+      projectItem(item, offset + index, options.mediaByReference)),
+    totalItems: value.length,
   }
 }
 
@@ -148,10 +120,6 @@ export const EntryFieldSource: ContextualLoopEntitySource = {
       type: 'select',
       label: 'Field',
       options: [{ label: '— Choose an array field —', value: '' }],
-    },
-    [ENTRY_FIELD_ITEM_ID_FILTER_KEY]: {
-      type: 'text',
-      label: 'Item ID',
     },
   },
   orderByOptions: [],

@@ -64,6 +64,5 @@ export {
   projectLayoutDoc,
   projectPageDoc,
   projectSiteDoc,
-  projectSiteRosters,
   type ProjectedSiteDoc,
 } from './project'

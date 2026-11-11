@@ -1,4 +1,3 @@
-import { resolveRowAccess } from '../../../auth/rowAccess'
 /**
  * Data-row endpoints.
  *
@@ -39,7 +38,6 @@ import {
   listDataRowVersions,
 } from '../../../repositories/data'
 import { publishDataRow, removeDataRowArtefact } from '../../../publish/publishRow'
-import { PublicAssetValidationError } from '@core/files/publicAssets'
 import { runPublishFlush } from '../../../publish/publishFlush'
 import { findUserById } from '../../../repositories/users'
 import { slugForTable } from '@core/data/cells'
@@ -55,8 +53,7 @@ import {
   RowTableBodySchema,
   RowUpsertBodySchema,
 } from './schemas'
-import {
-  forbidden,
+import {  forbidden,
   requireDataAccess,
   requireDataAuthorManager,
   requireDataEditor,
@@ -67,6 +64,7 @@ import {
   canEditDataRow,
   canPublishDataRow,
   canReadDataRow,
+  resolveRowAccess,
   type RowCheck,
 } from '../../../auth/dataAccess'
 import { handleRowPreview } from './preview'
@@ -267,13 +265,7 @@ async function handleRowPublish(
   const currentRow = await loadRowForAccess(db, scope, rowId, user, canPublishDataRow)
   if (currentRow instanceof Response) return currentRow
 
-  let result: Awaited<ReturnType<typeof publishDataRow>>
-  try {
-    result = await publishDataRow(db, rowId, user.id, options.uploadsDir)
-  } catch (error) {
-    if (error instanceof PublicAssetValidationError) return jsonResponse({ error: error.message }, { status: 422 })
-    throw error
-  }
+  const result = await publishDataRow(db, rowId, user.id, options.uploadsDir)
   await emitContentEntryUpdated(db, scope, rowId, ['status'], { kind: 'user', userId: user.id })
   await recordRowAuditEvent(db, user, req, 'data.row.publish', result.row, {
     versionNumber: result.version.versionNumber,

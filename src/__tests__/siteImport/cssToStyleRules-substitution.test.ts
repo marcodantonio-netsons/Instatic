@@ -37,15 +37,10 @@ describe('cssToStyleRules — substitution declarations survive verbatim', () =>
     expect(section.styles.padding).toBe('70px max(24px, calc((100% - 1120px)/2))')
     expect(rules.find((rule) => rule.selector === '.wrapper')!.styles.width)
       .toBe('min(100% - 48px, 1160px)')
-    const sectionOverride = rules.find((rule) =>
-      rule.selector === '.inner-page-wrap section' && Object.keys(rule.contextStyles).length > 0,
-    )!
-    expect(Object.values(sectionOverride.contextStyles)[0]).toMatchObject({
+    expect(Object.values(section.contextStyles ?? {})[0]).toMatchObject({
       paddingTop: '54px', paddingRight: '20px', paddingBottom: '54px', paddingLeft: '20px',
     })
-    const wrapper = rules.find((rule) =>
-      rule.selector === '.wrapper' && Object.keys(rule.contextStyles).length > 0,
-    )!
+    const wrapper = rules.find((rule) => rule.selector === '.wrapper')!
     expect(Object.values(wrapper.contextStyles ?? {})[0]).toMatchObject({
       width: 'min(100% - 28px, 1220px)',
     })
@@ -76,9 +71,7 @@ describe('cssToStyleRules — substitution declarations survive verbatim', () =>
       .btn { transition: background 140ms var(--easing); gap: var(--g); }
     `)
 
-    // These independent properties span ordered fragments with one binding.
-    const bySel: Record<string, Record<string, unknown>> = {}
-    for (const rule of rules) Object.assign(bySel[rule.selector] ??= {}, rule.styles)
+    const bySel = Object.fromEntries(rules.map((r) => [r.selector, r.styles]))
     expect(bySel['.plan'].borderLeft).toBe('1px solid var(--rule)')
     // The non-var shorthand still expands through the engine as usual.
     expect(bySel['.plan'].paddingTop).toBe('40px')
@@ -101,7 +94,7 @@ describe('cssToStyleRules — substitution declarations survive verbatim', () =>
   it('preserves longhand var() declarations and authored custom properties', () => {
     const { rules } = cssToStyleRules(`.x { color: var(--ink); --own: 12px; }`)
     expect(rules[0].styles.color).toBe('var(--ink)')
-    expect(rules[1].styles['--own']).toBe('12px')
+    expect(rules[0].styles['--own']).toBe('12px')
   })
 
   it('preserves priority on an encoded substitution declaration', () => {
@@ -115,9 +108,7 @@ describe('cssToStyleRules — substitution declarations survive verbatim', () =>
       .plan { color: red; }
       @media (max-width: 700px) { .plan { border-top: 1px solid var(--rule) } }
     `)
-    const plan = rules.find((r) =>
-      r.selector === '.plan' && Object.keys(r.contextStyles).length > 0,
-    )!
+    const plan = rules.find((r) => r.selector === '.plan')!
     const contexts = Object.values(plan.contextStyles ?? {})
     expect(contexts).toHaveLength(1)
     expect((contexts[0] as Record<string, unknown>).borderTop).toBe('1px solid var(--rule)')

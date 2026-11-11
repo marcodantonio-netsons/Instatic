@@ -151,16 +151,6 @@ describe('cloneNodeWithRemap', () => {
     expect(clone.dynamicBindings).not.toBe(src.dynamicBindings)
   })
 
-  it('copies numeric binding options so cloned cards can format independently', () => {
-    const src = node('src', { dynamicBindings: { text: {
-      source: 'currentEntry', field: 'amount', format: 'number',
-      numberFormat: { minimumFractionDigits: 2 },
-    } } })
-    const clone = cloneNodeWithRemap(src, { newId: 'dst', idMap: new Map() })
-    clone.dynamicBindings!.text.numberFormat!.minimumFractionDigits = 0
-    expect(src.dynamicBindings!.text.numberFormat!.minimumFractionDigits).toBe(2)
-  })
-
   it('classIdRemap drops on null, keeps on identity, remaps otherwise', () => {
     const src = node('src', { classIds: ['keep', 'drop', 'remap'] })
     const clone = cloneNodeWithRemap(src, {

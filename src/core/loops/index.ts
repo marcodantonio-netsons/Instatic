@@ -9,26 +9,15 @@
  * them to guarantee canvas previews and published output never diverge.
  */
 
-export { LoopItemSchema } from '@core/loops-schema'
-export { LOOP_LOADING_LABEL_DEFAULTS } from './loadingLabels'
-export type { LoopItem } from '@core/loops-schema'
-export { readLoopQueryBindings, resolveLoopQueryFilters, LoopQueryConfigurationError } from './queryBindings'
-export type { LoopQueryBinding } from '@core/loops-schema'
+export type { LoopItem } from './types'
 export { pageToLoopItem, filterPagesForLoop } from './sources/sitePages'
 export {
   ENTRY_FIELD_FILTER_KEY,
-  ENTRY_FIELD_ITEM_ID_FILTER_KEY,
   ENTRY_FIELD_SOURCE_ID,
-  readEntryFieldItemIdFilter,
   resolveEntryFieldItems,
   type EntryFieldMedia,
-  type ResolveEntryFieldItemsOptions,
 } from './sources/entryField'
 
 // Media projection shared by the `data.rows` source and the publisher's
 // entry-route frame, so `{currentEntry.<mediaField>}` resolves identically.
 export { collectMediaIds, resolveMediaIdsToPaths, resolvedMediaOverlay } from './sources/dataRowsMedia'
-export { readSummaryLoopIds } from './resultSummary'
-
-export { DataPivotSource, projectDataPivot, readDataPivotConfiguration, DataPivotConfigurationError } from './sources/dataPivot'
-export type { DataPivotConfiguration } from './sources/dataPivot'

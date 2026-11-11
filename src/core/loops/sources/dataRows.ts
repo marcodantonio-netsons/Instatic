@@ -20,31 +20,69 @@
  */
 
 import { MAIN_BRANCH_ID, physicalId } from '@core/branches'
-import type { LoopEntitySource, LoopFetchResult, LoopItem, LoopSourceDb } from '../types'
-import { matchesCellFilter, parseCellFilter, parseCellOrder, type CellFilter } from '../cellFilter'
-import { canUseCellSearchSql, scoreCellSearch, parseCellSearch, type CellSearch } from '../cellSearch'
+import type { LoopEntitySource, LoopFetchResult, LoopItem, LoopSourceDb } from '@core/loops/types'
+import { cellFilterSql, cellOrderSql, parseCellFilter, parseCellOrder, type CellFilter } from '../cellFilter'
 import { isoDate } from '../../utils/isoDate'
 import { firstImagePathFromMarkdown } from '@core/markdown/renderMarkdown'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { publicDataUserFromParts } from '@core/data/publicDataUser'
 import { normalizeDataTableFields } from '@core/data/fields'
-import { LocalizationError } from '@core/localization'
-import { hasLocalizedDataFields, projectLocalizedDataCells, compareDataCellValues, type DataLocalizationContext } from '@core/data/localizedCells'
 import { readFeaturedMediaCell } from '@core/data/cells'
 import type { DataField, DataRowCells } from '@core/data/schemas'
 import { collectMediaIds, resolveMediaIdsToPaths, resolvedMediaOverlay } from './dataRowsMedia'
-import {
-  ALLOWED_ORDER_BY,
-  countDataKindRows,
-  countPublishedPostRows,
-  fetchDataTableProjection,
-  fetchDataKindRowPage,
-  fetchPublishedDataRowPage,
-  type DataKindRowSqlRow,
-  type OrderColumn,
-  type PublishedDataRowSqlRow,
-} from './dataRowsQueries'
-import { parseValue, Type } from '../../utils/typeboxHelpers'
+
+// ---------------------------------------------------------------------------
+// Internal SQL row shape
+// ---------------------------------------------------------------------------
+
+interface PublishedDataRowSqlRow {
+  version_id: string
+  row_id: string
+  table_id: string
+  table_slug: string
+  table_kind: string
+  table_route_base: string
+  version_number: number
+  cells_json: Record<string, unknown>
+  slug: string
+  author_user_id: string | null
+  author_display_name: string | null
+  author_role_slug: string | null
+  author_role_name: string | null
+  published_by_user_id: string | null
+  published_by_display_name: string | null
+  published_by_role_slug: string | null
+  published_by_role_name: string | null
+  published_at: Date | string
+  created_at: Date | string
+  updated_at: Date | string
+}
+
+interface DataTableProjectionRow {
+  kind: string
+  fields_json: unknown
+}
+
+type OrderColumn = 'publishedAt' | 'createdAt' | 'updatedAt' | 'slug'
+
+const ALLOWED_ORDER_BY: ReadonlySet<OrderColumn> = new Set([
+  'publishedAt',
+  'createdAt',
+  'updatedAt',
+  'slug',
+])
+
+// ---------------------------------------------------------------------------
+// SQL helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Dialect-appropriate positional placeholder for `db.unsafe`:
+ * `$<index>` on Postgres, `?` on SQLite. `index` is 1-based.
+ */
+function positionalParam(db: LoopSourceDb, index: number): string {
+  return db.dialect === 'postgres' ? `$${index}` : '?'
+}
 
 // ---------------------------------------------------------------------------
 // Row → LoopItem projection
@@ -122,8 +160,115 @@ function rowToLoopItem(
 }
 
 // ---------------------------------------------------------------------------
-// Row → LoopItem projection
+// Page-slice query — post-type tables (published-version join)
+//
+// One SELECT; the ORDER BY clause is composed from the closed, compile-time
+// column map below, so no runtime input ever reaches the SQL text:
+// `orderBy` is whitelisted against ALLOWED_ORDER_BY and `direction` is
+// narrowed to 'asc' | 'desc' in `fetchPublishedDataRowItems` before either
+// value gets here. All runtime VALUES (tableId, limit, offset) ride as
+// positional parameters via `db.unsafe` — the same dialect-aware pattern as
+// `resolveMediaIdsToPaths`.
 // ---------------------------------------------------------------------------
+
+/** Order column expressions for the post-type published-version query. */
+const POST_TYPE_ORDER_COLUMN: Record<OrderColumn, string> = {
+  publishedAt: 'data_row_versions.published_at',
+  createdAt: 'data_row_versions.created_at',
+  updatedAt: 'data_rows.updated_at',
+  slug: 'data_row_versions.slug',
+}
+
+async function fetchPage(
+  db: LoopSourceDb,
+  orderBy: OrderColumn,
+  direction: 'asc' | 'desc',
+  opts: { tableId: string; limit: number; offset: number; filter: CellFilter | null; orderCell: { field: string; numeric: boolean } | null },
+): Promise<PublishedDataRowSqlRow[]> {
+  const { tableId, limit, offset, filter, orderCell } = opts
+  const column = 'data_row_versions.cells_json'
+  // SQLite binds `?` by POSITION IN THE TEXT, so the parameter list must follow
+  // the clause order: tableId, the cell condition (WHERE), the ordering cell
+  // (ORDER BY), then limit/offset. Postgres indices are numbered to match.
+  const cell = filter
+    ? cellFilterSql({ filter, dialect: db.dialect, column, nextParamIndex: 2 })
+    : null
+  const cellParams = cell?.params ?? []
+  const order = orderCell
+    ? cellOrderSql({ ...orderCell, dialect: db.dialect, column, paramIndex: 2 + cellParams.length })
+    : null
+  const orderColumn = order ? order.sql : POST_TYPE_ORDER_COLUMN[orderBy]
+  const orderParams = order?.params ?? []
+  const before = cellParams.length + orderParams.length
+  const limitParam = positionalParam(db, 2 + before)
+  const offsetParam = positionalParam(db, 3 + before)
+  const { rows } = await db.unsafe<PublishedDataRowSqlRow>(
+    `select data_row_versions.id as version_id,
+            data_rows.logical_id as row_id,
+            data_rows.table_id,
+            data_tables.slug as table_slug,
+            data_tables.kind as table_kind,
+            data_tables.route_base as table_route_base,
+            data_row_versions.version_number,
+            data_row_versions.cells_json,
+            data_row_versions.slug,
+            data_rows.author_user_id,
+            author_users.display_name as author_display_name,
+            author_roles.slug as author_role_slug,
+            author_roles.name as author_role_name,
+            data_row_versions.published_by_user_id,
+            publisher_users.display_name as published_by_display_name,
+            publisher_roles.slug as published_by_role_slug,
+            publisher_roles.name as published_by_role_name,
+            data_row_versions.published_at,
+            data_row_versions.created_at,
+            data_rows.updated_at
+     from data_rows
+     join data_tables on data_tables.id = data_rows.table_id
+     join data_row_versions on data_row_versions.id = data_rows.active_version_id
+     left join users author_users on author_users.id = data_rows.author_user_id
+     left join roles author_roles on author_roles.id = author_users.role_id
+     left join users publisher_users on publisher_users.id = data_row_versions.published_by_user_id
+     left join roles publisher_roles on publisher_roles.id = publisher_users.role_id
+     where data_rows.table_id = ${positionalParam(db, 1)}
+       and data_rows.status = 'published'
+       and data_rows.deleted_at is null
+       and data_tables.deleted_at is null
+       ${cell ? `and ${cell.sql}` : ''}
+     order by ${orderColumn} ${direction}, data_row_versions.id ${direction}
+     limit ${limitParam} offset ${offsetParam}`,
+    [tableId, ...cellParams, ...orderParams, limit, offset],
+  )
+  return rows
+}
+
+// ---------------------------------------------------------------------------
+// Page-slice query — data-kind tables (direct data_rows read)
+//
+// Data-kind tables (`kind: 'data'`) have no publish lifecycle and no
+// `data_row_versions` rows. They are authored directly via the Data
+// admin grid: cells live on `data_rows.cells_json`, and the row is
+// "live" the moment it's created. Iterating them through the same
+// published-version join the post-type path uses would silently return
+// zero rows — which is exactly the "Lorem ipsum forever" bug authors
+// were hitting in the canvas. So we query `data_rows` directly here.
+// ---------------------------------------------------------------------------
+
+interface DataKindRowSqlRow {
+  row_id: string
+  table_id: string
+  table_slug: string
+  table_route_base: string
+  cells_json: Record<string, unknown>
+  slug: string
+  author_user_id: string | null
+  author_display_name: string | null
+  author_role_slug: string | null
+  author_role_name: string | null
+  created_at: Date | string
+  updated_at: Date | string
+}
+
 
 function dataKindRowToLoopItem(
   row: DataKindRowSqlRow,
@@ -180,6 +325,81 @@ function dataKindRowToLoopItem(
   }
 }
 
+/**
+ * Order column expressions for the data-kind query. There is no
+ * `published_at` on this path — `fetchDataKindPage` maps a `publishedAt`
+ * request to `createdAt` so "order by published date" still produces a
+ * sensible newest-first ordering.
+ */
+const DATA_KIND_ORDER_COLUMN: Record<'createdAt' | 'updatedAt' | 'slug', string> = {
+  createdAt: 'data_rows.created_at',
+  updatedAt: 'data_rows.updated_at',
+  slug: 'data_rows.slug',
+}
+
+async function fetchDataKindPage(
+  db: LoopSourceDb,
+  orderBy: OrderColumn,
+  direction: 'asc' | 'desc',
+  opts: {
+    tableId: string
+    limit: number
+    offset: number
+    filter: CellFilter | null
+    orderCell: { field: string; numeric: boolean } | null
+    /** Post-type drafts (a branch): skip rows explicitly taken offline. */
+    excludeUnpublished: boolean
+  },
+): Promise<DataKindRowSqlRow[]> {
+  const { tableId, limit, offset, filter, orderCell, excludeUnpublished } = opts
+  const sortKey: 'createdAt' | 'updatedAt' | 'slug' =
+    orderBy === 'updatedAt' ? 'updatedAt' : orderBy === 'slug' ? 'slug' : 'createdAt'
+  const column = 'data_rows.cells_json'
+  // Parameter order follows the clause order — see `fetchPage`.
+  const cell = filter
+    ? cellFilterSql({ filter, dialect: db.dialect, column, nextParamIndex: 2 })
+    : null
+  const cellParams = cell?.params ?? []
+  const order = orderCell
+    ? cellOrderSql({ ...orderCell, dialect: db.dialect, column, paramIndex: 2 + cellParams.length })
+    : null
+  const orderColumn = order ? order.sql : DATA_KIND_ORDER_COLUMN[sortKey]
+  const orderParams = order?.params ?? []
+  const before = cellParams.length + orderParams.length
+  const limitParam = positionalParam(db, 2 + before)
+  const offsetParam = positionalParam(db, 3 + before)
+
+  // Same safety contract as `fetchPage`: the ORDER BY text comes only from
+  // the closed map above; every runtime value is a positional parameter.
+  const { rows } = await db.unsafe<DataKindRowSqlRow>(
+    `select data_rows.logical_id as row_id,
+            data_rows.table_id,
+            data_tables.slug as table_slug,
+            data_tables.route_base as table_route_base,
+            data_rows.cells_json,
+            data_rows.slug,
+            data_rows.author_user_id,
+            author_users.display_name as author_display_name,
+            author_roles.slug as author_role_slug,
+            author_roles.name as author_role_name,
+            data_rows.created_at,
+            data_rows.updated_at
+     from data_rows
+     join data_tables on data_tables.id = data_rows.table_id
+     left join users author_users on author_users.id = data_rows.author_user_id
+     left join roles author_roles on author_roles.id = author_users.role_id
+     where data_rows.table_id = ${positionalParam(db, 1)}
+       and data_rows.deleted_at is null
+       and data_tables.deleted_at is null
+       ${excludeUnpublished ? "and data_rows.status <> 'unpublished'" : ''}
+       ${cell ? `and ${cell.sql}` : ''}
+     order by ${orderColumn} ${direction}, data_rows.id ${direction}
+     limit ${limitParam} offset ${offsetParam}`,
+    [tableId, ...cellParams, ...orderParams, limit, offset],
+  )
+  return rows
+}
+
 // ---------------------------------------------------------------------------
 // Reusable fetch helper
 //
@@ -204,89 +424,27 @@ export async function fetchPublishedDataRowItems(
     offset: number
     /** Optional condition on one of the row's own cells. */
     cellFilter?: CellFilter | null
-    cellSearch?: CellSearch | null
-    selectedRowIds?: ReadonlySet<string>
     /**
      * Read post-type rows as DRAFTS instead of through their published
      * versions — a branch has no versions (publishing is main-only), so its
      * loops show what the branch would publish.
      */
     drafts?: boolean
-    localization?: DataLocalizationContext
-    /** Admin previews apply own/any row authorization before counting or slicing. */
-    readableRowIds?: ReadonlySet<string>
   },
 ): Promise<LoopFetchResult> {
   if (!opts.tableId) return { items: [], totalItems: 0 }
   const cellFilter = opts.cellFilter ?? null
-  const cellSearch = opts.cellSearch ?? null
 
-  const table = await fetchDataTableProjection(db, opts.tableId)
+  const { rows: tableRows } = await db<DataTableProjectionRow>`
+    select kind, fields_json
+    from data_tables
+    where id = ${opts.tableId}
+      and deleted_at is null
+    limit 1
+  `
+  const table = tableRows[0]
   if (!table) return { items: [], totalItems: 0 }
   const fields = normalizeDataTableFields(table.fields_json)
-  const localized = hasLocalizedDataFields(fields)
-  if (localized && !opts.localization?.translations) throw new LocalizationError(`tables.${opts.tableId}`, 'Choose a configured content language to resolve localized data')
-  // Keep locale validation above, then avoid constructing an empty `IN ()`.
-  if (opts.selectedRowIds?.size === 0) return { items: [], totalItems: 0 }
-  // Derived texts must be filtered and ordered before pagination. Admin row
-  // visibility uses this same sequence, so counts cannot expose hidden rows.
-  if (localized || opts.readableRowIds || opts.selectedRowIds || (cellSearch && !canUseCellSearchSql(cellSearch))) {
-    const direction = opts.direction === 'asc' ? 'asc' : 'desc'
-    const orderBy: OrderColumn = ALLOWED_ORDER_BY.has(opts.orderBy as OrderColumn) ? opts.orderBy as OrderColumn : 'publishedAt'
-    const orderCell = parseCellOrder(opts.orderBy)
-    const dataKind = table.kind === 'data' || opts.drafts === true
-    const sqlRows = dataKind
-      ? await fetchDataKindRowPage(db, orderBy, direction, {
-        tableId: opts.tableId,
-        limit: 2147483647,
-        offset: 0,
-        filter: null,
-        orderCell: null,
-        excludeUnpublished: table.kind !== 'data',
-        selectedRowIds: opts.selectedRowIds,
-      })
-      : await fetchPublishedDataRowPage(db, orderBy, direction, {
-        tableId: opts.tableId,
-        limit: 2147483647,
-        offset: 0,
-        filter: null,
-        orderCell: null,
-        selectedRowIds: opts.selectedRowIds,
-      })
-    const visibleRows = sqlRows.filter(row => !opts.readableRowIds || opts.readableRowIds.has(row.row_id))
-    const projectedRows = visibleRows.map(row => ({ ...row, cells_json: opts.localization
-      ? projectLocalizedDataCells(row.cells_json, fields, opts.localization, `rows.${row.row_id}.cells`) : row.cells_json }))
-    const scores = new Map<string, number>()
-    const matching = projectedRows.filter(row => {
-      if (cellFilter && !matchesCellFilter(row.cells_json, cellFilter)) return false
-      const score = cellSearch ? scoreCellSearch(row.cells_json, cellSearch) : 1
-      scores.set(row.row_id, score)
-      return score > 0
-    })
-    if (orderCell) {
-      // Preserve numeric field semantics from cellOrderSql when projection or
-      // row authorization requires the same ordering in memory.
-      const numeric = fields.some(field => field.id === orderCell.field && field.type === 'number')
-      const orderValue = (value: unknown) => numeric
-        ? typeof value === 'number' && Number.isFinite(value) ? value : null
-        : value ?? ''
-      matching.sort((a, b) => compareDataCellValues(orderValue(a.cells_json[orderCell.field]), orderValue(b.cells_json[orderCell.field]), opts.localization?.language, direction)
-        || a.row_id.localeCompare(b.row_id))
-    }
-    // Stable sorting retains the configured source order for equal scores.
-    if (cellSearch?.configuration.rank === 'score') {
-      const tieField = cellSearch.configuration.tieBreakField
-      matching.sort((a, b) => scores.get(b.row_id)! - scores.get(a.row_id)!
-        || (tieField ? String(a.cells_json[tieField] ?? '').localeCompare(String(b.cells_json[tieField] ?? ''), opts.localization?.language) : 0))
-    }
-    const page = matching.slice(opts.offset, opts.offset + opts.limit)
-    const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds(page, fields))
-    return {
-      items: page.map(row => dataKind ? dataKindRowToLoopItem(row as DataKindRowSqlRow, mediaPathMap, fields) : rowToLoopItem(row as PublishedDataRowSqlRow, mediaPathMap, fields)),
-      totalItems: matching.length,
-    }
-  }
-
 
   // `orderBy` is either one of the whitelisted columns or `cell:<fieldId>`,
   // in which case the sort runs on the row's own cell (the field name binds
@@ -305,20 +463,26 @@ export async function fetchPublishedDataRowItems(
   if (table.kind === 'data' || opts.drafts) {
     // The count must apply the same condition, or pagination advertises rows
     // the page query filters out.
-    const totalItems = await countDataKindRows(db, {
-      tableId: opts.tableId,
-      filter: cellFilter,
-      search: cellSearch,
-      excludeUnpublished,
-    })
+    const dataCountCell = cellFilter
+      ? cellFilterSql({ filter: cellFilter, dialect: db.dialect, column: 'data_rows.cells_json', nextParamIndex: 2 })
+      : null
+    const { rows: countRows } = await db.unsafe<{ total: number }>(
+      `select count(*) as total
+       from data_rows
+       where data_rows.table_id = ${positionalParam(db, 1)}
+         and data_rows.deleted_at is null
+         ${excludeUnpublished ? "and data_rows.status <> 'unpublished'" : ''}
+         ${dataCountCell ? `and ${dataCountCell.sql}` : ''}`,
+      [opts.tableId, ...(dataCountCell?.params ?? [])],
+    )
+    const totalItems = Number(countRows[0]?.total ?? 0)
     if (totalItems === 0) return { items: [], totalItems: 0 }
 
-    const sqlRows = await fetchDataKindRowPage(db, orderBy, direction, {
+    const sqlRows = await fetchDataKindPage(db, orderBy, direction, {
       tableId: opts.tableId,
       limit: opts.limit,
       offset: opts.offset,
       filter: cellFilter,
-      search: cellSearch,
       orderCell,
       excludeUnpublished,
     })
@@ -330,19 +494,27 @@ export async function fetchPublishedDataRowItems(
   }
 
   // Post-type path (default): only published rows, joined to active version.
-  const totalItems = await countPublishedPostRows(db, {
-    tableId: opts.tableId,
-    filter: cellFilter,
-    search: cellSearch,
-  })
+  const postCountCell = cellFilter
+    ? cellFilterSql({ filter: cellFilter, dialect: db.dialect, column: 'data_row_versions.cells_json', nextParamIndex: 2 })
+    : null
+  const { rows: countRows } = await db.unsafe<{ total: number }>(
+    `select count(*) as total
+     from data_rows
+     join data_row_versions on data_row_versions.id = data_rows.active_version_id
+     where data_rows.table_id = ${positionalParam(db, 1)}
+       and data_rows.status = 'published'
+       and data_rows.deleted_at is null
+       ${postCountCell ? `and ${postCountCell.sql}` : ''}`,
+    [opts.tableId, ...(postCountCell?.params ?? [])],
+  )
+  const totalItems = Number(countRows[0]?.total ?? 0)
   if (totalItems === 0) return { items: [], totalItems: 0 }
 
-  const sqlRows = await fetchPublishedDataRowPage(db, orderBy, direction, {
+  const sqlRows = await fetchPage(db, orderBy, direction, {
     tableId: opts.tableId,
     limit: opts.limit,
     offset: opts.offset,
     filter: cellFilter,
-    search: cellSearch,
     orderCell,
   })
   const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds(sqlRows, fields))
@@ -361,7 +533,6 @@ export const DataRowsSource: LoopEntitySource = {
   id: 'data.rows',
   label: 'Data rows',
   description: 'Loop published rows in a data table (posts, products, etc.).',
-  queryFilterKeys: ['searchText', 'cellValue', 'rowIds'],
 
   filterSchema: {
     tableId: {
@@ -396,7 +567,6 @@ export const DataRowsSource: LoopEntitySource = {
       type: 'text',
       label: 'Value',
     },
-    searchText: { type: 'text', label: 'Search text' },
   },
 
   orderByOptions: [
@@ -437,9 +607,6 @@ export const DataRowsSource: LoopEntitySource = {
       limit: ctx.limit,
       offset: ctx.offset,
       cellFilter: parseCellFilter(ctx.filters),
-      cellSearch: parseCellSearch(ctx.filters, ctx.localization?.language),
-      selectedRowIds: ctx.filters.rowIds === undefined ? undefined : new Set(parseValue(Type.Array(Type.String({ maxLength: 256 }), { maxItems: 1000 }), ctx.filters.rowIds)),
-      localization: ctx.localization,
     })
   },
 
@@ -447,8 +614,9 @@ export const DataRowsSource: LoopEntitySource = {
     // Editor-side preview is handled by the canvas via `useLoopPreviewItems`:
     // it first calls the admin endpoint `/data/tables/:id/loop-preview` to
     // fetch real published rows via `fetchPublishedDataRowItems` (this file),
-    // using the canonical page language. Empty sources have no real entries;
-    // this synchronous contract never manufactures representative row values.
+    // and falls back to synthetic preview items from `dataTablePreviewToLoopItem`
+    // when there are no published rows. This source's synchronous `preview()`
+    // returns [] so no synthetic placeholder data leaks from the server source.
     return []
   },
 }

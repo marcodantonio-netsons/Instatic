@@ -21,8 +21,12 @@ import { makeModule, makeRegistry, makePage, makeSite } from '../publisher/helpe
 
 describe('buildSiteCssBundle', () => {
   const styledTextDef = makeModule('base.text', {
-    assets: { css: 'h1 { color: black; }' },
-    render: (_props, _children) => ({ html: '<h1>Hello</h1>' }),
+    render: (_props, _children) => ({
+      html: '<h1>Hello</h1>',
+      // Plugins MAY emit module CSS via render(); base modules don't, but the
+      // bundle builder must handle both. This stand-in proves the path works.
+      css: 'h1 { color: black; }',
+    }),
   })
   const registry = makeRegistry({ 'base.text': styledTextDef })
   const colorFramework = {
@@ -52,7 +56,7 @@ describe('buildSiteCssBundle', () => {
     })
     site.pages = [page]
 
-    const bundle = buildSiteCssBundle(site, registry, site.pages[0])
+    const bundle = buildSiteCssBundle(site, registry)
 
     expect(bundle.reset.bundle).toBe('reset')
     expect(bundle.framework.bundle).toBe('framework')
@@ -70,8 +74,8 @@ describe('buildSiteCssBundle', () => {
     const page = makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })
     site.pages = [page]
 
-    const bundle = buildSiteCssBundle(site, registry, site.pages[0])
-    expect(bundle.reset.content).toContain(':where(*), ::before, ::after { box-sizing: border-box; }')
+    const bundle = buildSiteCssBundle(site, registry)
+    expect(bundle.reset.content).toContain(':where(*, *::before, *::after) { box-sizing: border-box; }')
     expect(bundle.reset.content).toContain('font-family: system-ui')
   })
 
@@ -84,7 +88,7 @@ describe('buildSiteCssBundle', () => {
       makePage({ id: 'p3', root: { moduleId: 'base.text', props: { text: 'C' } } }),
     ]
 
-    const bundle = buildSiteCssBundle(site, registry, site.pages[0])
+    const bundle = buildSiteCssBundle(site, registry)
     const occurrences = bundle.framework.content.match(/h1 \{ color: black; \}/g) ?? []
     expect(occurrences.length).toBe(1)
   })
@@ -114,7 +118,7 @@ describe('buildSiteCssBundle', () => {
       }),
     ]
 
-    const bundle = buildSiteCssBundle(site, registry, site.pages[0])
+    const bundle = buildSiteCssBundle(site, registry)
     expect(bundle.style.content).toContain('.hero')
     expect(bundle.style.content).toContain('font-size: 48px')
   })
@@ -151,7 +155,7 @@ describe('buildSiteCssBundle', () => {
       ],
     })
 
-    const bundle = buildSiteCssBundle(site, registry, site.pages[0])
+    const bundle = buildSiteCssBundle(site, registry)
 
     expect(bundle.framework.content).toContain('--primary: hsla(238, 100%, 62%, 1);')
     expect(bundle.framework.content).toContain('.text-primary')
@@ -193,7 +197,7 @@ describe('buildSiteCssBundle', () => {
     ]
     site.pages = [makePage({ root: { moduleId: 'base.text', props: { text: 'Hi' } } })]
 
-    const bundle = buildSiteCssBundle(site, registry, site.pages[0])
+    const bundle = buildSiteCssBundle(site, registry)
 
     // Sorted by path ascending: a-first.css before b-second.css.
     const firstIdx = bundle.userStyles.content.indexOf(':root { --brand: tomato; }')
@@ -210,7 +214,7 @@ describe('buildSiteCssBundle', () => {
   it('userStyles.css is empty when no user stylesheets exist', () => {
     const site = makeSite()
     site.pages = [makePage({ root: { moduleId: 'base.text', props: { text: 'X' } } })]
-    const bundle = buildSiteCssBundle(site, registry, site.pages[0])
+    const bundle = buildSiteCssBundle(site, registry)
     expect(bundle.userStyles.content).toBe('')
   })
 
@@ -220,8 +224,8 @@ describe('buildSiteCssBundle', () => {
     site1.pages = [makePage({ root: { moduleId: 'base.text', props: { text: 'X' } } })]
     site2.pages = [makePage({ root: { moduleId: 'base.text', props: { text: 'X' } } })]
 
-    const bundle1 = buildSiteCssBundle(site1, registry, site1.pages[0])
-    const bundle2 = buildSiteCssBundle(site2, registry, site2.pages[0])
+    const bundle1 = buildSiteCssBundle(site1, registry)
+    const bundle2 = buildSiteCssBundle(site2, registry)
 
     expect(bundle1.reset.hash).toBe(bundle2.reset.hash)
     expect(bundle1.framework.hash).toBe(bundle2.framework.hash)
@@ -232,7 +236,7 @@ describe('buildSiteCssBundle', () => {
   it('rotates the userStyles hash when user stylesheets change (the others stay)', () => {
     const baseSite = makeSite()
     baseSite.pages = [makePage({ root: { moduleId: 'base.text', props: { text: 'X' } } })]
-    const before = buildSiteCssBundle(baseSite, registry, baseSite.pages[0])
+    const before = buildSiteCssBundle(baseSite, registry)
 
     const editedSite = makeSite()
     editedSite.pages = baseSite.pages
@@ -247,7 +251,7 @@ describe('buildSiteCssBundle', () => {
         updatedAt: now,
       },
     ]
-    const after = buildSiteCssBundle(editedSite, registry, editedSite.pages[0])
+    const after = buildSiteCssBundle(editedSite, registry)
 
     expect(after.reset.hash).toBe(before.reset.hash)
     expect(after.framework.hash).toBe(before.framework.hash)
@@ -258,7 +262,7 @@ describe('buildSiteCssBundle', () => {
   it('rotates the style hash when user classes change (the others stay)', () => {
     const baseSite = makeSite()
     baseSite.pages = [makePage({ root: { moduleId: 'base.text', props: { text: 'X' } } })]
-    const before = buildSiteCssBundle(baseSite, registry, baseSite.pages[0])
+    const before = buildSiteCssBundle(baseSite, registry)
 
     const editedSite = makeSite()
     editedSite.pages = [
@@ -283,7 +287,7 @@ describe('buildSiteCssBundle', () => {
         updatedAt: 0,
       },
     }
-    const after = buildSiteCssBundle(editedSite, registry, editedSite.pages[0])
+    const after = buildSiteCssBundle(editedSite, registry)
 
     expect(after.reset.hash).toBe(before.reset.hash)
     expect(after.framework.hash).toBe(before.framework.hash)
@@ -308,7 +312,7 @@ describe('buildSiteCssBundle', () => {
         }),
       ],
     })
-    const before = buildSiteCssBundle(baseSite, registry, baseSite.pages[0])
+    const before = buildSiteCssBundle(baseSite, registry)
 
     const editedSite = makeSite({
       settings: {
@@ -327,7 +331,7 @@ describe('buildSiteCssBundle', () => {
       classes: generateFrameworkColorUtilityClasses(colorFramework),
       pages: baseSite.pages,
     })
-    const after = buildSiteCssBundle(editedSite, registry, editedSite.pages[0])
+    const after = buildSiteCssBundle(editedSite, registry)
 
     expect(after.reset.hash).toBe(before.reset.hash)
     expect(after.framework.hash).not.toBe(before.framework.hash)

@@ -18,7 +18,6 @@
  */
 
 import { nanoid } from 'nanoid'
-import { Value } from '@core/utils/typeboxHelpers'
 import type { StyleRule } from './styleRule'
 
 /**
@@ -54,11 +53,32 @@ export function cloneScopedClassesForNodeMap(
     const newId = nanoid()
     classIdRemap.set(cls.id, newId)
     added.push({
-      ...Value.Clone(cls),
+      ...cls,
       id: newId,
       scope: { ...cls.scope, nodeId: newScopeNodeId },
-      // Clone the complete definition, including nested grouping and at-rule
-      // metadata. Conditions remain references to the shared site registry.
+      styles: { ...cls.styles },
+      ...(cls.stylePriorities
+        ? { stylePriorities: { ...cls.stylePriorities } }
+        : {}),
+      // Deep-clone every per-context override bag so the clone owns independent
+      // maps — the bare `...cls` spread would share the same bag objects with
+      // the source rule (the shared-reference hazard F-0005 addresses for
+      // scoped styles). Custom conditions reference the shared site-level
+      // registry by id, so cloning the bags is sufficient.
+      contextStyles: Object.fromEntries(
+        Object.entries(cls.contextStyles).map(([ctx, s]) => [ctx, { ...s }]),
+      ),
+      ...(cls.contextStylePriorities
+        ? {
+            contextStylePriorities: Object.fromEntries(
+              Object.entries(cls.contextStylePriorities).map(([ctx, priorities]) => [
+                ctx,
+                { ...priorities },
+              ]),
+            ),
+          }
+        : {}),
+      ...(cls.tags !== undefined ? { tags: [...cls.tags] } : {}),
       createdAt: now,
       updatedAt: now,
     })

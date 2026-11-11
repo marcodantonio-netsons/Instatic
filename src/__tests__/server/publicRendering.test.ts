@@ -74,29 +74,31 @@ function makeFakeDb(
       const row = runtimeAssets.find((asset) => asset.public_path === values[0])
       return { rows: row ? [row as Row] : [], rowCount: row ? 1 : 0 }
     }
-    if (!normalized.includes('site_snapshots.site_json') && normalized.includes('data_row_versions.site_snapshot_id') && normalized.includes('data_row_versions.slug =')) {
-      const page = activeSnapshot?.site.pages.find((candidate) => candidate.slug === values[0])
+    // getPublishedPageRouteMetadataBySlug — page identity without site_json
+    if (normalized.includes("data_rows.table_id = 'pages'") && normalized.includes('runtime_assets_json') && !normalized.includes('site_snapshots.site_json')) {
+      const page = activeSnapshot?.site.pages.find((candidate) => candidate.slug === String(values[0] ?? ''))
       return {
-        rows: activeSnapshot && page
-          ? [{ row_id: page.id, site_snapshot_id: activeSnapshot.siteSnapshotId, runtime_assets_json: activeSnapshot.runtimeAssets ?? null } as unknown as Row]
+        rows: page
+          ? [{ row_id: page.id, site_snapshot_id: activeSnapshot!.siteSnapshotId, runtime_assets_json: null } as unknown as Row]
           : [],
-        rowCount: activeSnapshot && page ? 1 : 0,
+        rowCount: page ? 1 : 0,
       }
     }
-    // getPublishedPageBySlug / getLatestPublishedSiteSnapshot — joins
-    // data_row_versions to site_snapshots
+
+    // getLatestPublishedSiteSnapshot / getPublishedPageBySlug
     if (normalized.includes('site_snapshots.site_json')) {
+      if (!activeSnapshot && normalized.includes('data_row_versions.slug =')) {
+        throw new Error('Unexpected full page snapshot read without route metadata')
+      }
       return {
-        rows: activeSnapshot
-          ? [{
+        rows: activeSnapshot ? [{
               row_id: activeSnapshot.pageRowId,
               site_snapshot_id: activeSnapshot.siteSnapshotId,
               site_json: activeSnapshot.site,
               runtime_assets_json: activeSnapshot.runtimeAssets ?? null,
               importmap_body: activeSnapshot.runtimePackageImportmap?.body ?? null,
               importmap_sha256: activeSnapshot.runtimePackageImportmap?.sha256 ?? null,
-            } as unknown as Row]
-          : [],
+            } as unknown as Row] : [],
         rowCount: activeSnapshot ? 1 : 0,
       }
     }
@@ -155,7 +157,6 @@ describe('public rendering', () => {
       tableId: 'tbl_posts',
       tableSlug: 'posts',
       tableKind: 'posts',
-      tableFields: [],
       tableRouteBase: '/blog',
       versionNumber: 1,
       cells: { title: 'Hello' },
@@ -236,7 +237,6 @@ describe('public rendering', () => {
     tableId: 'tbl_posts',
     tableSlug: 'posts',
     tableKind: 'posts',
-    tableFields: [],
     tableRouteBase: '/blog',
     versionNumber: 1,
     slug: 'hello',
@@ -429,7 +429,7 @@ describe('public rendering', () => {
     const { html } = await renderPublishedSnapshot(snap, { db: makeFakeDb(snap) })
     expect(html).toMatch(/<link rel="stylesheet" href="\/_instatic\/css\/reset-[a-f0-9]{12}\.css">/)
     // No inline reset block — site-wide CSS lives in the external bundle.
-    expect(html).not.toContain(':where(*), ::before, ::after')
+    expect(html).not.toContain(':where(*, *::before, *::after)')
   })
 
   it('serves the reset bundle file from /_instatic/css/<filename> with immutable cache', async () => {
@@ -452,7 +452,7 @@ describe('public rendering', () => {
     expect(cssRes.headers.get('cache-control')).toContain('immutable')
     expect(cssRes.headers.get('cache-control')).toContain('max-age=31536000')
     const cssBody = await cssRes.text()
-    expect(cssBody).toContain(':where(*), ::before, ::after { box-sizing: border-box; }')
+    expect(cssBody).toContain(':where(*, *::before, *::after) { box-sizing: border-box; }')
   })
 
   it('returns 404 for stale CSS hashes so cached HTML refetches the page', async () => {

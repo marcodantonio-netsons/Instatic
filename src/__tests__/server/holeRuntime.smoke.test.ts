@@ -197,7 +197,7 @@ describe('HOLE_RUNTIME_JS — runtime behaviour with mock IntersectionObserver',
 
     ;(globalThis as Record<string, unknown>).fetch = (url: string) => {
       fetchedUrls.push(url)
-      return Promise.resolve({ text: () => Promise.resolve('') })
+      return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve('') })
     }
     ;(globalThis as Record<string, unknown>).IntersectionObserver = class MockIO {
       constructor(callback: (entries: IntersectionObserverEntry[]) => void) {
@@ -223,7 +223,7 @@ describe('HOLE_RUNTIME_JS — runtime behaviour with mock IntersectionObserver',
     }
   })
 
-  it('notifies inserted-content consumers once after a valid replacement, not on failure or stale output', async () => {
+  it('notifies inserted-content consumers only after a valid replacement', async () => {
     document.body.innerHTML = `
       <instatic-hole id="hole-success" data-instatic-hole="success" data-instatic-version="1"><div class="sk">success</div></instatic-hole>
       <instatic-hole id="hole-failure" data-instatic-hole="failure" data-instatic-version="1"><div class="sk">failure</div></instatic-hole>

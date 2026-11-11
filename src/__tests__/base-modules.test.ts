@@ -32,14 +32,12 @@ import { CanvasDocumentContext } from '@site/canvas/CanvasContexts'
 import { TextModule } from '@modules/base/text'
 import { ButtonModule } from '@modules/base/button'
 import { ContainerModule } from '@modules/base/container'
-import { DisclosureModule } from '@modules/base/disclosure'
 import { LoopModule } from '@modules/base/loop'
 import { ImageModule } from '@modules/base/image'
 import { SvgModule } from '@modules/base/svg'
 import { VideoModule } from '@modules/base/video'
 import { ListModule } from '@modules/base/list'
 import { LinkModule } from '@modules/base/link'
-import { PreferenceModule } from '@modules/base/preference'
 import { BodyModule } from '@modules/base/body'
 import { VisualComponentRefModule } from '@modules/base/visualComponentRef'
 import { SlotInstanceModule } from '@modules/base/slotInstance'
@@ -53,14 +51,12 @@ import { SlotOutletModule } from '@modules/base/slotOutlet'
 runModuleConformanceSuite(TextModule)
 runModuleConformanceSuite(ButtonModule)
 runModuleConformanceSuite(ContainerModule)
-runModuleConformanceSuite(DisclosureModule)
 runModuleConformanceSuite(LoopModule)
 runModuleConformanceSuite(ImageModule)
 runModuleConformanceSuite(SvgModule)
 runModuleConformanceSuite(VideoModule)
 runModuleConformanceSuite(ListModule)
 runModuleConformanceSuite(LinkModule)
-runModuleConformanceSuite(PreferenceModule)
 runModuleConformanceSuite(VisualComponentRefModule)
 runModuleConformanceSuite(SlotInstanceModule)
 runModuleConformanceSuite(SlotOutletModule)
@@ -167,27 +163,21 @@ describe('base.visual-component-ref and slot modules — contract specifics', ()
 // ---------------------------------------------------------------------------
 
 describe('base.loop — module contract specifics', () => {
-  it('keeps source controls specialized and loading labels in the native text schema', () => {
+  it('uses dynamic loop properties outside the generic schema renderer', () => {
     expect(LoopModule.id).toBe('base.loop')
     expect(LoopModule.canHaveChildren).toBe(true)
     expect(LoopModule.publishBehavior).toBe('special')
-    expect(Object.keys(LoopModule.schema).sort()).toEqual(['emptyLabel', 'loadMoreLabel', 'loadMoreMode', 'loadingLabel', 'retryLabel'])
+    expect(Object.keys(LoopModule.schema)).toEqual([])
     expect(Object.keys(LoopModule.defaults).sort()).toEqual([
       'customTag',
       'direction',
-      'emptyLabel',
       'filters',
       'htmlAttributes',
       'limit',
-      'loadMoreLabel',
-      'loadMoreMode',
-      'loadingLabel',
       'offset',
       'orderBy',
       'pageSize',
       'pagination',
-      'queryBindings',
-      'retryLabel',
       'sourceId',
       'tag',
     ])
@@ -954,15 +944,13 @@ describe('base.svg — render() specifics', () => {
 // ---------------------------------------------------------------------------
 
 describe('base.video — render() specifics', () => {
-  it('exposes video source, semantic playback role, poster and playback options', () => {
+  it('exposes the v4 schema (single videoUrl, playback, poster, perf hints, title, noRelatedVideos)', () => {
     expect(Object.keys(VideoModule.schema).sort()).toEqual([
       'autoplay',
       'controls',
-      'htmlAttributes',
       'loop',
       'muted',
       'noRelatedVideos',
-      'playbackRole',
       'playsinline',
       'poster',
       'preload',
@@ -1013,7 +1001,7 @@ describe('base.video — render() specifics', () => {
   })
 
   it('wraps the YouTube iframe in a poster facade when a poster is set', () => {
-    const { html, assetUsage } = renderModule(VideoModule, {
+    const { html, css } = renderModule(VideoModule, {
       videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
       poster: '/uploads/hero.webp',
     })
@@ -1024,8 +1012,7 @@ describe('base.video — render() specifics', () => {
     expect(html).toContain('fetchpriority="high"')
     expect(html).toContain('class="bv-yt-frame"')
     expect(html).toContain('loading="lazy"')
-    expect(VideoModule.assets?.css).toContain('.bv-yt')
-    expect(assetUsage?.css).not.toBe(false)
+    expect(css).toContain('.bv-yt')
   })
 
   it('renders a <video> element when videoUrl is a library path', () => {
@@ -1061,15 +1048,11 @@ describe('base.video — render() specifics', () => {
     expect(html).not.toContain('alert(1)')
   })
 
-  it('keeps facade styles static and selects them through render asset usage', () => {
-    const css = VideoModule.assets?.css
-    expect(css).toContain('.bv-yt-frame')
+  it('css field is props-independent — no prop interpolation (Constraint #310)', () => {
     const out1 = VideoModule.render(VideoModule.defaults, [])
-    const out2 = VideoModule.render({ ...VideoModule.defaults, videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', poster: '/uploads/hero.webp', title: 'Authored player caption' }, [])
-    expect(out1.assetUsage?.css).toBe(false)
-    expect(out2.assetUsage?.css).not.toBe(false)
-    expect(VideoModule.assets?.css).toBe(css)
-    expect(css).not.toContain('Authored player caption')
+    const out2 = VideoModule.render({ ...VideoModule.defaults, borderRadius: 99 }, [])
+    // css field must be the same regardless of props
+    expect(out1.css).toBe(out2.css)
   })
 
   it('does not access DOM globals', () => {
@@ -1126,12 +1109,11 @@ describe('base.video — render() specifics', () => {
     expect(html).not.toContain('title="YouTube video"')
   })
 
-  it('does not invent a title when none is authored', () => {
-    expect(VideoModule.defaults.title).toBe('')
+  it('title prop defaults to "YouTube video" when not set', () => {
     const { html } = renderModule(VideoModule, {
       videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
     })
-    expect(html).not.toMatch(/\stitle=/)
+    expect(html).toContain('title="YouTube video"')
   })
 
   // --- noRelatedVideos prop ---

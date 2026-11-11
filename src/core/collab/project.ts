@@ -90,13 +90,6 @@ export function projectSiteDoc(doc: Y.Doc): ProjectedSiteDoc {
     }
   }
 
-  return { shell, rosters: projectSiteRosters(doc) }
-}
-
-/** Read authoritative roster membership/order without cloning shell values.
- * Relay membership observers need only IDs; styles, files and settings can
- * be much larger than the roster and remain untouched on this path. */
-export function projectSiteRosters(doc: Y.Doc): ProjectedSiteDoc['rosters'] {
   const rosters = rostersMap(doc)
   const pageMembers = rosterIds(rosters, 'pages')
   const orderSrc = rosters.get('pageOrder')
@@ -113,8 +106,11 @@ export function projectSiteRosters(doc: Y.Doc): ProjectedSiteDoc['rosters'] {
   pages.push(...[...pageMembers].filter((id) => !seen.has(id)).sort())
 
   return {
-    pages,
-    components: [...rosterIds(rosters, 'components')].sort(),
-    layouts: [...rosterIds(rosters, 'layouts')].sort(),
+    shell,
+    rosters: {
+      pages,
+      components: [...rosterIds(rosters, 'components')].sort(),
+      layouts: [...rosterIds(rosters, 'layouts')].sort(),
+    },
   }
 }

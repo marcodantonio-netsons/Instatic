@@ -150,7 +150,6 @@ function buildClassicRuntimeFiles(
       placement: script.config.placement,
       timing: script.config.timing,
       priority: script.config.priority,
-      ...(script.config.resourceOrigins ? { resourceOrigins: script.config.resourceOrigins } : {}),
     })
   }
 
@@ -454,7 +453,6 @@ export async function buildSiteRuntimeScripts(
           placement: script.config.placement,
           timing: script.config.timing,
           priority: script.config.priority,
-          ...(script.config.resourceOrigins ? { resourceOrigins: script.config.resourceOrigins } : {}),
         }
       })
       .filter((script): script is PublishedRuntimeScriptAsset => script !== null)

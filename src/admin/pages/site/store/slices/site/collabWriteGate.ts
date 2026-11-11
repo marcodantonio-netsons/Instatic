@@ -16,9 +16,9 @@
  * This module owns only the gate registry. `collabBinding` owns the docs.
  */
 
-interface ProviderGate {
+export interface ProviderGate {
   synced: boolean
-  /** Resolves after this doc's first sync has reached the editor store. */
+  /** Resolves on this doc's first sync. */
   whenSynced: Promise<unknown>
 }
 
@@ -45,7 +45,7 @@ export function clearProviderGates(): void {
   providerGates.clear()
 }
 
-/** True when at least one bound doc has not finished syncing into the store. */
+/** True when at least one bound doc has not finished its first sync. */
 export function anyGateUnsynced(): boolean {
   for (const gate of providerGates.values()) {
     if (!gate.synced) return true

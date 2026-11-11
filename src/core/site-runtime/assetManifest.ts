@@ -1,19 +1,16 @@
 import type {
   PublishedPageRuntimeAssets,
   PublishedRuntimeScriptAsset,
-  SiteScriptFormat,
   SiteScriptPlacement,
 } from './schemas'
-import { normalizeResourceOrigins } from './resourceOrigins'
-import { escapeHtml } from '@core/html-sanitize'
 
-/** Only scripts that actually emit a tag may grant resource origins. */
-export function publishedRuntimeResourceOrigins(runtimeAssets: PublishedPageRuntimeAssets | undefined) {
-  return (['head', 'body-end'] as const).flatMap((placement) =>
-    collectPublishedRuntimeScripts(runtimeAssets, placement).flatMap((asset) => {
-      const origins = normalizeResourceOrigins(asset.resourceOrigins)
-      return origins ? [origins] : []
-    }))
+function escapeAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;')
 }
 
 function isSelfHostedRuntimeAssetUrl(src: string): boolean {
@@ -27,36 +24,31 @@ function isSelfHostedRuntimeAssetUrl(src: string): boolean {
   return pathOnly.split('/').every((segment) => segment !== '..')
 }
 
-/** Scripts whose URLs are valid for the native, self-hosted tag emitter. */
-export function collectPublishedRuntimeScripts(
+function runtimeScriptsForPlacement(
   runtimeAssets: PublishedPageRuntimeAssets | undefined,
-  placement?: SiteScriptPlacement,
-): Array<PublishedRuntimeScriptAsset & { format: SiteScriptFormat }> {
+  placement: SiteScriptPlacement,
+): PublishedRuntimeScriptAsset[] {
   return [...(runtimeAssets?.scripts ?? [])]
-    .filter((asset) => placement === undefined || asset.placement === placement)
+    .filter((asset) => asset.placement === placement)
     .filter((asset) => isSelfHostedRuntimeAssetUrl(asset.src))
-    .map((asset) => ({ ...asset, format: asset.format ?? 'module' }))
     .sort((a, b) => a.priority - b.priority || a.src.localeCompare(b.src))
 }
 
 export function hasPublishedRuntimeScripts(runtimeAssets: PublishedPageRuntimeAssets | undefined): boolean {
-  return collectPublishedRuntimeScripts(runtimeAssets).length > 0
+  return (runtimeAssets?.scripts ?? []).some((asset) => isSelfHostedRuntimeAssetUrl(asset.src))
 }
 
 export function scriptTagsForRuntimeAssets(
   runtimeAssets: PublishedPageRuntimeAssets | undefined,
   placement: SiteScriptPlacement,
 ): string {
-  return collectPublishedRuntimeScripts(runtimeAssets, placement)
+  return runtimeScriptsForPlacement(runtimeAssets, placement)
     .map((asset) => {
       const integrity = asset.integrity
-        ? ` integrity="${escapeHtml(asset.integrity)}" crossorigin="anonymous"`
+        ? ` integrity="${escapeAttribute(asset.integrity)}" crossorigin="anonymous"`
         : ''
       const type = asset.format === 'classic' ? '' : ' type="module"'
-      // Native defer keeps classic files in global scope and priority order,
-      // while waiting for the document to finish parsing.
-      const defer = asset.format === 'classic' && asset.timing === 'dom-ready' ? ' defer' : ''
-      return `  <script${type}${defer} src="${escapeHtml(asset.src.trim())}" data-instatic-runtime-script="${escapeHtml(asset.fileId)}"${integrity}></script>`
+      return `  <script${type} src="${escapeAttribute(asset.src.trim())}" data-instatic-runtime-script="${escapeAttribute(asset.fileId)}"${integrity}></script>`
     })
     .join('\n')
 }

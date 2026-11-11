@@ -8,8 +8,8 @@
 import { normalizeHtmlAttributes } from '@core/htmlAttributes'
 import { escapeHtml } from './utils'
 
-export function htmlAttributesAttr(value: unknown, generatedNames: readonly string[] = []): string {
-  return Object.entries(normalizeHtmlAttributes(value, generatedNames))
+export function htmlAttributesAttr(value: unknown): string {
+  return Object.entries(normalizeHtmlAttributes(value))
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([name, attrValue]) => ` ${name}="${escapeHtml(attrValue)}"`)
     .join('')

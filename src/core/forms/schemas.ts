@@ -1,6 +1,4 @@
 import { Type, type Static } from '@core/utils/typeboxHelpers'
-import { PropertyConditionSchema } from '@core/module-engine-schema'
-import { FormCalculationsSchema, FormValueSchema } from '@core/forms-schema'
 
 const FormControlBindingSchema = Type.Object({
   nodeId: Type.String({ minLength: 1 }),
@@ -13,20 +11,6 @@ const FormControlBindingSchema = Type.Object({
   minLength: Type.Optional(Type.Number()),
   maxLength: Type.Optional(Type.Number()),
   pattern: Type.Optional(Type.String()),
-  conditions: Type.Optional(Type.Array(PropertyConditionSchema)),
-  requiredWhen: Type.Optional(PropertyConditionSchema),
-  disabledWhen: Type.Optional(PropertyConditionSchema),
-  minValueField: Type.Optional(Type.String()),
-  maxValueField: Type.Optional(Type.String()),
-  initialValue: Type.Optional(FormValueSchema),
-  minSelected: Type.Optional(Type.Integer({ minimum: 0 })),
-  maxSelected: Type.Optional(Type.Integer({ minimum: 0 })),
-  disabled: Type.Optional(Type.Boolean()),
-  options: Type.Optional(Type.Array(Type.String())),
-  valueSourceField: Type.Optional(Type.String()),
-  valueTargetField: Type.Optional(Type.String()),
-  syncGroup: Type.Optional(Type.String()),
-  trimOnSubmit: Type.Optional(Type.Boolean()),
 })
 
 export type FormControlBinding = Static<typeof FormControlBindingSchema>
@@ -84,7 +68,6 @@ const PublishedFormMessageSchema = Type.Object({
 export type PublishedFormMessage = Static<typeof PublishedFormMessageSchema>
 
 const PublishedFormSnapshotSchema = Type.Object({
-  calculations: Type.Optional(FormCalculationsSchema),
   pageId: Type.String({ minLength: 1 }),
   nodeId: Type.String({ minLength: 1 }),
   formId: Type.String({ minLength: 1 }),

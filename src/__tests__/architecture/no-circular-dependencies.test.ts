@@ -13,7 +13,6 @@ describe('Circular dependencies', () => {
       cmd: [
         process.execPath,
         'x',
-        '--bun',
         'madge',
         '--circular',
         '--ts-config',
@@ -32,7 +31,7 @@ describe('Circular dependencies', () => {
     if (result.exitCode !== 0) {
       throw new Error(
         `Circular dependencies found. Run the same command locally for the full graph:\n` +
-          `bun x --bun madge --circular --ts-config tsconfig.json --extensions ts,tsx src server\n\n` +
+          `bun x madge --circular --ts-config tsconfig.json --extensions ts,tsx src server\n\n` +
           output,
       )
     }

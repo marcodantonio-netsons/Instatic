@@ -91,7 +91,6 @@ import {
 import { useEditorStore } from '@site/store/store'
 import { closestReadonlyRegion, isElementLike } from './readonlyRegion'
 import { CanvasDocumentContext, CanvasFrameElementContext } from './CanvasContexts'
-import { CanvasVisitorPreferences } from './CanvasVisitorPreferences'
 import styles from './IframeFrameSurface.module.css'
 
 const IFRAME_DOCUMENT_SENTINEL = 'data-instatic-canvas-document'
@@ -658,7 +657,6 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
               <CanvasDocumentContext.Provider value={iframeDoc}>
                 {/* Editor-chrome stylesheet — UNLAYERED so it beats @layer user-authored author CSS */}
                 <EditorChromeInjector targetDocument={iframeDoc} parentDocument={document} />
-                <CanvasVisitorPreferences targetDocument={iframeDoc} />
                 {/* Author CSS — both wrapped in @layer user-authored inside the injectors */}
                 <ClassStyleInjector targetDocument={iframeDoc} viewport={viewport} />
                 <UserStylesheetInjector targetDocument={iframeDoc} viewport={viewport} />

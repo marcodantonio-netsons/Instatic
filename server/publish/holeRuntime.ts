@@ -26,9 +26,9 @@
  * by the endpoint only for `perVisitor` holes.
  *
  * When the fetch resolves, `el.outerHTML = html` swaps the placeholder with
- * the server-rendered fragment in-place. The `instatic:content` event tells
- * frontend behaviors to bind any forms and other controls inserted by the
- * fragment. No morphdom / idiomorph dependency.
+ * the server-rendered fragment in-place. The `instatic:content` event lets
+ * runtime behaviors initialize controls inserted by the fragment. No morphdom
+ * / idiomorph dependency.
  * A fetch failure is silently swallowed — the author's skeleton content in the
  * placeholder continues to show as a meaningful fallback.
  */

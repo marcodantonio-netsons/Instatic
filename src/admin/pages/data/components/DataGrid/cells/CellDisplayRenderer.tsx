@@ -12,12 +12,8 @@
  * Sibling: `CellEditorRenderer.tsx` is still used inside the inspector
  * (RowDetail) where every cell is an editable input.
  */
-import { useLocalizedData } from '@admin/pages/data/localizedData'
-import { resolveLocalizedTextValue } from '@core/data/localizedCells'
-import { LocalizationError } from '@core/localization'
 import type { ReactElement } from 'react'
 import {
-  readDisplayTitle,
   readBooleanCell,
   readFieldSchemaCell,
   readNodeTreeCell,
@@ -52,7 +48,6 @@ interface CellDisplayProps {
   tables: DataTable[]
   /** All rows in the active table — used to resolve relation labels. */
   rows: DataRow[]
-  resolveRelationTarget?: (id: string) => DataRow | null
 }
 
 // ---------------------------------------------------------------------------
@@ -313,22 +308,29 @@ function RelationDisplay({
   field,
   tables,
   rows,
-  resolveRelationTarget,
 }: {
   ids: string[]
   field: Extract<DataField, { type: 'relation' }>
   tables: DataTable[]
   rows: DataRow[]
-  resolveRelationTarget?: (id: string) => DataRow | null
 }): ReactElement {
-  const localization = useLocalizedData()
   if (ids.length === 0) return <Empty />
-  const target = tables.find(table => table.id === field.targetTableId)
+
+  // Resolve target table for primary field id.
+  const target = tables.find((t) => t.id === field.targetTableId)
+  // For same-table relations we have `rows`. Cross-table resolution is
+  // out of scope for this hook (would require an async fetch); we degrade
+  // gracefully to showing the relation id.
+  const targetRows = target?.id === field.targetTableId ? rows : []
+
   function labelFor(id: string): string {
-    const row = resolveRelationTarget?.(id) ?? rows.find(candidate => candidate.id === id && candidate.tableId === field.targetTableId)
-    if (!target || !row) return 'Related row unavailable'
-    if (target.fields.some(candidate => candidate.type === 'localizedText') && !localization?.context) return 'Choose a content language'
-    return readDisplayTitle(row.cells, target, localization?.context)
+    if (!target) return id
+    const row = targetRows.find((r) => r.id === id)
+    if (!row) return id
+    const primaryValue = row.cells[target.primaryFieldId]
+    return typeof primaryValue === 'string' && primaryValue.length > 0
+      ? primaryValue
+      : id
   }
 
   const isMulti = field.allowMultiple === true
@@ -368,14 +370,8 @@ export function CellDisplayRenderer({
   cells,
   tables,
   rows,
-  resolveRelationTarget,
 }: CellDisplayProps): ReactElement {
-  const localization = useLocalizedData()
   switch (field.type) {
-    case 'localizedText': {
-      if (!localization?.context) throw new LocalizationError(`cells.${field.id}`, 'Choose a content language to display localized data')
-      return <TextDisplay value={resolveLocalizedTextValue(cells[field.id], localization.context, `cells.${field.id}`) ?? ''} />
-    }
     case 'text': {
       return <TextDisplay value={readStringCell(cells, field.id)} />
     }
@@ -428,7 +424,7 @@ export function CellDisplayRenderer({
             const v = cells[field.id]
             return typeof v === 'string' && v.length > 0 ? [v] : []
           })()
-      return <RelationDisplay ids={ids} field={field} tables={tables} rows={rows} resolveRelationTarget={resolveRelationTarget} />
+      return <RelationDisplay ids={ids} field={field} tables={tables} rows={rows} />
     }
     case 'repeater': {
       const items = readRepeaterCell(cells, field.id)

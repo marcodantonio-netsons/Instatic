@@ -1,4 +1,3 @@
-import { FormPropsSchema, type FormProps, LabelPropsSchema, type LabelProps, InputPropsSchema, type InputProps, TextareaPropsSchema, type TextareaProps, SelectPropsSchema, type SelectProps, OptionPropsSchema, type OptionProps, OptionGroupPropsSchema, type OptionGroupProps, ChoicePropsSchema, type ChoiceProps, SubmitPropsSchema, type SubmitProps, FormMessagePropsSchema, type FormMessageProps } from './primitiveSchemas'
 /**
  * base form primitives — semantic HTML form modules.
  *
@@ -7,10 +6,8 @@ import { FormPropsSchema, type FormProps, LabelPropsSchema, type LabelProps, Inp
  */
 import type { ModuleDefinition } from '@core/module-engine'
 import { registry } from '@core/module-engine'
-import { Value } from '@core/utils/typeboxHelpers'
+import { Type, Value, type Static } from '@core/utils/typeboxHelpers'
 import { submitUsesChildren } from './content'
-import { formBehaviorControls, controlBehaviorAttrs } from './behaviorRendering'
-import { FormConditionalModule, FormOutputModule, FormLinkModule, FormStepModule, TurnstileModule } from './behaviorModules'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
 import { safeUrl } from '@modules/base/utils/escape'
 import { FORM_RUNTIME_JS } from './formRuntimeJs'
@@ -34,11 +31,137 @@ import {
 } from './FormControls'
 import {
   htmlAttributesControl,
+  HtmlAttributesPropSchemaOptions,
 } from '@modules/base/shared/htmlAttributes'
-import { htmlAttributesAttr, escapeHtml } from '@core/publisher'
-import { MODULE_GENERATED_ATTRIBUTE_NAMES } from '@core/htmlAttributes'
-import { resolveHtmlTag } from '@core/htmlAttributes'
-import { htmlTagControl, customHtmlTagControl } from '@modules/base/utils/htmlTag'
+import { htmlAttributesAttr } from '@core/publisher'
+
+const FormPropsSchema = Type.Object({
+  mode: Type.Union([Type.Literal('cms'), Type.Literal('custom')], { default: 'cms' }),
+  formId: Type.String({ default: 'form' }),
+  targetTableId: Type.String({ default: '' }),
+  action: Type.String({ default: '' }),
+  method: Type.Union([Type.Literal('get'), Type.Literal('post'), Type.Literal('dialog')], { default: 'post' }),
+  successBehavior: Type.Union([Type.Literal('message'), Type.Literal('redirect')], { default: 'message' }),
+  successMessage: Type.String({ default: 'Thanks. Your submission was received.' }),
+  redirectUrl: Type.String({ default: '' }),
+  honeypotName: Type.String({ default: 'company' }),
+  minSubmitSeconds: Type.Number({ default: 2 }),
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
+})
+
+type FormProps = Static<typeof FormPropsSchema>
+
+const LabelPropsSchema = Type.Object({
+  text: Type.String({ default: 'Label' }),
+  targetMode: Type.Union([Type.Literal('auto'), Type.Literal('explicit')], { default: 'auto' }),
+  targetId: Type.String({ default: '' }),
+})
+
+type LabelProps = Static<typeof LabelPropsSchema>
+
+const InputPropsSchema = Type.Object({
+  inputType: Type.Union([
+    Type.Literal('text'),
+    Type.Literal('email'),
+    Type.Literal('password'),
+    Type.Literal('search'),
+    Type.Literal('tel'),
+    Type.Literal('url'),
+    Type.Literal('number'),
+    Type.Literal('date'),
+    Type.Literal('time'),
+    Type.Literal('datetime-local'),
+    Type.Literal('file'),
+    Type.Literal('hidden'),
+  ], { default: 'text' }),
+  fieldId: Type.String({ default: '' }),
+  name: Type.String({ default: '' }),
+  id: Type.String({ default: '' }),
+  placeholder: Type.String({ default: '' }),
+  value: Type.String({ default: '' }),
+  required: Type.Boolean({ default: false }),
+  disabled: Type.Boolean({ default: false }),
+  readOnly: Type.Boolean({ default: false }),
+  autocomplete: Type.String({ default: '' }),
+  min: Type.String({ default: '' }),
+  max: Type.String({ default: '' }),
+  minLength: Type.Number({ default: 0 }),
+  maxLength: Type.Number({ default: 0 }),
+  pattern: Type.String({ default: '' }),
+})
+
+type InputProps = Static<typeof InputPropsSchema>
+
+const TextareaPropsSchema = Type.Object({
+  fieldId: Type.String({ default: '' }),
+  name: Type.String({ default: '' }),
+  id: Type.String({ default: '' }),
+  placeholder: Type.String({ default: '' }),
+  value: Type.String({ default: '' }),
+  required: Type.Boolean({ default: false }),
+  disabled: Type.Boolean({ default: false }),
+  readOnly: Type.Boolean({ default: false }),
+  rows: Type.Number({ default: 4 }),
+  minLength: Type.Number({ default: 0 }),
+  maxLength: Type.Number({ default: 0 }),
+})
+
+type TextareaProps = Static<typeof TextareaPropsSchema>
+
+const SelectPropsSchema = Type.Object({
+  fieldId: Type.String({ default: '' }),
+  name: Type.String({ default: '' }),
+  id: Type.String({ default: '' }),
+  required: Type.Boolean({ default: false }),
+  disabled: Type.Boolean({ default: false }),
+  multiple: Type.Boolean({ default: false }),
+})
+
+type SelectProps = Static<typeof SelectPropsSchema>
+
+const OptionPropsSchema = Type.Object({
+  value: Type.String({ default: '' }),
+  label: Type.String({ default: 'Option' }),
+  selected: Type.Boolean({ default: false }),
+  disabled: Type.Boolean({ default: false }),
+})
+
+type OptionProps = Static<typeof OptionPropsSchema>
+
+const OptionGroupPropsSchema = Type.Object({
+  label: Type.String({ default: 'Group' }),
+  disabled: Type.Boolean({ default: false }),
+})
+
+type OptionGroupProps = Static<typeof OptionGroupPropsSchema>
+
+const ChoicePropsSchema = Type.Object({
+  fieldId: Type.String({ default: '' }),
+  name: Type.String({ default: '' }),
+  id: Type.String({ default: '' }),
+  value: Type.String({ default: 'on' }),
+  checked: Type.Boolean({ default: false }),
+  required: Type.Boolean({ default: false }),
+  disabled: Type.Boolean({ default: false }),
+})
+
+type ChoiceProps = Static<typeof ChoicePropsSchema>
+
+const SubmitPropsSchema = Type.Object({
+  label: Type.String({ default: 'Submit' }),
+  disabled: Type.Boolean({ default: false }),
+  formId: Type.String({ default: '' }),
+})
+
+type SubmitProps = Static<typeof SubmitPropsSchema>
+
+const FormMessagePropsSchema = Type.Object({
+  formId: Type.String({ default: '' }),
+  kind: Type.Union([Type.Literal('status'), Type.Literal('success'), Type.Literal('error')], { default: 'status' }),
+  text: Type.String({ default: '' }),
+})
+
+type FormMessageProps = Static<typeof FormMessagePropsSchema>
 
 export const FormModule: ModuleDefinition<FormProps> = {
   id: 'base.form',
@@ -52,27 +175,11 @@ export const FormModule: ModuleDefinition<FormProps> = {
   schema: {
     mode: { type: 'select', label: 'Mode', options: [
       { label: 'CMS-native', value: 'cms' },
-      { label: 'HTML action', value: 'custom' },
-      { label: 'HTTP request', value: 'request' },
-      { label: 'Local interaction', value: 'local' },
+      { label: 'Custom action', value: 'custom' },
     ] },
-    formId: { type: 'text', label: 'Form ID', normalize: 'identifier', category: 'layout' },
-    submitTargetId: { type: 'text', label: 'Submit scroll and focus target ID', normalize: 'identifier', category: 'layout', condition: { field: 'mode', eq: 'local' } },
-    fragmentField: { type: 'text', label: 'Initial selection from URL fragment', category: 'layout', condition: { field: 'mode', eq: 'local' } },
-    stateQueryParameter: { type: 'text', label: 'Result state query parameter', category: 'layout' },
+    formId: { type: 'text', label: 'Form ID', normalize: 'identifier' },
     targetTableId: { type: 'dataTable', label: 'Target data table', condition: { field: 'mode', eq: 'cms' } },
-    action: { type: 'url', label: 'Action URL', category: 'layout', condition: { field: 'mode', in: ['custom', 'request'] } },
-    enhance: { type: 'toggle', label: 'Enable form behavior', condition: { field: 'mode', eq: 'custom' } },
-    calculations: { type: 'expressions', label: 'Derived values', category: 'layout' },
-    encoding: { type: 'select', label: 'Request encoding', condition: { field: 'mode', eq: 'request' }, options: [{ label: 'Multipart form', value: 'multipart' }, { label: 'JSON', value: 'json' }] },
-    responseSuccessField: { type: 'text', label: 'Response success field', category: 'layout', condition: { field: 'mode', eq: 'request' } },
-    responseMessageField: { type: 'text', label: 'Response message field', category: 'layout', condition: { field: 'mode', eq: 'request' } },
-    resetOnSuccess: { type: 'toggle', label: 'Reset after success' },
-    pendingMessage: { type: 'text', label: 'Pending message' },
-    errorMessage: { type: 'text', label: 'Error message' },
-    invalidMessage: { type: 'text', label: 'Invalid values message' },
-    captchaMessage: { type: 'text', label: 'Verification message' },
-    unavailableMessage: { type: 'text', label: 'Unavailable form message' },
+    action: { type: 'url', label: 'Action URL', condition: { field: 'mode', eq: 'custom' } },
     method: { type: 'select', label: 'Method', condition: { field: 'mode', eq: 'custom' }, options: [
       { label: 'GET', value: 'get' },
       { label: 'POST', value: 'post' },
@@ -83,15 +190,14 @@ export const FormModule: ModuleDefinition<FormProps> = {
       { label: 'Redirect', value: 'redirect' },
     ] },
     successMessage: { type: 'text', label: 'Success message', condition: { field: 'successBehavior', eq: 'message' } },
-    redirectUrl: { type: 'url', category: 'layout', label: 'Redirect URL', condition: { field: 'successBehavior', eq: 'redirect' } },
-    honeypotName: { type: 'text', category: 'layout', label: 'Honeypot field', condition: { field: 'mode', eq: 'cms' } },
+    redirectUrl: { type: 'url', label: 'Redirect URL', condition: { field: 'successBehavior', eq: 'redirect' } },
+    honeypotName: { type: 'text', label: 'Honeypot field', condition: { field: 'mode', eq: 'cms' } },
     minSubmitSeconds: { type: 'number', label: 'Minimum fill seconds', condition: { field: 'mode', eq: 'cms' } },
     htmlAttributes: htmlAttributesControl(),
   },
   propsSchema: FormPropsSchema,
   defaults: Value.Create(FormPropsSchema),
   component: FormEditor,
-  assets: { js: FORM_RUNTIME_JS },
   htmlTag: 'form',
   render: (props, renderedChildren) => {
     const formId = normalizeIdentifierValue(props.formId, 'form')
@@ -99,40 +205,22 @@ export const FormModule: ModuleDefinition<FormProps> = {
       `data-instatic-form-id="${formId}"`,
       `data-instatic-form-mode="${props.mode}"`,
       props.mode === 'cms' ? `data-instatic-target-table="${props.targetTableId}"` : '',
-      ['custom','request'].includes(props.mode) ? `action="${safeUrl(props.action)}"` : '',
-      ['custom','request'].includes(props.mode) ? `method="${props.mode === 'request' ? 'post' : props.method}"` : '',
-      props.mode === 'local' && props.submitTargetId ? `data-instatic-submit-target-id="${normalizeIdentifierValue(props.submitTargetId)}"` : '',
-      props.mode === 'local' && props.fragmentField ? `data-instatic-fragment-field="${props.fragmentField}"` : '',
-      props.stateQueryParameter ? `data-instatic-state-query-parameter="${props.stateQueryParameter}"` : '',
-      props.mode === 'request' && props.encoding === 'multipart' ? 'enctype="multipart/form-data"' : '',
-      `data-instatic-form-enhanced="${props.enhance}"`,
-      Object.keys(props.calculations).length ? `data-instatic-form-calculations="${escapeHtml(JSON.stringify(props.calculations))}"` : '',
-      `data-instatic-encoding="${props.encoding}"`,
-      `data-instatic-response-success-field="${props.responseSuccessField}"`,
-      `data-instatic-response-message-field="${props.responseMessageField}"`,
-      `data-instatic-reset-on-success="${props.resetOnSuccess}"`,
-      `data-instatic-pending-message="${props.pendingMessage}"`,
-      `data-instatic-error-message="${props.errorMessage}"`,
-      `data-instatic-invalid-message="${props.invalidMessage}"`,
-      `data-instatic-captcha-message="${props.captchaMessage}"`,
-      `data-instatic-unavailable-message="${props.unavailableMessage}"`,
+      props.mode === 'custom' ? `action="${safeUrl(props.action)}"` : '',
+      props.mode === 'custom' ? `method="${props.method}"` : '',
       props.successBehavior === 'message' ? `data-instatic-success-message="${props.successMessage}"` : '',
       props.successBehavior === 'redirect' ? `data-instatic-success-redirect="${safeUrl(props.redirectUrl)}"` : '',
     ].filter(Boolean).join(' ')
     // Authored attributes (progressive-enhancement hooks, ARIA, data-*) ride
     // alongside the generated form wiring instead of being dropped.
-    const authored = htmlAttributesAttr(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.form'])
+    const authored = htmlAttributesAttr(props.htmlAttributes)
     const honeypot = props.mode === 'cms'
       ? `<input type="text" name="${props.honeypotName}" autocomplete="off" tabindex="-1" data-instatic-honeypot hidden>`
       : ''
     return {
       html: `<form ${attrs}${authored}>${honeypot}${renderedChildren.join('')}</form>`,
-      // Ordinary HTML actions stay native; this instance needs no enhancement.
-      assetUsage: { js: props.mode !== 'custom' || props.enhance },
-      ...(['custom','request'].includes(props.mode) && /^https?:\/\//i.test(props.action) ? { cspSources: [
-        ...(props.mode === 'request' ? [{ directive: 'connect-src' as const, sources: [new URL(props.action).origin] }] : []),
-        { directive: 'form-action' as const, sources: [new URL(props.action).origin] },
-      ] } : {}),
+      // CMS-native forms need the browser runtime; custom-action forms are
+      // plain HTML form submissions and ship zero JS.
+      ...(props.mode === 'cms' ? { js: FORM_RUNTIME_JS } : {}),
     }
   },
 }
@@ -191,11 +279,10 @@ export const InputModule: ModuleDefinition<InputProps> = {
     ['autocomplete', props.autocomplete],
     ['min', props.min],
     ['max', props.max],
-    ['step', props.step],
     ['minlength', positiveNumber(props.minLength)],
     ['maxlength', positiveNumber(props.maxLength)],
     ['pattern', props.pattern],
-  ])}${booleanAttrs(props, ['required', 'disabled', 'readOnly'])}${controlBehaviorAttrs(props)}${htmlAttributesAttr(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.input'])}>` }),
+  ])}${booleanAttrs(props, ['required', 'disabled', 'readOnly'])}>` }),
 }
 
 export const TextareaModule: ModuleDefinition<TextareaProps> = {
@@ -208,10 +295,8 @@ export const TextareaModule: ModuleDefinition<TextareaProps> = {
   trusted: true,
   canHaveChildren: false,
   schema: {
-    ...formBehaviorControls,
-    htmlAttributes: htmlAttributesControl(),
-    fieldId: { type: 'text', category: 'layout', label: 'Field ID' },
-    name: { type: 'text', category: 'layout', label: 'Name' },
+    fieldId: { type: 'text', label: 'Field ID' },
+    name: { type: 'text', label: 'Name' },
     id: { type: 'text', label: 'ID' },
     placeholder: { type: 'text', label: 'Placeholder' },
     value: { type: 'textarea', label: 'Default value' },
@@ -235,7 +320,7 @@ export const TextareaModule: ModuleDefinition<TextareaProps> = {
     ['rows', props.rows],
     ['minlength', positiveNumber(props.minLength)],
     ['maxlength', positiveNumber(props.maxLength)],
-  ])}${booleanAttrs(props, ['required', 'disabled', 'readOnly'])}${controlBehaviorAttrs(props)}${htmlAttributesAttr(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.textarea'])}>${props.value}</textarea>` }),
+  ])}${booleanAttrs(props, ['required', 'disabled', 'readOnly'])}>${props.value}</textarea>` }),
 }
 
 export const SelectModule: ModuleDefinition<SelectProps> = {
@@ -248,10 +333,8 @@ export const SelectModule: ModuleDefinition<SelectProps> = {
   trusted: true,
   canHaveChildren: true,
   schema: {
-    ...formBehaviorControls,
-    htmlAttributes: htmlAttributesControl(),
-    fieldId: { type: 'text', category: 'layout', label: 'Field ID' },
-    name: { type: 'text', category: 'layout', label: 'Name' },
+    fieldId: { type: 'text', label: 'Field ID' },
+    name: { type: 'text', label: 'Name' },
     id: { type: 'text', label: 'ID' },
     required: { type: 'toggle', label: 'Required' },
     disabled: { type: 'toggle', label: 'Disabled' },
@@ -267,7 +350,7 @@ export const SelectModule: ModuleDefinition<SelectProps> = {
       ['data-instatic-field-id', props.fieldId],
       ['name', props.name || props.fieldId],
       ['id', props.id],
-    ])}${booleanAttrs(props, ['required', 'disabled', 'multiple'])}${controlBehaviorAttrs(props)}${htmlAttributesAttr(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.select'])}>${renderedChildren.join('')}</select>`,
+    ])}${booleanAttrs(props, ['required', 'disabled', 'multiple'])}>${renderedChildren.join('')}</select>`,
   }),
 }
 
@@ -340,11 +423,12 @@ export const SubmitModule: ModuleDefinition<SubmitProps> = {
   version: '1.0.0',
   icon: SendSolidIcon,
   trusted: true,
+  // Children carry imported icon-only submit content (an inline `<svg>`,
+  // an icon-font `<i>`, an `<img>`) as real nodes; `label` is the childless
+  // fallback. Same children-vs-text contract as base.link.
   canHaveChildren: true,
   schema: {
     label: { type: 'text', label: 'Label', placeholder: 'Displayed when no children' },
-    pendingLabel: { type: 'text', label: 'Pending label' },
-    htmlAttributes: htmlAttributesControl(),
     disabled: { type: 'toggle', label: 'Disabled' },
     formId: { type: 'text', label: 'Form ID override', normalize: 'identifier' },
   },
@@ -352,9 +436,14 @@ export const SubmitModule: ModuleDefinition<SubmitProps> = {
   defaults: Value.Create(SubmitPropsSchema),
   component: SubmitEditor,
   htmlTag: 'button',
-  render: (props, children) => ({
-    html: `<button type="submit"${attrs([['form', normalizeIdentifierValue(props.formId)], ['data-instatic-pending-label', props.pendingLabel]])}${booleanAttrs(props, ['disabled'])}${htmlAttributesAttr(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.submit'])}>${submitUsesChildren(children.length) ? children.join('') : props.label}</button>`,
-  }),
+  render: (props, renderedChildren) => {
+    const content = submitUsesChildren(renderedChildren.length)
+      ? renderedChildren.join('')
+      : props.label
+    return {
+      html: `<button type="submit"${attrs([['form', normalizeIdentifierValue(props.formId)]])}${booleanAttrs(props, ['disabled'])}>${content}</button>`,
+    }
+  },
 }
 
 export const FormMessageModule: ModuleDefinition<FormMessageProps> = {
@@ -365,34 +454,27 @@ export const FormMessageModule: ModuleDefinition<FormMessageProps> = {
   version: '1.0.0',
   icon: WarningDiamondSolidIcon,
   trusted: true,
-  canHaveChildren: true,
+  canHaveChildren: false,
   schema: {
-    formId: { type: 'text', label: 'Form ID', normalize: 'identifier', category: 'layout' },
+    formId: { type: 'text', label: 'Form ID', normalize: 'identifier' },
     kind: { type: 'select', label: 'Kind', options: [
       { label: 'Status', value: 'status' },
       { label: 'Success', value: 'success' },
       { label: 'Error', value: 'error' },
     ] },
     text: { type: 'text', label: 'Text' },
-    source: { type: 'select', label: 'Text source', options: [{ label: 'Form state message', value: 'state' }, { label: 'Authored copy', value: 'authored' }, { label: 'Server response message', value: 'response' }, { label: 'Server response or form state', value: 'responseOrState' }] },
-    tag: htmlTagControl(),
-    customTag: customHtmlTagControl(),
-    htmlAttributes: htmlAttributesControl(),
   },
   propsSchema: FormMessagePropsSchema,
   defaults: Value.Create(FormMessagePropsSchema),
   component: FormMessageEditor,
-  assets: { css: '[data-instatic-form-message][hidden]{display:none}' },
-  htmlTag: (props) => resolveHtmlTag(props.tag, props.customTag),
-  render: (props, children) => {
-    const tag = resolveHtmlTag(props.tag, props.customTag)
-    return { html: `<${tag} data-instatic-form-message="${props.kind}" data-instatic-message-source="${props.source}" data-instatic-form-id="${normalizeIdentifierValue(props.formId)}" role="${props.kind === 'error' ? 'alert' : 'status'}" hidden${htmlAttributesAttr(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES['base.form-message'])}>${children.length ? children.join('') : props.text}</${tag}>` }
-  },
+  htmlTag: 'div',
+  render: (props) => ({
+    html: `<div data-instatic-form-message="${props.kind}" data-instatic-form-id="${normalizeIdentifierValue(props.formId)}" role="${props.kind === 'error' ? 'alert' : 'status'}">${props.text}</div>`,
+  }),
 }
 
 function inputLikeSchema(typeLabel: string): ModuleDefinition<InputProps>['schema'] {
   return {
-    htmlAttributes: htmlAttributesControl(),
     inputType: { type: 'select', label: typeLabel, options: [
       'text',
       'email',
@@ -401,16 +483,14 @@ function inputLikeSchema(typeLabel: string): ModuleDefinition<InputProps>['schem
       'tel',
       'url',
       'number',
-      'range',
       'date',
       'time',
       'datetime-local',
       'file',
       'hidden',
     ].map((value) => ({ label: value, value })) },
-    ...formBehaviorControls,
-    fieldId: { type: 'text', category: 'layout', label: 'Field ID' },
-    name: { type: 'text', category: 'layout', label: 'Name' },
+    fieldId: { type: 'text', label: 'Field ID' },
+    name: { type: 'text', label: 'Name' },
     id: { type: 'text', label: 'ID' },
     placeholder: { type: 'text', label: 'Placeholder' },
     value: { type: 'text', label: 'Default value' },
@@ -420,7 +500,6 @@ function inputLikeSchema(typeLabel: string): ModuleDefinition<InputProps>['schem
     autocomplete: { type: 'text', label: 'Autocomplete' },
     min: { type: 'text', label: 'Min' },
     max: { type: 'text', label: 'Max' },
-    step: { type: 'text', label: 'Step' },
     minLength: { type: 'number', label: 'Minimum length' },
     maxLength: { type: 'number', label: 'Maximum length' },
     pattern: { type: 'text', label: 'Pattern' },
@@ -443,20 +522,13 @@ function choiceModule(args: {
     trusted: true,
     canHaveChildren: false,
     schema: {
-      ...formBehaviorControls,
-      htmlAttributes: htmlAttributesControl(),
-    fieldId: { type: 'text', category: 'layout', label: 'Field ID' },
-      name: { type: 'text', category: 'layout', label: 'Name' },
+      fieldId: { type: 'text', label: 'Field ID' },
+      name: { type: 'text', label: 'Name' },
       id: { type: 'text', label: 'ID' },
       value: { type: 'text', label: 'Value' },
       checked: { type: 'toggle', label: 'Checked' },
       required: { type: 'toggle', label: 'Required' },
       disabled: { type: 'toggle', label: 'Disabled' },
-      ...(args.id === 'base.checkbox' ? {
-        minSelected: { type: 'number' as const, label: 'Minimum selected', min: 0 },
-        maxSelected: { type: 'number' as const, label: 'Maximum selected (0 is unlimited)', min: 0 },
-        selectionOverflow: { type: 'select' as const, label: 'When selection is full', options: [{ value: 'reject', label: 'Keep current selection' }, { value: 'drop-oldest', label: 'Remove oldest selection' }] },
-      } : {}),
     },
     propsSchema: ChoicePropsSchema,
     defaults: Value.Create(ChoicePropsSchema),
@@ -469,7 +541,7 @@ function choiceModule(args: {
         ['name', props.name || props.fieldId],
         ['id', props.id],
         ['value', props.value],
-      ])}${booleanAttrs(props, ['checked', 'required', 'disabled'])}${controlBehaviorAttrs(props)}${args.id === 'base.checkbox' ? ` data-instatic-choice-min-selected="${props.minSelected}" data-instatic-choice-max-selected="${props.maxSelected}" data-instatic-choice-overflow="${props.selectionOverflow}"` : ''}${htmlAttributesAttr(props.htmlAttributes, MODULE_GENERATED_ATTRIBUTE_NAMES[args.id])}>`,
+      ])}${booleanAttrs(props, ['checked', 'required', 'disabled'])}>`,
     }),
   }
 }
@@ -506,11 +578,3 @@ registry.registerOrReplace(CheckboxModule)
 registry.registerOrReplace(RadioModule)
 registry.registerOrReplace(SubmitModule)
 registry.registerOrReplace(FormMessageModule)
-
-registry.registerOrReplace(FormConditionalModule)
-registry.registerOrReplace(FormOutputModule)
-registry.registerOrReplace(FormLinkModule)
-registry.registerOrReplace(FormStepModule)
-registry.registerOrReplace(TurnstileModule)
-
-export { FormConditionalModule, FormOutputModule, FormLinkModule, FormStepModule, TurnstileModule } from './behaviorModules'

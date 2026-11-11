@@ -1,4 +1,3 @@
-import { buildTemplateRenderContext } from '@core/templates'
 /**
  * Branch preview rendering — the public site as a branch's DRAFT would show
  * it, for visitors carrying a valid preview cookie.
@@ -39,7 +38,7 @@ import { BRANCH_PREVIEW_EXIT_PATH } from '../branches/previewLinks'
 import { getBranch } from '../repositories/branches'
 import { getDataRowBySlug, listDataTables } from '../repositories/data'
 import { getDraftSiteDocument } from '../repositories/publish'
-import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
+import { buildSiteModuleJsMap } from './moduleJsBundle'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 import { prefetchLoopData, publishedDataRowToEntryItem } from './loopPrefetch'
 import { prefetchMediaAssets } from './mediaPrefetch'
@@ -80,7 +79,6 @@ async function draftRowAsPublished(db: DbClient, row: DataRow, table: DataTable)
     tableId: table.id,
     tableSlug: table.slug,
     tableKind: table.kind,
-    tableFields: table.fields,
     tableRouteBase: table.routeBase,
     versionNumber: 0,
     cells: row.cells,
@@ -113,7 +111,7 @@ async function resolvePreview(
     return {
       merged: composeTemplateChain(chain, { kind: 'page', page }),
       scriptPage: page,
-      templateContext: buildTemplateRenderContext(page, site, { entryStack: [], route: buildRouteFrame(url.toString()) }),
+      templateContext: { entryStack: [], route: buildRouteFrame(url.toString()) },
     }
   }
 
@@ -131,12 +129,13 @@ async function resolvePreview(
   const merged = composeTemplateChain(chain, { kind: 'entry' })
   if (typeof row.cells.title === 'string') merged.title = row.cells.title
   const published = await draftRowAsPublished(db, row, table)
-  const templateContext = buildTemplateRenderContext(merged, site, { entryStack: [], route: buildRouteFrame(url.toString()) })
-  const localization = templateContext.site?.language ? { language: templateContext.site.language, translations: templateContext.site.translations } : undefined
   return {
     merged,
     scriptPage: chain[chain.length - 1] ?? merged,
-    templateContext: { ...templateContext, entryStack: [await publishedDataRowToEntryItem(db, published, table.fields, localization)] },
+    templateContext: {
+      entryStack: [await publishedDataRowToEntryItem(db, published, table.fields)],
+      route: buildRouteFrame(url.toString()),
+    },
     documentMeta: readEntrySeoOverride(row.cells),
   }
 }
@@ -215,10 +214,9 @@ export async function renderBranchPreview(
     slug: segments.length > 0 ? decodeURIComponent(segments[segments.length - 1]!) : null,
     cookies: {},
   }
-  const loopData = await prefetchLoopData(merged, site, db, url, { branchId, request, templateContext })
+  const loopData = await prefetchLoopData(merged, site, db, url, { branchId, request })
   const mediaAssets = await prefetchMediaAssets(merged, site, registry, db, { templateContext, loopData })
   const rendered = publishPage(merged, site, registry, {
-    visitorPreferencesStorage: 'memory',
     templateContext,
     ...(documentMeta ? { documentMeta } : {}),
     runtimeAssets,
@@ -231,7 +229,7 @@ export async function renderBranchPreview(
   // tokens, module scripts, the `publish.*` hooks), so a form or a plugin's
   // client script works on the preview too. The banner goes in last, past
   // the filters.
-  const moduleJsMap = buildPublishedSiteModuleJsMap(site, registry)
+  const moduleJsMap = buildSiteModuleJsMap(site, registry)
   const finalHtml = await applyPublishedHtmlPipeline(
     {
       html: rendered.html,

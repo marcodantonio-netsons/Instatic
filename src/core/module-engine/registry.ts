@@ -43,7 +43,7 @@ class ModuleRegistry implements IModuleRegistry {
   ): void {
     if (definition.publishBehavior !== 'transparent') return
     const output = definition.render(definition.defaults, [])
-    if (output.html !== '' || definition.assets?.css || definition.assets?.js) {
+    if (output.html !== '' || (output.css ?? '') !== '') {
       throw new Error(
         `[ModuleRegistry] Module "${definition.id}" declares publishBehavior:'transparent' ` +
           `but its render() returned non-empty output. Transparent modules must render nothing.`,
