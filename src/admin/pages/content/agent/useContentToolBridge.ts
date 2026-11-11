@@ -7,8 +7,6 @@
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import { readDisplayTitle } from '@core/data/cells'
-import { hasLocalizedDataFields, projectLocalizedDataCells, type DataLocalizationContext } from '@core/data/localizedCells'
-import type { LocalizedDataState } from '@admin/pages/data/localizedData'
 import { normalizeDataTableFields } from '@core/data/fields'
 import type { DataField, DataRow, DataTable } from '@core/data/schemas'
 import {
@@ -65,25 +63,21 @@ interface UseContentToolBridgeOptions {
   workspace: ContentToolWorkspaceSurface
   draft: ContentToolDraftSurface
   currentUser: ContentAgentCurrentUser
-  localization?: LocalizedDataState
 }
 
 export function useContentToolBridge({
   workspace,
   draft,
   currentUser,
-  localization,
 }: UseContentToolBridgeOptions): void {
   const workspaceRef = useRef(workspace)
   const draftRef = useRef(draft)
   const currentUserRef = useRef(currentUser)
-  const localizationRef = useRef(localization)
 
   useLayoutEffect(() => {
     workspaceRef.current = workspace
     draftRef.current = draft
     currentUserRef.current = currentUser
-    localizationRef.current = localization
   })
 
   useEffect(() => {
@@ -115,7 +109,6 @@ export function useContentToolBridge({
         return buildSnapshotFromWorkspace(
           workspaceRef.current,
           currentUserRef.current,
-          localizationRef.current,
         )
       },
       async selectDocument(documentId) {
@@ -337,7 +330,6 @@ async function applyStatus(
 function buildSnapshotFromWorkspace(
   ws: ContentToolWorkspaceSurface,
   currentUser: ContentAgentCurrentUser,
-  localization?: LocalizedDataState,
 ): ContentAgentSnapshot {
   const collections = ws.collections
     .filter((table) => CONTENT_KIND_VISIBLE.has(table.kind))
@@ -353,32 +345,25 @@ function buildSnapshotFromWorkspace(
     collections,
     activeTableId: ws.selectedCollectionId,
     activeDocument: ws.selectedEntry
-      ? projectActiveDocument(ws.selectedEntry, ws.collections, localization?.context)
+      ? projectActiveDocument(ws.selectedEntry, ws.collections)
       : null,
     currentUser,
-    ...(localization?.data ? { localization: localization.context ? localization.data : {
-      languages: localization.data.languages, canBrowseCatalogue: localization.data.canBrowseCatalogue,
-    } } : {}),
   }
 }
 
 function projectActiveDocument(
   row: DataRow,
   collections: DataTable[],
-  localization?: DataLocalizationContext,
 ): ContentAgentActiveDocument {
   const table = collections.find((candidate) => candidate.id === row.tableId)
   const tableFields = table ? normalizeDataTableFields(table.fields) : []
-  const needsLanguage = hasLocalizedDataFields(tableFields) && !localization
   return {
     id: row.id,
     tableId: row.tableId,
-    title: needsLanguage ? null : readDisplayTitle(row.cells, table, localization),
+    title: readDisplayTitle(row.cells, table),
     slug: row.slug,
     status: row.status,
-    fields: needsLanguage ? null : localization
-      ? projectLocalizedDataCells(row.cells, tableFields, localization, `rows.${row.id}.cells`)
-      : row.cells,
+    fields: row.cells,
     schema: tableFields.map(projectField),
     authorUserId: row.authorUserId,
     updatedAt: row.updatedAt,
@@ -409,7 +394,5 @@ function projectField(field: DataField): ContentAgentFieldInfo {
       allowMultiple: field.allowMultiple ?? false,
     }
   }
-  if (field.type === 'localizedText') return { ...base, writeShape: '{ key: string }' }
-  if (field.type === 'repeater') return { ...base, fields: field.fields.map(projectField) }
   return base
 }

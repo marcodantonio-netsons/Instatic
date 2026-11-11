@@ -50,7 +50,6 @@ import {
   authorizeImportedShell,
   authorizeImportedPublication,
   validateImportedPublication,
-  validateImportedLocalization,
   authorizeImportStrategy,
 } from './import'
 
@@ -107,17 +106,14 @@ export async function handleImportArchiveRoute(
   const selectedManifest = selection
     ? filterArchiveManifestForSelection(manifest, selection)
     : manifest
-  const bundle = siteBundleWithoutMediaBytes(selectedManifest)
 
   const shellDenied = authorizeImportedShell(user, selectedManifest.site !== undefined)
   if (shellDenied) return shellDenied
 
-  const publicationInvalid = validateImportedPublication(bundle)
+  const publicationInvalid = validateImportedPublication(siteBundleWithoutMediaBytes(selectedManifest))
   if (publicationInvalid) return publicationInvalid
-  const publicationDenied = await authorizeImportedPublication(req, db, user, bundle)
+  const publicationDenied = await authorizeImportedPublication(req, db, user, siteBundleWithoutMediaBytes(selectedManifest))
   if (publicationDenied) return publicationDenied
-  const localizationInvalid = await validateImportedLocalization(db, scope, user, bundle, strategy)
-  if (localizationInvalid) return localizationInvalid
 
   let stagedMedia: StagedArchiveFiles | null = null
   if ((manifest.media?.length ?? 0) > 0 || (manifest.publication?.files.length ?? 0) > 0) {
@@ -134,7 +130,7 @@ export async function handleImportArchiveRoute(
 
   try {
     const applied = await applySiteBundle(db, scope, {
-      bundle,
+      bundle: siteBundleWithoutMediaBytes(selectedManifest),
       strategy,
       carriesMedia: selectedManifest.media !== undefined,
       runtimeFiles: stagedMedia?.runtimeFiles,

@@ -26,11 +26,14 @@
  */
 import { useEffect } from 'react'
 import { useAdminUi } from '@admin/state/adminUi'
+import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { selectActivePage, useEditorStore } from '@site/store/store'
-import { isTemplatePage } from '@core/templates'
+import { isTemplatePage, primaryTemplateTableSlug } from '@core/templates'
 import { pagePublicPath, type TemplateTarget } from '@core/page-tree'
+import { getCmsDataTableBySlug, previewCmsDataLoopItems } from '@core/persistence/cmsData'
 import type { LoopItem } from '@core/loops/types'
-import { useTemplatePreviewContext } from './useTemplatePreviewContext'
+
+const EMPTY_ITEMS: LoopItem[] = []
 
 export function useActiveLivePath(): void {
   const publish = useAdminUi((s) => s.setActiveLivePath)
@@ -43,7 +46,30 @@ export function useActiveLivePath(): void {
   const isTemplate = activePage ? isTemplatePage(activePage) : false
   const targetKind = activePage?.template?.target?.kind ?? null
 
-  const { rows, error } = useTemplatePreviewContext(activePage)
+  // Published rows backing a postTypes template's preview. Resolves to an empty
+  // list for every other case (regular page / everywhere template) so the hook
+  // stays cheap — the loader short-circuits before any network call.
+  const tableSlug =
+    isTemplate && targetKind === 'postTypes' && activePage
+      ? primaryTemplateTableSlug(activePage)
+      : null
+  const { data: rows } = useAsyncResource<LoopItem[]>(
+    () =>
+      tableSlug
+        ? getCmsDataTableBySlug(tableSlug)
+            .then(async (table) => {
+              if (!table) return EMPTY_ITEMS
+              const { items } = await previewCmsDataLoopItems(table.id, {
+                orderBy: 'publishedAt',
+                direction: 'desc',
+                limit: 50,
+              })
+              return items
+            })
+            .catch(() => EMPTY_ITEMS)
+        : Promise.resolve(EMPTY_ITEMS),
+    [tableSlug],
+  )
 
   const livePath = resolveLivePath({
     activePage,
@@ -51,7 +77,7 @@ export function useActiveLivePath(): void {
     targetKind,
     selection,
     sitePages,
-    rows: error ? [] : rows,
+    rows: rows ?? EMPTY_ITEMS,
   })
 
   useEffect(() => {
@@ -98,7 +124,7 @@ export function resolveLivePath({
   }
 
   if (targetKind === 'postTypes') {
-    const previewed = selection ? rows.find((item) => item.id === selection) : rows[0]
+    const previewed = rows.find((item) => item.id === selection) ?? rows[0] ?? null
     const permalink = previewed?.fields.permalink
     return typeof permalink === 'string' && permalink ? permalink : null
   }

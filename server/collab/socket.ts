@@ -73,7 +73,7 @@ const MAX_AWARENESS_PAYLOAD_BYTES = 64 * 1024
 const MAX_SYNC_PAYLOAD_BYTES = 4 * 1024 * 1024
 
 /** The canonical presence identity a connection is allowed to publish. */
-interface CollabPresenceIdentity {
+export interface CollabPresenceIdentity {
   id: string
   name: string
   avatarUrl: string | null

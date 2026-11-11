@@ -34,7 +34,7 @@ import { nanoid } from 'nanoid'
 import {
   isSiteDocId,
   parseCollabDocId,
-  projectSiteRosters,
+  projectSiteDoc,
   siteDocId,
 } from '@core/collab'
 import type { DbClient } from '../db/client'
@@ -64,13 +64,13 @@ interface RelayEntry {
 
 type PersistOutcome = 'clean' | 'deferred' | 'superseded' | 'retry' | 'invalid'
 
-type RelayUpdateListener = (
+export type RelayUpdateListener = (
   docId: string,
   update: Uint8Array,
   origin: unknown,
   generation: string,
 ) => void
-type RelayResetListener = (docId: string) => void
+export type RelayResetListener = (docId: string) => void
 
 /** A doc plus the CRDT lineage the caller must stamp on its frames. */
 export interface RelayDoc {
@@ -444,12 +444,12 @@ export function createCollabRelay(
           clearTimeout(siteEntry.persistTimer)
           siteEntry.persistTimer = null
         }
-        const rosters = projectSiteRosters(siteEntry.doc)
+        const projected = projectSiteDoc(siteEntry.doc)
         const sweep = siteEntry.persistChain.then(() =>
           persistence.serializeMutation(() =>
             persistence.sweepRosterDeletions(
               branchId,
-              rosters,
+              projected.rosters,
               invalidations.get(affectedSiteDocId) ?? invalidation.cutoff(),
               new Set(affected),
             ),

@@ -13,7 +13,7 @@ import type { DbClient } from '../db/client'
 import { isoDate, isoDateOrNull, nowIso } from '@core/utils/isoDate'
 
 /** What one entity looked like on every side before the apply wrote it. */
-const MergeUndoEntrySchema = Type.Object({
+export const MergeUndoEntrySchema = Type.Object({
   change: MergeChangeSchema,
   /** The merge target's content before; null when the entity did not exist there. */
   intoBefore: Type.Unknown(),
@@ -64,7 +64,7 @@ export async function insertBranchMerge(
   return record
 }
 
-async function getBranchMerge(db: DbClient, id: string): Promise<BranchMergeRecord | null> {
+export async function getBranchMerge(db: DbClient, id: string): Promise<BranchMergeRecord | null> {
   const { rows } = await db<BranchMergeRow>`
     select id, branch_id, direction, applied_by_user_id, change_count, created_at, undone_at from site_branch_merges where id = ${id}
   `

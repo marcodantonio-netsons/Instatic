@@ -76,7 +76,6 @@ export function createBaseCspPlan(opts: {
 }): CspPlan {
   const plan = emptyCspPlan()
   setCspDirective(plan, 'default-src', ["'self'"])
-  setCspDirective(plan, 'form-action', ["'self'"])
 
   const scriptSources = opts.anyScriptTag ? ["'self'"] : ["'none'"]
   if (opts.importmapSha) scriptSources.push(`'sha256-${opts.importmapSha}'`)

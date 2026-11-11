@@ -45,7 +45,7 @@ import type {
 } from './types'
 import type { SiteImportAdapter, SiteImportTransaction } from './adapter'
 
-interface CommitImportPlanOptions {
+export interface CommitImportPlanOptions {
   /**
    * Cancels the run: no further uploads or font installs start, the in-flight
    * upload aborts, and the store commit never happens. Already-uploaded assets

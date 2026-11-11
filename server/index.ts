@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto'
 import { RequestBodyTooLargeError } from './http'
 import { createDbClient } from './db'
 import { runMigrations } from './db/runMigrations'
@@ -8,7 +9,6 @@ import { DEV_ORIGIN_ALLOWLIST, configurePublicOrigins, configureTrustedProxyCidr
 import { applySecurityHeaders } from './securityHeaders'
 import { startConversationPurgeTick } from './ai/boot'
 import { unsupportedBunWarning } from './bunVersion'
-import { constantTimeEqual } from './security/constantTimeEqual'
 
 // Before anything that could fail for a version-related reason, say which
 // Bun this is when it is not one a release was tested on. Boot continues.
@@ -216,7 +216,9 @@ process.on('SIGINT', () => void shutdown('SIGINT'))
 
 function shutdownTokenMatches(provided: string | null, expected: string): boolean {
   if (!provided) return false
-  return constantTimeEqual(provided, expected)
+  const providedBytes = Buffer.from(provided)
+  const expectedBytes = Buffer.from(expected)
+  return providedBytes.length === expectedBytes.length && timingSafeEqual(providedBytes, expectedBytes)
 }
 
 console.log(`[server] Listening on http://localhost:${config.port}`)

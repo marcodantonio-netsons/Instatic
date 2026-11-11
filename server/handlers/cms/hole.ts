@@ -1,4 +1,3 @@
-import { buildTemplateRenderContext } from '@core/templates'
 /**
  * `/_instatic/hole-runtime.js` and `/_instatic/hole/<nodeId>` endpoints — Layer C server islands.
  *
@@ -41,11 +40,20 @@ import type { SourceRequestContext } from '@core/loops/types'
 import { registry } from '@core/module-engine'
 import { loopSourceRegistry } from '@core/loops/registry'
 import { renderNode, type RenderConfig, type RenderAccumulators } from '@core/publisher'
-import { buildPageFrame, buildRouteFrame } from '@core/templates/contextFrames'
-import { prefetchLoopData } from '../../publish/loopPrefetch'
+import {
+  composeTemplateChain,
+  resolveNotFoundTemplate,
+  resolveTemplateChain,
+  type TemplateRenderDataContext,
+} from '@core/templates'
+import { buildPageFrame, buildRouteFrame, buildSiteFrame } from '@core/templates/contextFrames'
+import { prefetchLoopData, publishedDataRowToEntryItem } from '../../publish/loopPrefetch'
 import { getOrRender } from '../../publish/renderCache'
-import { getPublishedNodeIndexForVersion, getPublishedSnapshotHash } from '../../publish/publishedSnapshotCache'
+import { getLatestSnapshotForVersion, getPublishedSnapshotHash } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
+import { resolvePublicRoute } from '../../publish/publicRouter'
+import { getDataTable } from '../../repositories/data'
+import { MAIN_SCOPE } from '../../branches/scope'
 import { HOLE_RUNTIME_JS } from '../../publish/holeRuntime'
 import { stampFormPageTokens } from '../../forms/formRuntime'
 
@@ -72,9 +80,8 @@ interface HoleHandlerContext {
   db: DbClient
 }
 
-// The versioned snapshot memo + nodeId → page index live in
-// `publish/publishedSnapshotCache.ts`, shared with the public router and the
-// loop endpoint — request-time lookup is O(1) and warm requests do zero DB I/O.
+// Hole node ids are resolved inside the composed public route. A global raw
+// page index cannot identify nodes contributed by templates or shared trees.
 
 // ---------------------------------------------------------------------------
 // Request helpers
@@ -121,16 +128,15 @@ async function renderHoleFragment(
   nodeId: string,
   page: Page,
   site: SiteDocument,
+  formPageId: string,
+  templateContext: TemplateRenderDataContext,
   db: DbClient,
   pageUrl: URL,
   request: SourceRequestContext,
 ): Promise<string> {
-  const route = buildRouteFrame(pageUrl.toString())
-  const templateContext = buildTemplateRenderContext(page, site, { entryStack: [], route })
   const loopData = await prefetchLoopData(page, site, db, pageUrl, {
     request,
     rootNodeId: nodeId,
-    templateContext,
   })
   const config: RenderConfig = {
     page,
@@ -139,7 +145,6 @@ async function renderHoleFragment(
     breakpointId: undefined,
     loopData,
     templateContext,
-    snapshotHash: getPublishedSnapshotHash(site),
     // No dynamicNodeIds: inside a hole endpoint we render the full subtree.
   }
   const acc: RenderAccumulators = {
@@ -152,13 +157,102 @@ async function renderHoleFragment(
   // Hole fragments bypass the published-HTML pipeline, so CMS forms inside
   // them would never receive their page token. Stamp here — tokens are
   // stateless HMAC signatures, safe to store in the Layer B fragment cache.
-  return stampFormPageTokens(renderNode(nodeId, config, acc), page.id)
+  return stampFormPageTokens(renderNode(nodeId, config, acc), formPageId)
+}
+
+type ResolvedHolePage = {
+  page: Page
+  site: SiteDocument
+  formPageId: string
+  templateContext: TemplateRenderDataContext
+}
+
+type HolePageResolution = ResolvedHolePage | { stale: true } | null
+
+async function resolveHolePage(
+  db: DbClient,
+  pageUrl: URL,
+  latestSite: NonNullable<Awaited<ReturnType<typeof getLatestSnapshotForVersion>>>,
+  latestSnapshotHash: string,
+): Promise<HolePageResolution> {
+  const resolution = await resolvePublicRoute(db, pageUrl)
+  if (resolution.kind === 'redirect') return null
+
+  if (resolution.kind === 'not-found') {
+    const sourcePage = resolveNotFoundTemplate(latestSite.site)
+    if (!sourcePage) return null
+    const chain = resolveTemplateChain(latestSite.site, { kind: 'page' })
+    const page = composeTemplateChain(chain, { kind: 'page', page: sourcePage })
+    return {
+      page,
+      site: latestSite.site,
+      formPageId: sourcePage.id,
+      templateContext: {
+        entryStack: [],
+        page: buildPageFrame(page),
+        site: buildSiteFrame(latestSite.site),
+        route: buildRouteFrame(pageUrl.toString()),
+      },
+    }
+  }
+
+  const { snapshot } = resolution
+  const snapshotHash = getPublishedSnapshotHash(snapshot.site)
+  if (snapshotHash !== latestSnapshotHash) return { stale: true }
+
+  if (resolution.kind === 'page') {
+    const sourcePage = snapshot.site.pages.find((candidate) => candidate.id === snapshot.pageRowId)
+    if (!sourcePage) return null
+    const chain = resolveTemplateChain(snapshot.site, { kind: 'page' })
+    const page = composeTemplateChain(chain, { kind: 'page', page: sourcePage })
+    return {
+      page,
+      site: snapshot.site,
+      formPageId: sourcePage.id,
+      templateContext: {
+        entryStack: [],
+        page: buildPageFrame(page),
+        site: buildSiteFrame(snapshot.site),
+        route: buildRouteFrame(pageUrl.toString()),
+      },
+    }
+  }
+
+  const chain = resolveTemplateChain(snapshot.site, { kind: 'entry', tableSlug: resolution.row.tableSlug })
+  if (chain.length === 0) return null
+  const page = composeTemplateChain(chain, { kind: 'entry' })
+  if (typeof resolution.row.cells.title === 'string') page.title = resolution.row.cells.title
+  const table = await getDataTable(db, MAIN_SCOPE, resolution.row.tableId)
+  const entry = await publishedDataRowToEntryItem(db, resolution.row, table?.fields ?? [])
+  return {
+    page,
+    site: snapshot.site,
+    formPageId: page.id,
+    templateContext: {
+      entryStack: [entry],
+      page: buildPageFrame(page),
+      site: buildSiteFrame(snapshot.site),
+      route: buildRouteFrame(pageUrl.toString()),
+    },
+  }
+}
+
+function readOriginatingPageUrl(rawPath: string | null, requestUrl: URL): URL | null {
+  if (!rawPath || !rawPath.startsWith('/') || rawPath.startsWith('//')) return null
+  try {
+    const pageUrl = new URL(rawPath, requestUrl.origin)
+    if (pageUrl.origin !== requestUrl.origin || pageUrl.hash) return null
+    decodeURIComponent(pageUrl.pathname)
+    return pageUrl
+  } catch {
+    return null
+  }
 }
 
 /**
  * Render a single dynamic node subtree for Layer C hole hydration.
  *
- * GET `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>` → HTML fragment.
+ * GET `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>` → HTML fragment.
  */
 export async function handleHoleRequest(
   req: Request,
@@ -183,14 +277,15 @@ export async function handleHoleRequest(
   // Cache generations change on row publishes, unpublishes and deletes too.
   // Fragment validity instead follows the frozen site that produced its shell.
   const currentVersion = getPublishVersion()
-  const snap = await getPublishedNodeIndexForVersion(ctx.db, currentVersion)
-  if (!snap) {
+  const latestSite = await getLatestSnapshotForVersion(ctx.db, currentVersion)
+  if (!latestSite) {
     return new Response('Site not published', {
       status: 404,
       headers: { 'content-type': 'text/plain; charset=utf-8' },
     })
   }
-  if (url.searchParams.get('v') !== snap.snapshotHash) {
+  const latestSnapshotHash = getPublishedSnapshotHash(latestSite.site)
+  if (url.searchParams.get('v') !== latestSnapshotHash) {
     return new Response('<instatic-hole-stale data-instatic-stale="true"></instatic-hole-stale>', {
       headers: {
         'content-type': 'text/html; charset=utf-8',
@@ -198,23 +293,33 @@ export async function handleHoleRequest(
       },
     })
   }
-  const foundPage = snap.nodeIndex.get(nodeId)
-  if (!foundPage) {
+  const pageUrl = readOriginatingPageUrl(url.searchParams.get('u'), url)
+  if (!pageUrl) {
+    return new Response('Invalid originating page URL', {
+      status: 400,
+      headers: { 'content-type': 'text/plain; charset=utf-8' },
+    })
+  }
+
+  const resolved = await resolveHolePage(ctx.db, pageUrl, latestSite, latestSnapshotHash)
+  if (resolved && 'stale' in resolved) {
+    return new Response('<instatic-hole-stale data-instatic-stale="true"></instatic-hole-stale>', {
+      headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
+    })
+  }
+  if (!resolved) {
     return new Response('Node not found', {
       status: 404,
       headers: { 'content-type': 'text/plain; charset=utf-8' },
     })
   }
-  const node = foundPage.nodes[nodeId]!
-
-  // Reconstruct the originating page URL forwarded by the runtime (`u`). Falls
-  // back to the page's own permalink when absent (older runtime / direct hit).
-  const pageUrlRaw = url.searchParams.get('u') ?? buildPageFrame(foundPage, snap.site).permalink
-  let pageUrl: URL
-  try {
-    pageUrl = new URL(pageUrlRaw, url.origin)
-  } catch {
-    pageUrl = new URL(buildPageFrame(foundPage, snap.site).permalink, url.origin)
+  const { page, site, formPageId, templateContext } = resolved
+  const node = page.nodes[nodeId]
+  if (!node) {
+    return new Response('Node not found', {
+      status: 404,
+      headers: { 'content-type': 'text/plain; charset=utf-8' },
+    })
   }
 
   const perVisitor = isPerVisitorHole(node)
@@ -231,7 +336,7 @@ export async function handleHoleRequest(
       slug: route.slug,
       cookies: parseCookies(req.headers.get('cookie')),
     }
-    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request)
+    const html = await renderHoleFragment(nodeId, page, site, formPageId, templateContext, ctx.db, pageUrl, request)
     return new Response(html, {
       status: 200,
       headers: {
@@ -261,7 +366,7 @@ export async function handleHoleRequest(
       queryString: `v=${currentVersion}&u=${encodeURIComponent(pageUrl.pathname)}&${normalizeQuery(pageUrl.searchParams)}`,
     },
     async () => {
-      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, request)
+      const html = await renderHoleFragment(nodeId, page, site, formPageId, templateContext, ctx.db, pageUrl, request)
       return {
         body: html,
         headers: { 'content-type': 'text/html; charset=utf-8' },

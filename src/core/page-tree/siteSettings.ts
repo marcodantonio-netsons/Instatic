@@ -28,8 +28,6 @@ import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { compiledCheck } from '@core/utils/typeboxCompiler'
 import { FrameworkSettingsSchema } from '@core/framework-schema'
 import { SiteFontsSettingsSchema, buildFontRoleTokens, parseSiteFontsSettings } from '@core/fonts'
-import { SiteLocalizationSettingsSchema } from '@core/localization-schema'
-import { SiteVisitorPreferencesSchema, VisitorPreferencesValidationError } from '@core/visitor-preferences-schema'
 
 // ---------------------------------------------------------------------------
 // SiteSettingsSchema
@@ -40,13 +38,10 @@ export const SiteSettingsSchema = Type.Object({
   metaDescription: Type.Optional(Type.String()),
   faviconUrl: Type.Optional(Type.String()),
   language: Type.Optional(Type.String()),
-  localization: Type.Optional(SiteLocalizationSettingsSchema),
   /** Structured framework token settings — absent means framework disabled. */
   framework: Type.Optional(FrameworkSettingsSchema),
   /** Library of installed fonts — absent when no fonts added. */
   fonts: Type.Optional(SiteFontsSettingsSchema),
-  /** Authored visitor defaults, distinct from public browser selections. */
-  visitorPreferences: Type.Optional(SiteVisitorPreferencesSchema),
   /** Keyboard shortcut overrides — defaults to {} — handled in parseSiteSettings. */
   shortcuts: Type.Record(Type.String(), Type.String()),
 })
@@ -110,22 +105,13 @@ export function parseSiteSettings(raw: unknown): SiteSettings {
 
   const fonts = r.fonts != null ? parseSiteFontsSettings(r.fonts) : undefined
 
-  if (r.localization !== undefined && !compiledCheck(SiteLocalizationSettingsSchema, r.localization)) {
-    throw new Error('settings.localization: Invalid language catalogue configuration')
-  }
-  if (r.visitorPreferences !== undefined && !compiledCheck(SiteVisitorPreferencesSchema, r.visitorPreferences)) {
-    throw new VisitorPreferencesValidationError('settings.visitorPreferences')
-  }
-
   return {
     ...(typeof r.metaTitle === 'string' ? { metaTitle: r.metaTitle } : {}),
     ...(typeof r.metaDescription === 'string' ? { metaDescription: r.metaDescription } : {}),
     ...(typeof r.faviconUrl === 'string' ? { faviconUrl: r.faviconUrl } : {}),
     ...(typeof r.language === 'string' ? { language: r.language } : {}),
-    ...(compiledCheck(SiteLocalizationSettingsSchema, r.localization) ? { localization: r.localization } : {}),
     framework,
     fonts,
-    ...(compiledCheck(SiteVisitorPreferencesSchema, r.visitorPreferences) ? { visitorPreferences: r.visitorPreferences } : {}),
     shortcuts,
   }
 }

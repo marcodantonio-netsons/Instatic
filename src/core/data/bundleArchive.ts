@@ -21,7 +21,7 @@ import {
 } from './bundleSchema'
 
 export const BUNDLE_ARCHIVE_MANIFEST_PATH = '.instatic/site-bundle.json'
-const BUNDLE_ARCHIVE_MEDIA_PREFIX = 'media/'
+export const BUNDLE_ARCHIVE_MEDIA_PREFIX = 'media/'
 
 export function mediaArchivePath(storagePath: string): string {
   return `${BUNDLE_ARCHIVE_MEDIA_PREFIX}${storagePath}`

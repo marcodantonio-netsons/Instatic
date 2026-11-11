@@ -1,0 +1,48 @@
+{
+  "extends": "../../tsconfig.app.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": [
+      "bun",
+      "vite/client",
+      "zustand-mutative"
+    ],
+    "paths": {
+      "@core/*": [
+        "../../src/core/*"
+      ],
+      "@modules/*": [
+        "../../src/modules/*"
+      ],
+      "@ui/*": [
+        "../../src/ui/*"
+      ],
+      "@admin/*": [
+        "../../src/admin/*"
+      ],
+      "@site/*": [
+        "../../src/admin/pages/site/*"
+      ],
+      "@content/*": [
+        "../../src/admin/pages/content/*"
+      ],
+      "@plugins/*": [
+        "../../src/admin/pages/plugins/*"
+      ],
+      "@users/*": [
+        "../../src/admin/pages/users/*"
+      ],
+      "@instatic/plugin-sdk": [
+        "../../src/core/plugin-sdk/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "src",
+    "build.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
+}

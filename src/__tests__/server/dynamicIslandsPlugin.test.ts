@@ -107,6 +107,7 @@ function makeSnapshotWithLoop(loopNodeId: string, sourceId: string) {
   return {
     cmsSnapshotVersion: 1 as const,
     pageRowId: 'page_1',
+    siteSnapshotId: 'site-snapshot',
     site: {
       id: 'site_1',
       name: 'Test Site',
@@ -181,12 +182,29 @@ function makeFakeDb(
     ..._values: unknown[]
   ): Promise<DbResult<Row>> => {
     const sql = strings.join(' ').replace(/\s+/g, ' ').trim().toLowerCase()
+    if (
+      sql.startsWith('select data_rows.id as row_id') &&
+      sql.includes("data_rows.table_id = 'pages'") &&
+      sql.includes('data_row_versions.slug =')
+    ) {
+      return {
+        rows: snapshot
+          ? [{
+              row_id: snapshot.pageRowId,
+              site_snapshot_id: snapshot.siteSnapshotId,
+              runtime_assets_json: null,
+            } as unknown as Row]
+          : [],
+        rowCount: snapshot ? 1 : 0,
+      }
+    }
     if (sql.includes('site_snapshots.site_json')) {
       if (counters) counters.snapshotLoads++
       return {
         rows: snapshot
           ? [{
               row_id: snapshot.pageRowId,
+              site_snapshot_id: snapshot.siteSnapshotId,
               site_json: snapshot.site,
               runtime_assets_json: null,
               importmap_body: null,

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
-import type { Page, PageSeo, PageTemplateConfig, TemplateTarget } from '@core/page-tree'
+import type { Page, PageTemplateConfig, TemplateTarget } from '@core/page-tree'
 import {
   normalizePageSlug,
   pageSlugDuplicateError,
@@ -13,21 +13,17 @@ import { Checkbox } from '@ui/components/Checkbox'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
 import { Select } from '@ui/components/Select'
-import { PageSeoFields, usePageSeoEditor } from '../PageSettingsDialog'
 import dialogStyles from '../SiteCreateDialog/SiteCreateDialog.module.css'
 
 export interface TemplateSettingsPayload {
   title: string
   slug: string
   template: PageTemplateConfig
-  seo?: PageSeo
 }
 
 interface TemplateSettingsDialogProps {
   page: Page
   pages: Page[]
-  canEditStructure?: boolean
-  canEditSeo?: boolean
   onCancel: () => void
   onSave: (payload: TemplateSettingsPayload) => void
 }
@@ -62,10 +58,7 @@ export function TemplateSettingsDialog({
   pages,
   onCancel,
   onSave,
-  canEditSeo = true,
-  canEditStructure = true,
 }: TemplateSettingsDialogProps) {
-  const seoEditor = usePageSeoEditor(page.seo)
   const initialTarget = page.template?.target
   const [title, setTitle] = useState(page.title)
   const [slug, setSlug] = useState(page.slug)
@@ -105,7 +98,6 @@ export function TemplateSettingsDialog({
     || Boolean(slugValidation)
     || priorityInvalid
     || postTypesEmpty
-    || Boolean(seoEditor.error)
 
   useEffect(() => {
     requestAnimationFrame(() => inputRef.current?.select())
@@ -126,7 +118,6 @@ export function TemplateSettingsDialog({
       : { kind: targetKind }
 
     onSave({
-      seo: seoEditor.value,
       title: trimmedTitle,
       slug: normalizedSlug,
       template: {
@@ -142,8 +133,8 @@ export function TemplateSettingsDialog({
       open
       onClose={onCancel}
       title="Template settings"
-      size="md"
-      initialFocusRef={canEditStructure ? inputRef : undefined}
+      size="sm"
+      initialFocusRef={inputRef}
       footer={
         <>
           <Button variant="secondary" size="sm" type="button" onClick={onCancel}>
@@ -162,7 +153,6 @@ export function TemplateSettingsDialog({
       }
     >
       <form id={FORM_ID} className={dialogStyles.form} onSubmit={handleSubmit}>
-        <fieldset className={dialogStyles.form} disabled={!canEditStructure}>
         <div className={dialogStyles.field}>
           <label htmlFor={nameInputId} className={dialogStyles.label}>Name</label>
           <Input
@@ -235,8 +225,6 @@ export function TemplateSettingsDialog({
             invalid={priorityInvalid}
           />
         </div>
-        </fieldset>
-        <PageSeoFields editor={seoEditor} editable={canEditSeo} />
       </form>
     </Dialog>
   )

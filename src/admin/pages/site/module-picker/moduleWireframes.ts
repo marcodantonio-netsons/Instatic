@@ -76,7 +76,7 @@ const dot = (node: Partial<WireNode> = {}): WireNode => ({ kind: 'dot', ...node 
 const check = (node: Partial<WireNode> = {}): WireNode => ({ kind: 'check', ...node })
 const radio = (node: Partial<WireNode> = {}): WireNode => ({ kind: 'radio', ...node })
 
-const MODULE_WIRES: Readonly<Record<string, WireNode>> = {
+export const MODULE_WIRES: Readonly<Record<string, WireNode>> = {
   'base.body': box([], { dashed: true, height: 52 }),
   'base.button': row([button({ width: 48 })], { center: true, align: 'center', height: 40 }),
   'base.checkbox': row([check(), lines(1, { flex: 1 })], { gap: 6, align: 'center' }),

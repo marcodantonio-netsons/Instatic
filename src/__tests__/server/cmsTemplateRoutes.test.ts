@@ -19,6 +19,21 @@ type QueryHandler = (sql: string, params: unknown[]) => DbResult | undefined
 function makeTemplateRouteFakeDb(handlers: QueryHandler[]) {
   return createFakeDb(async (rawSql, params): Promise<DbResult> => {
     const sql = rawSql.replace(/\s+/g, ' ').trim().toLowerCase()
+    // Every route in this helper is a content-row route, so no page row
+    // matches the direct-page metadata lookup that runs first.
+    if (
+      sql.startsWith('select data_rows.id as row_id') &&
+      sql.includes("data_rows.table_id = 'pages'") &&
+      sql.includes('data_row_versions.slug =')
+    ) {
+      return { rows: [], rowCount: 0 } as unknown as DbResult
+    }
+    if (sql.startsWith('select count(*) as count from site')) {
+      return { rows: [{ count: 1 }], rowCount: 1 } as unknown as DbResult
+    }
+    if (sql.startsWith('select count(*) as count') && sql.includes('from users')) {
+      return { rows: [{ count: 1 }], rowCount: 1 } as unknown as DbResult
+    }
     // Entry routes read the table schema to resolve media cells; these
     // fixtures have no table rows, so no media fields are resolved.
     if (sql.startsWith('select logical_id, name, slug, kind') && sql.includes('from data_tables')) {
@@ -64,6 +79,7 @@ describe('CMS dynamic template routes', () => {
     const snapshot: PublishedPageSnapshot = {
       cmsSnapshotVersion: 1,
       pageRowId: page.id,
+      siteSnapshotId: 'site-snapshot',
       site: makeSite({ pages: [page] }),
     }
 
@@ -99,6 +115,7 @@ describe('CMS dynamic template routes', () => {
         return {
           rows: [{
             row_id: snapshot.pageRowId,
+            site_snapshot_id: snapshot.siteSnapshotId,
             site_json: snapshot.site,
             runtime_assets_json: null,
             importmap_body: null,
@@ -207,6 +224,7 @@ describe('CMS dynamic template routes', () => {
       const snapshot: PublishedPageSnapshot = {
         cmsSnapshotVersion: 1,
         pageRowId: page.id,
+        siteSnapshotId: 'site-snapshot',
         site: makeSite({ pages: [page] }),
       }
 
@@ -231,6 +249,7 @@ describe('CMS dynamic template routes', () => {
           return {
             rows: [{
               row_id: snapshot.pageRowId,
+              site_snapshot_id: snapshot.siteSnapshotId,
               site_json: snapshot.site,
               runtime_assets_json: null,
               importmap_body: null,

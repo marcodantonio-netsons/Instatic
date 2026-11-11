@@ -13,7 +13,6 @@ export type {
   SiteScriptFormat,
   SiteScriptPlacement,
   SiteScriptTiming,
-  SiteScriptResourceOrigins,
 } from './schemas'
 export {
   PublishedPageRuntimeAssetsSchema,
@@ -39,11 +38,8 @@ export {
   packageNameFromImportSpecifier,
 } from './importAnalysis'
 export {
-  collectPublishedRuntimeScripts,
   hasPublishedRuntimeScripts,
   scriptTagsForRuntimeAssets,
-  publishedRuntimeResourceOrigins,
 } from './assetManifest'
 export { summarizeRuntimeDiagnostics, fileDiagnostics } from './diagnosticsSummary'
-export { parseResourceOrigin, normalizeResourceOrigins } from './resourceOrigins'
 export type { RuntimeDiagnosticsSummary, FileRuntimeDiagnostics } from './diagnosticsSummary'

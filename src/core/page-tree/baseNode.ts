@@ -11,7 +11,6 @@
  */
 
 import { Type, type Static, withFallback } from '@core/utils/typeboxHelpers'
-import { DynamicPropBindingSchema, parseDynamicBindings } from './dynamicBinding'
 import { compiledCheck } from '@core/utils/typeboxCompiler'
 import {
   onlyStrings,
@@ -31,9 +30,12 @@ const PropBindingSchema = Type.Object({ paramId: Type.String() })
 // ---------------------------------------------------------------------------
 // BaseNodeSchema — shared structural schema for PageNode and VCNode
 //
-// PageNode and VCNode share structural fields and runtime data bindings.
-// Every tree is rendered against the same explicit context; a shared component
-// inside a loop can bind numeric, media and text values just like a page node.
+// `PageNodeSchema` (in `./schemas`) extends this with an optional
+// `dynamicBindings` field for template data-binding on page-level nodes.
+//
+// `VCNodeSchema` (in `src/core/visualComponents/schemas.ts`) is a direct
+// re-export of this schema — VCNode === BaseNode. VC trees use the same flat
+// `children: string[]` flat-ID map as Page trees.
 //
 // The shared base eliminates `as unknown as PageNode` / `as unknown as VCNode`
 // casts when tree-walking functions need to operate on nodes from either context.
@@ -51,9 +53,6 @@ export const BaseNodeSchema = Type.Object({
   // Shape validated against ModuleDefinition.schema at runtime.
   // Keys are FLAT — no dot-path nesting.
   props: withFallback(Type.Record(Type.String(), Type.Unknown()), {}),
-
-  /** Runtime prop bindings against the current page, entry, site or route frame. */
-  dynamicBindings: Type.Optional(Type.Record(Type.String(), DynamicPropBindingSchema)),
 
   // Per-breakpoint prop overrides — shallow-merged on top of props when
   // rendering at a given breakpoint. Key is Breakpoint.id.
@@ -159,7 +158,9 @@ function parsePropBindings(
 //     get their tolerant `withFallback` defaults via the shared parseHelpers
 //     primitives, so a fix to that tolerance lands once for pages and VCs.
 //
-// Page and component parsers use this same binding and structural normalization.
+// `parsePageNode` (in ./pageNode) layers the page-only `dynamicBindings` field
+// on top; `parseVCNode` (in visualComponents/schemas) uses it as-is, converting
+// a thrown required-field error into a `null` drop.
 // ---------------------------------------------------------------------------
 
 /**
@@ -178,7 +179,6 @@ export function parseBaseNodeFields(r: Record<string, unknown>, path: string): B
   const rawChildren = r.children === undefined ? [] : requireArrayField(r, 'children', path)
 
   const propBindings = parsePropBindings(r.propBindings)
-  const dynamicBindings = parseDynamicBindings(r.dynamicBindings)
   // Inline styles — same tolerant bag parser as props/class styles. Dropped
   // when missing or empty so nodes without inline styles stay lean.
   const inlineStyles = parseStylesBag(r.inlineStyles)
@@ -194,7 +194,6 @@ export function parseBaseNodeFields(r: Record<string, unknown>, path: string): B
     ...(typeof r.locked === 'boolean' ? { locked: r.locked } : {}),
     ...(typeof r.hidden === 'boolean' ? { hidden: r.hidden } : {}),
     ...(propBindings !== undefined ? { propBindings } : {}),
-    ...(dynamicBindings !== undefined ? { dynamicBindings } : {}),
     ...(Object.keys(inlineStyles).length > 0 ? { inlineStyles } : {}),
   }
 }

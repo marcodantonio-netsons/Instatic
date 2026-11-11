@@ -21,25 +21,22 @@
  */
 
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
-import type { ContentSearchResults, ContentTableSummary, PublishedSnapshot } from '@core/plugin-sdk'
-import type { DataLocalization, DataRow, DataTable } from '@core/data/schemas'
-import { dataCellTextValues } from '@core/data/cells'
-import { hasLocalizedDataFields, projectLocalizedDataCells, type DataLocalizationContext } from '@core/data/localizedCells'
+import type { ContentTableSummary, PublishedSnapshot } from '@core/plugin-sdk/contentSchemas'
+import type { DataRow, DataTable } from '@core/data/schemas'
 import { parsePageNodeTree } from '@core/page-tree'
 import { readPageTree, mutatePageTree } from '../../../ai/content/treeService'
 import { hookBus } from '@core/plugins/hookBus'
 import {
+  listDataTables,
   listDataTablesWithCounts,
-  listDataRows,
   getDataTable,
-  getDataTableBySlug,
   createDataTable,
   listDataRowsWithFilter,
   getDataRow,
   getDataRowMany,
   getDataRowBySlug,
   countDataRows,
-  readPluginDataLocalization,
+  searchDataRows,
   createDataRow,
   createDataRowMany,
   saveDataRowDraft,
@@ -142,7 +139,7 @@ export async function handleContentTablesGet(
   db: DbClient,
 ): Promise<void> {
   const [slug] = msg.args
-  const table = await getDataTableBySlug(db, MAIN_SCOPE, slug)
+  const table = await resolveTableBySlug(db, slug).catch(() => null)
   if (!table) {
     replyApiOk(msg.pluginId, msg.correlationId, null)
     return
@@ -207,13 +204,10 @@ export async function handleContentEntriesList(
   const [tableSlug, options] = msg.args
   const table = await resolveTableBySlug(db, tableSlug)
   assertContentTableAccess(entry, table, 'read')
-  const localization = hasLocalizedDataFields(table.fields)
-    ? await readPluginDataLocalization(db, MAIN_SCOPE, table, options.language) : undefined
-  const result = await listDataRowsWithFilter(db, MAIN_SCOPE, table.id, { ...options, localization: queryLocalization(localization) })
+  const result = await listDataRowsWithFilter(db, MAIN_SCOPE, table.id, options)
   replyApiOk(msg.pluginId, msg.correlationId, {
     entries: result.rows.map((r) => rowToEntry(r, tableSlug)),
     totalCount: result.totalCount,
-    ...(localization ? { localization } : {}),
   })
 }
 
@@ -372,7 +366,7 @@ export async function handleContentEntriesMoveTable(
   if (!existing || existing.tableId !== source.id) {
     throw new Error(`Entry "${entryId}" not found in table "${tableSlug}"`)
   }
-  const result = await updateDataRowTable(db, MAIN_SCOPE, entryId, target.id, null, msg.pluginId)
+  const result = await updateDataRowTable(db, MAIN_SCOPE, entryId, target.id, null)
   if (!result.ok) throw new Error(`moveToTable failed: ${result.reason}`)
   const actor: PluginActor = { kind: 'plugin', pluginId: msg.pluginId }
   await emitEntryUpdated(tableSlug, entryId, ['tableId'], actor)
@@ -585,35 +579,27 @@ export async function handleContentSearch(
   entry: HostPluginRecord,
   db: DbClient,
 ): Promise<void> {
-  const [query, options] = msg.args
-  const tables = (await listDataTablesWithCounts(db, MAIN_SCOPE))
-    .filter(table => hasContentTableAccess(entry.manifest, table, 'read'))
-  const output: ContentSearchResults = { results: [] }
-  const needle = query.toLowerCase()
-  for (const table of tables) {
-    assertContentTableAccess(entry, table, 'read')
-    const localized = hasLocalizedDataFields(table.fields)
-    const localization = localized ? await readPluginDataLocalization(db, MAIN_SCOPE, table, options.language) : undefined
-    if (localization) (output.localization ??= {})[table.slug] = localization
-    const context = queryLocalization(localization)
-    for (const row of await listDataRows(db, MAIN_SCOPE, table.id)) {
-      // Raw references belong to authoring; search sees only metadata until
-      // the caller supplies the language needed to derive their text.
-      const values = localized && !context ? [row.slug] : [row.slug, ...dataCellTextValues(
-        context ? projectLocalizedDataCells(row.cells, table.fields, context, `rows.${row.id}.cells`) : row.cells, table.fields)]
-      if (!values.some(value => value.toLowerCase().includes(needle))) continue
-      output.results.push({ id: row.id, tableSlug: table.slug, tableName: table.name, slug: row.slug,
-        status: row.status, updatedAt: row.updatedAt })
-    }
-  }
-  output.results.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.id.localeCompare(b.id))
-  output.results = output.results.slice(0, options.limit ?? 50)
-  replyApiOk(msg.pluginId, msg.correlationId, output)
-}
-
-function queryLocalization(localization: DataLocalization | undefined): DataLocalizationContext | undefined {
-  return localization?.language !== undefined
-    ? { language: localization.language, translations: localization.translations } : undefined
+  const [query, limit] = msg.args
+  // Search results carry only `tableSlug`, so resolve the accessible set
+  // (declared slugs + own-created tables) against the table list — tiny,
+  // and the only way to honor the `@own-created` marker here.
+  const accessibleSlugs = new Set(
+    (await listDataTables(db, MAIN_SCOPE))
+      .filter((t) => hasContentTableAccess(entry.manifest, t))
+      .map((t) => t.slug),
+  )
+  const all = await searchDataRows(db, MAIN_SCOPE, query, limit)
+  const filtered = all
+    .filter((r) => accessibleSlugs.has(r.tableSlug))
+    .map((r) => ({
+      id: r.id,
+      tableSlug: r.tableSlug,
+      tableName: r.tableName,
+      slug: r.slug,
+      status: r.status,
+      updatedAt: r.updatedAt,
+    }))
+  replyApiOk(msg.pluginId, msg.correlationId, filtered)
 }
 
 export async function handleContentSnapshot(

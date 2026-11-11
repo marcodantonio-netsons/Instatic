@@ -14,11 +14,11 @@
  */
 import { useState } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import { useEditorStore, selectActiveCanvasPage, selectSelectedNode } from '@site/store/store'
+import { useEditorStore, selectSelectedNode } from '@site/store/store'
 import { registry } from '@core/module-engine'
 import { getAncestors, resolveProps } from '@core/page-tree'
 import { loopSourceRegistry } from '@core/loops/registry'
-import { buildClassTokenUsageMap, createSelectorUsageMapSelector, resolveSelectorUsage } from '../selectorUsage'
+import { buildClassTokenUsageMap, buildSelectorUsageMap, resolveSelectorUsage } from '../selectorUsage'
 import type {
   AnyModuleDefinition,
 } from '@core/module-engine'
@@ -34,7 +34,6 @@ import type { ActiveDocument, PanelState, FocusedPanel, PanelMode } from '../../
 
 const DEFAULT_WIDTH = 360
 const MIN_WIDTH = 280
-const selectorUsageForSnapshot = createSelectorUsageMapSelector()
 
 /**
  * Everything PropertiesPanel needs to render. Field order intentionally
@@ -111,7 +110,6 @@ export function usePropertiesPanelData(): PropertiesPanelData {
   const renameNode = useEditorStore((s) => s.renameNode)
   const site = useEditorStore((s) => s.site)
   const activePageId = useEditorStore((s) => s.activePageId)
-  const activeCanvasPage = useEditorStore(selectActiveCanvasPage)
   const activeClassId = useEditorStore((s) => s.activeClassId)
   const selectedSelectorClassId = useEditorStore((s) => s.selectedSelectorClassId)
   const selectedSelectorClassIds = useEditorStore(useShallow((s) => s.selectedSelectorClassIds))
@@ -156,7 +154,7 @@ export function usePropertiesPanelData(): PropertiesPanelData {
     : null
   // Ambient rules report "Unused" only when provably dead; class rules report
   // an exact reference count. `null` means "no badge" (unassessable ambient).
-  const selectorUsageById = selectorUsageForSnapshot(site)
+  const selectorUsageById = buildSelectorUsageMap(site)
   const selectedSelectorUsage = selectedSelectorClass
     ? resolveSelectorUsage(
         selectedSelectorClass,
@@ -178,7 +176,7 @@ export function usePropertiesPanelData(): PropertiesPanelData {
   // bindings — they resolve to the loop's iteration item via the publisher's
   // entry-stack semantics.
   const { enclosingLoopSource, enclosingLoopTableId } = resolveEnclosingLoopContext(
-    activeCanvasPage,
+    activePage,
     selectedNodeId,
   )
   // Bindings are always available. The picker decides which sources are

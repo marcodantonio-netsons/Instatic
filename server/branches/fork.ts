@@ -23,7 +23,7 @@ import { MAIN_SCOPE, type BranchScope } from './scope'
 import { runPublishFlush } from '../publish/publishFlush'
 import { serializeCollabAwareWrite } from '../repositories/rowWriteEvents'
 
-interface ForkBranchInput {
+export interface ForkBranchInput {
   id: string
   name: string
   fromBranchId: string

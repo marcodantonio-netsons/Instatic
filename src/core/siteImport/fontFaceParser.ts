@@ -43,7 +43,7 @@ function fontFaceVariant(declarations: CSSStyleDeclaration): string {
   return formatVariant({ weight, italic })
 }
 
-interface ParsedFontFaceRule {
+export interface ParsedFontFaceRule {
   srcValue: string
   fontFace: ParsedFontFace | null
 }

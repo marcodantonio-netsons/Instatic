@@ -1,0 +1,36 @@
+{
+  "name": "Netsons · Hosting, Cloud und Server",
+  "short_name": "Netsons",
+  "description": "Von Netsons verwaltete Domains, Hosting, Cloud Computing und dedizierte Server.",
+  "start_url": "/de",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#075aa9",
+  "lang": "de",
+  "icons": [
+    {
+      "src": "/uploads/netsons/media/netsons/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/uploads/netsons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/uploads/netsons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/uploads/netsons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

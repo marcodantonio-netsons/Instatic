@@ -7,7 +7,6 @@
  * how the rest of `server/handlers/cms/*` is organized.
  *
  * URL surface owned by this folder:
- *   /admin/api/cms/data/localization              (GET)
  *   /admin/api/cms/data/_meta                     (GET)  ← matched first
  *   /admin/api/cms/data/authors                   (GET)
  *   /admin/api/cms/data/tables                    (GET, POST)
@@ -24,8 +23,6 @@
  * to collide with an id-based route (table ids are nanoid strings, no leading
  * underscores), and it avoids any risk of the table/:id pattern eating it.
  */
-import { DynamicBindingConfigurationError } from '@core/page-tree'
-import { DynamicBindingNumberFormatError } from '@core/templates'
 import type { DbClient } from '../../../db/client'
 import type { BranchScope } from '../../../branches/scope'
 import type { CmsHandlerOptions } from '../shared'
@@ -35,9 +32,6 @@ import { handleDataTableRoutes } from './tables'
 import { handleDataRowRoutes } from './rows'
 import { RuntimeScriptBuildError } from '../../../publish/runtime/buildError'
 import { PagePublishError } from '../../../repositories/publish'
-import { handleDataLocalizationRoute } from './localization'
-import { LocalizationError } from '@core/localization'
-import { LocalizedDataReferenceAccessError } from '@core/data/localizedCells'
 import { jsonResponse } from '../../../http'
 
 export async function handleDataRoutes(
@@ -47,17 +41,13 @@ export async function handleDataRoutes(
   options: CmsHandlerOptions = {},
 ): Promise<Response | null> {
   try {
-    return (await handleDataLocalizationRoute(req, db, scope))
-      ?? (await handleDataMetaRoutes(req, db, scope))
+    return (await handleDataMetaRoutes(req, db, scope))
       ?? (await handleDataSearchRoute(req, db, scope))
       ?? (await handleDataTableRoutes(req, db, scope))
       ?? (await handleDataRowRoutes(req, db, scope, options))
-  } catch (error) {
-    if (error instanceof DynamicBindingConfigurationError || error instanceof DynamicBindingNumberFormatError) return jsonResponse({ error: error.message }, { status: 422 })
-    if (error instanceof PagePublishError) return jsonResponse({ error: error.message }, { status: 409 })
-    if (error instanceof RuntimeScriptBuildError) return jsonResponse({ error: error.message }, { status: 422 })
-    if (error instanceof LocalizedDataReferenceAccessError) return jsonResponse({ error: error.message }, { status: 403 })
-    if (error instanceof LocalizationError) return jsonResponse({ error: error.message }, { status: 422 })
-    throw error
+  } catch (err) {
+    if (err instanceof PagePublishError) return jsonResponse({ error: err.message }, { status: 409 })
+    if (err instanceof RuntimeScriptBuildError) return jsonResponse({ error: err.message }, { status: 422 })
+    throw err
   }
 }

@@ -25,7 +25,7 @@ import {
   type ResolvedLoopRenderData,
 } from '@core/publisher'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
-import { walkRenderTree } from '@core/visualComponents'
+import { walkRenderTree } from './renderTreeWalk'
 import type { DbClient } from '../db/client'
 import type { MediaAsset } from '../repositories/media'
 import {
@@ -49,9 +49,9 @@ interface MediaPrefetchOptions {
  */
 function collectMediaPaths(page: Page, site: SiteDocument, registry: IModuleRegistry): Set<string> {
   const paths = new Set<string>()
-  // Materialize referenced VCs so media paths include effective params and
-  // filled/default slots, with hidden and unused content excluded.
-  walkRenderTree(page.nodes, page.rootNodeId, site.visualComponents, (node) => {
+  // Descend into referenced VC definition trees so an image/media prop inside a
+  // VC body is resolved too (ISS-022).
+  walkRenderTree(page.nodes, page.rootNodeId, site, (node) => {
     const def = registry.get(node.moduleId)
     if (!def) return
     collectNodeBackgroundImagePaths(node, paths)

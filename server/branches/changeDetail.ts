@@ -28,7 +28,7 @@ function displayValue(value: unknown): { text: string | null; structured: boolea
   return { text: json.length > PREVIEW_LIMIT ? `${json.slice(0, PREVIEW_LIMIT)}…` : json, structured: true }
 }
 
-interface FieldChangeOptions {
+export interface FieldChangeOptions {
   /** Prefix that turns a key into the conflict path the merge reports. */
   prefix: string
   conflicts: ReadonlySet<string>

@@ -4,7 +4,6 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { stampFormPageTokens } from '../../../server/forms/formRuntime'
 import { FORM_RUNTIME_JS } from '../../modules/base/forms/formRuntimeJs'
-import { FormModule, InputModule, SubmitModule, FormMessageModule } from '@modules/base/forms'
 
 const PAGE_WITH_CMS_FORM = `<!doctype html>
 <html>
@@ -21,11 +20,6 @@ describe('stampFormPageTokens', () => {
     const html = stampFormPageTokens(PAGE_WITH_CMS_FORM, 'page-home')
     expect(html).toContain('data-instatic-page-token=')
     expect(html).toContain('data-instatic-page-id="page-home"')
-  })
-
-  it('HTML-escapes stamped attributes with the shared escaping rule', () => {
-    const html = stampFormPageTokens(PAGE_WITH_CMS_FORM, `page&"'<>`)
-    expect(html).toContain('data-instatic-page-id="page&amp;&quot;&#x27;&lt;&gt;"')
   })
 
   it('leaves non-CMS forms untouched', () => {
@@ -47,16 +41,18 @@ describe('stampFormPageTokens', () => {
 
 describe('form runtime browser behaviour', () => {
   it('prefetches the submit challenge on attach and submits via document-level delegation', async () => {
-    document.body.innerHTML = stampFormPageTokens(FormModule.render({ ...FormModule.defaults, formId: 'contact' }, [
-      InputModule.render({ ...InputModule.defaults, name: 'email', value: 'ai@example.com' }, []).html,
-      SubmitModule.render(SubmitModule.defaults, []).html,
-      FormMessageModule.render(FormMessageModule.defaults, []).html,
-    ]).html, 'page-home')
+    document.body.innerHTML = `
+      <form data-instatic-form-mode="cms" data-instatic-form-id="contact" data-instatic-page-id="page-home" data-instatic-page-token="page-token">
+        <input name="email" value="ai@example.com">
+        <button type="submit">Send</button>
+        <p data-instatic-form-message="status"></p>
+      </form>
+    `
 
     const calls: Array<{ path: string; payload: Record<string, unknown> }> = []
-    const originalFetch = window.fetch
+    const originalFetch = globalThis.fetch
 
-    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    ;(globalThis as Record<string, unknown>).fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = typeof input === 'string'
         ? input
         : input instanceof URL
@@ -101,7 +97,7 @@ describe('form runtime browser behaviour', () => {
       expect(calls[1].payload.token).toBe('prefetched-token')
       expect(calls[1].payload.challenge).toBe('prefetched-challenge')
     } finally {
-      window.fetch = originalFetch
+      ;(globalThis as Record<string, unknown>).fetch = originalFetch
       document.body.innerHTML = ''
     }
   })

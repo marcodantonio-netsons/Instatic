@@ -327,10 +327,8 @@ describe('FormSettingsPanelView', () => {
     expect(screen.getByText('Mode').tagName).toBe('LABEL')
     expect(screen.getByText('Preview state').tagName).toBe('LABEL')
 
-    fireEvent.click(screen.getByRole('button', { name: 'HTML action' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Custom action' }))
     expect(patches).toContainEqual({ mode: 'custom' })
-    fireEvent.click(screen.getByRole('button', { name: 'HTTP request' }))
-    expect(patches).toContainEqual({ mode: 'request' })
 
     const idInput = screen.getByLabelText('Form ID') as HTMLInputElement
     expect(idInput.value).toBe('contact')

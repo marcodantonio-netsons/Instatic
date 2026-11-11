@@ -1,0 +1,36 @@
+{
+  "name": "Netsons · Găzduire, Cloud și servere",
+  "short_name": "Netsons",
+  "description": "Domenii, găzduire, Cloud Computing și servere dedicate administrate de Netsons.",
+  "start_url": "/ro",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#075aa9",
+  "lang": "ro",
+  "icons": [
+    {
+      "src": "/uploads/netsons/media/netsons/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/uploads/netsons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/uploads/netsons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/uploads/netsons/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

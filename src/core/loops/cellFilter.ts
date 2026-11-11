@@ -79,7 +79,7 @@ export function cellOrderSql(input: {
 /** Operators a loop filter can use. Closed set — never interpolated raw. */
 export const CELL_FILTER_OPERATORS = ['is', 'isNot', 'isTrue', 'isFalse', 'isSet', 'isEmpty'] as const
 
-type CellFilterOperator = (typeof CELL_FILTER_OPERATORS)[number]
+export type CellFilterOperator = (typeof CELL_FILTER_OPERATORS)[number]
 
 export interface CellFilter {
   /** Field id as stored in `cells_json` (a data-table field id). */
@@ -92,7 +92,7 @@ export interface CellFilter {
 /** Operators that ignore the comparison value. */
 const VALUELESS: ReadonlySet<CellFilterOperator> = new Set(['isTrue', 'isFalse', 'isSet', 'isEmpty'])
 
-function isCellFilterOperator(value: unknown): value is CellFilterOperator {
+export function isCellFilterOperator(value: unknown): value is CellFilterOperator {
   return typeof value === 'string' && (CELL_FILTER_OPERATORS as readonly string[]).includes(value)
 }
 
@@ -179,20 +179,6 @@ export function cellFilterSql(input: {
       return { sql: `${textValue} <> ''`, params: [filter.field] }
     case 'isEmpty':
       return { sql: `${textValue} = ''`, params: [filter.field] }
-  }
-}
-
-/** The same closed conditions apply after native localized-cell projection. */
-export function matchesCellFilter(cells: Record<string, unknown>, filter: CellFilter): boolean {
-  const value = cells[filter.field]
-  const text = value === undefined || value === null ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value)
-  switch (filter.operator) {
-    case 'is': return text === filter.value
-    case 'isNot': return text !== filter.value
-    case 'isTrue': return text === 'true' || text === '1'
-    case 'isFalse': return text === 'false' || text === '0' || text === ''
-    case 'isSet': return text !== ''
-    case 'isEmpty': return text === ''
   }
 }
 

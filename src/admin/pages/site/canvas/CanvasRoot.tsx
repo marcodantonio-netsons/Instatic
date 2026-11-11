@@ -28,11 +28,6 @@ import type { Breakpoint } from '@core/page-tree'
 import { registry } from '@core/module-engine'
 import { getNodeDisplayName } from '@core/page-tree'
 import { ErrorBoundary } from '@ui/components/ErrorBoundary'
-import { CanvasLocalizationGate } from './CanvasLocalizationGate'
-import { usePublicFilePreview } from '@site/hooks/usePublicFilePreview'
-import type { SiteFile } from '@core/files/schemas'
-import { EmptyState } from '@ui/components/EmptyState'
-import { Button } from '@ui/components/Button'
 import { SpotlightContext } from '@admin/spotlight/spotlightContext'
 import { getKeybindingForCommand } from '@admin/spotlight/keybindings'
 import { useCanvas } from '@site/hooks/useCanvas'
@@ -81,7 +76,6 @@ const TemplateModeControl = lazy(() =>
  * selector — a new array literal has a new identity on every call.
  */
 const EMPTY_BREAKPOINTS: Breakpoint[] = []
-const EMPTY_SITE_FILES: SiteFile[] = []
 
 interface CanvasRootProps {
   editable?: boolean
@@ -144,18 +138,10 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
   const setFocusedPanel = useEditorStore((s) => s.setFocusedPanel)
   const setActiveDocument = useEditorStore((s) => s.setActiveDocument)
   const activeDocument = useEditorStore((s) => s.activeDocument)
-  const siteFiles = useEditorStore((s) => s.site?.files ?? EMPTY_SITE_FILES)
-  const filePreview = usePublicFilePreview(siteFiles)
   const {
-    context: previewDataContext,
-    loading: previewDataLoading,
-    error: templatePreviewError,
-    refresh: refreshPreviewData,
+    context: templatePreviewContext,
+    loading: templatePreviewContextLoading,
   } = useTemplatePreviewContext(canvasPage)
-  const templatePreviewContext = previewDataContext ? { ...previewDataContext, files: filePreview.files } : undefined
-  const templatePreviewContextLoading = previewDataLoading || filePreview.loading
-  const templatePreviewContextError = filePreview.error
-  const refreshTemplatePreviewContext = () => { filePreview.refresh(); refreshPreviewData() }
   const agentSnapshotBreakpoint = agentSnapshotCaptureRequest
     ? breakpoints.find((breakpoint) => breakpoint.id === agentSnapshotCaptureRequest.breakpointId) ?? null
     : null
@@ -536,15 +522,9 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
         */}
           <ErrorBoundary
             location="canvas"
-            resetKeys={[canvasPage, templatePreviewContext?.files, activeDocument?.kind ?? null, canvasView, templatePreviewError?.message ?? null, templatePreviewContext?.site?.translations]}
+            resetKeys={[canvasPage?.id ?? null, activeDocument?.kind ?? null, canvasView]}
           >
-            <CanvasLocalizationGate error={templatePreviewError}>
-            {templatePreviewContextError ? (
-              <EmptyState variant="centered" title="Preview unavailable" description={templatePreviewContextError}
-                action={<Button variant="secondary" onClick={refreshTemplatePreviewContext}>Retry preview</Button>} role="alert" />
-            ) : templatePreviewContextLoading ? (
-              <EmptyState variant="centered" title="Loading preview…" description="Resolving content and private page assets." role="status" />
-            ) : isLive ? (
+            {isLive ? (
               <CanvasLiveSurface
                 page={canvasPage}
                 activeBreakpoint={activeBreakpoint}
@@ -564,7 +544,6 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
                 runtimeScripts={runtimeScripts}
               />
             )}
-            </CanvasLocalizationGate>
           </ErrorBoundary>
 
           {/*
@@ -608,7 +587,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
               page={canvasPage}
               breakpoint={agentSnapshotBreakpoint}
               templateContext={templatePreviewContext}
-              templateContextLoading={templatePreviewContextLoading || Boolean(templatePreviewContextError) || Boolean(templatePreviewError)}
+              templateContextLoading={templatePreviewContextLoading}
             />
           ) : null}
         </div>

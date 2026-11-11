@@ -18,7 +18,6 @@ import {
   projectLayoutDoc,
   projectPageDoc,
   projectSiteDoc,
-  projectSiteRosters,
   seedComponentDoc,
   seedLayoutDoc,
   seedPageDoc,
@@ -29,7 +28,6 @@ import '@modules/base' // registry population — inline-text props seed as Y.Te
 import type { SiteShell } from '@core/page-tree'
 import { MAIN_BRANCH_ID, SITE_SHELL_LOGICAL_ID } from '@core/branches'
 import { pageFromRow, pageToCells } from '@core/data/pageFromRow'
-import { PAGE_SEO_CELL_IDS } from '@core/data/pageSeoFields'
 import { visualComponentFromRow, visualComponentToCells } from '@core/data/componentFromRow'
 import { savedLayoutFromRow, savedLayoutToCells } from '@core/data/layoutFromRow'
 import { vcSlugFromName } from '@core/visualComponents'
@@ -56,16 +54,15 @@ const KIND_TABLE: Record<Exclude<CollabDocKind, 'site'>, string> = {
 
 /**
  * The cells each doc kind derives from its Y doc. Every other cell on the
- * row (featured media, custom collection fields, plugin-owned fields) is
+ * row (SEO title and description, featured media, plugin-owned fields) is
  * edited elsewhere and must survive a relay write untouched; an owned cell
  * the projection no longer emits (a page that stopped being a template)
  * is cleared.
  */
 const OWNED_CELLS: Record<Exclude<CollabDocKind, 'site'>, readonly string[]> = {
-  page: ['title', 'slug', 'language', 'translationGroup', 'body', 'templateEnabled', 'templateTarget', 'templatePriority',
-    ...PAGE_SEO_CELL_IDS],
+  page: ['title', 'slug', 'body', 'templateEnabled', 'templateTarget', 'templatePriority'],
   component: ['name', 'slug', 'body', 'params', 'classIds'],
-  layout: ['name', 'slug', 'body', 'classes', 'conditions'],
+  layout: ['name', 'slug', 'body', 'classes'],
 }
 
 /** The row's stored cells with the doc-owned ones replaced by what the doc derives. */
@@ -79,8 +76,8 @@ export function mergeDerivedCells(
   return { ...merged, ...derived }
 }
 
-type DerivedWrite = 'written' | 'incomplete' | 'invalid'
-type SiteRosters = ReturnType<typeof projectSiteRosters>
+export type DerivedWrite = 'written' | 'incomplete' | 'invalid'
+type SiteRosters = ReturnType<typeof projectSiteDoc>['rosters']
 
 interface RelayPersistenceHooks {
   isResident(docId: string): boolean
@@ -89,7 +86,7 @@ interface RelayPersistenceHooks {
   invalidationVersion(docId: string): number
 }
 
-interface RelayPersistence {
+export interface RelayPersistence {
   hasRosterSnapshot(branchId: string): boolean
   rosterContains(docId: string): boolean
   observeSiteRoster(branchId: string, doc: Y.Doc): void
@@ -150,7 +147,7 @@ export function createRelayPersistence(
   }
 
   function projectedRosterDocIds(branchId: string, doc: Y.Doc): Set<string> {
-    const rosters = projectSiteRosters(doc)
+    const { rosters } = projectSiteDoc(doc)
     return new Set([
       ...rosters.pages.map((rowId) => encodeCollabDocId({ kind: 'page', branchId, rowId })),
       ...rosters.components.map((rowId) => encodeCollabDocId({ kind: 'component', branchId, rowId })),

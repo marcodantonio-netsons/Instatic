@@ -20,6 +20,7 @@ export {
   listDataRows,
   listDataRowIdSlugs,
   listDataRowSeqs,
+  listChangedDataRowRefsSince,
   getDataRow,
   getDataRowMany,
   getDataRowBySlug,
@@ -48,7 +49,7 @@ export {
 export { createDataRowMany, saveDataRowDraftMany, softDeleteDataRowMany } from './bulk'
 
 export { applyDataRowChanges, applyDataRowChangesInTx } from './apply'
-export type { DataRowWrite } from './apply'
+export type { ApplyDataRowChangesInput, DataRowWrite } from './apply'
 
 export { scheduleDataRowPublish, cancelScheduledPublish, listDuePublishSchedules } from './schedule'
 

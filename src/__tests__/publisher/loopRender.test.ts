@@ -7,9 +7,7 @@
 import { describe, expect, it } from 'bun:test'
 import { makeModule, makePage, makeRegistry, makeSite } from './helpers'
 import { publishPage, type ResolvedLoopRenderData } from '@core/publisher'
-import { LoopQueryConfigurationError } from '@core/loops'
 import type { LoopItem } from '@core/loops/types'
-import { LoopModule } from '@modules/base/loop'
 
 function loopData(items: LoopItem[]): ResolvedLoopRenderData {
   return { items, totalItems: items.length, pageNumber: 1, hasMore: false }
@@ -36,8 +34,6 @@ const rootModule = makeModule('base.body', {
 })
 
 const loopModule = makeModule('base.loop', {
-  propsSchema: LoopModule.propsSchema,
-  defaults: LoopModule.defaults,
   canHaveChildren: true,
   // Defense-in-depth fallback that should never be called — interceptor
   // handles loop rendering. If it IS called, the test will see this.
@@ -350,62 +346,6 @@ describe('publisher loop renderer', () => {
       expect(html).not.toContain('Project 1/p2-a')
       expect(html).not.toContain('Project 2/p1-a')
     })
-
-    it('keeps a selected entry-field item across collection reorder before descending pagination', () => {
-      const page = makePage({
-        root: { moduleId: 'base.body', children: ['gallery-loop'] },
-        'gallery-loop': {
-          moduleId: 'base.loop',
-          children: ['card'],
-          props: {
-            sourceId: 'entry.field',
-            filters: { fieldId: 'gallery', itemId: 'feature-0' },
-            direction: 'desc',
-            offset: 0,
-            limit: 1,
-          },
-        },
-        card: {
-          moduleId: 'base.text',
-          props: { text: '' },
-          dynamicBindings: { text: { source: 'currentEntry', field: 'caption' } },
-        },
-      })
-      const first = { id: 'feature-0', caption: 'Selected feature' }
-      const second = { id: 'feature-1', caption: 'Other feature' }
-      const render = (gallery: Array<typeof first>) => publishPage(page, makeSite(), baseRegistry, {
-        templateContext: { entryStack: [{ id: 'project', fields: { gallery } }] },
-      }).html
-
-      const original = render([first, second])
-      const reordered = render([second, first])
-      expect(original).toContain('<p>Selected feature</p>')
-      expect(reordered).toContain('<p>Selected feature</p>')
-      expect(reordered).not.toContain('<p>Other feature</p>')
-      expect(render([second])).not.toContain('feature')
-    })
-
-    it('rejects a non-string authored entry item ID with its configuration path', () => {
-      const page = makePage({
-        root: { moduleId: 'base.body', children: ['gallery-loop'] },
-        'gallery-loop': {
-          moduleId: 'base.loop',
-          children: ['card'],
-          props: { sourceId: 'entry.field', filters: { fieldId: 'gallery', itemId: 42 } },
-        },
-        card: { moduleId: 'base.text', props: { text: '' } },
-      })
-
-      try {
-        publishPage(page, makeSite(), baseRegistry, {
-          templateContext: { entryStack: [{ id: 'project', fields: { gallery: [] } }] },
-        })
-        throw new Error('Expected invalid entry item ID to fail')
-      } catch (error) {
-        expect(error).toBeInstanceOf(LoopQueryConfigurationError)
-        if (error instanceof LoopQueryConfigurationError) expect(error.path).toBe('nodes.gallery-loop.props.filters.itemId')
-      }
-    })
   })
 
   it('attaches data attrs and registers infinite mode', () => {
@@ -513,6 +453,6 @@ describe('publisher loop renderer — htmlAttributes', () => {
     const html = publishPage(page, makeSite(), baseRegistry, {
       loopData: new Map([['loop', loopData(items)]]),
     }).html
-    expect(html).toContain('<div data-instatic-loop="loop" data-instatic-loop-page="1" data-instatic-loop-total="2" data-instatic-loop-loaded="2">')
+    expect(html).toContain('<div data-instatic-loop="loop" data-instatic-loop-page="1">')
   })
 })

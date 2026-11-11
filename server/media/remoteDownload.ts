@@ -3,7 +3,7 @@ import { guardedFetch, type GuardedFetchOptions } from '../plugins/host/network'
 
 const FETCH_TIMEOUT_MS = 15_000
 
-interface RemoteMediaDownloadOptions {
+export interface RemoteMediaDownloadOptions {
   allowlist?: ReadonlyArray<string>
   signal?: AbortSignal
   maxBytes: number

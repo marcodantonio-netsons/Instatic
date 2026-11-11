@@ -23,7 +23,7 @@ export async function nextDataRowVersionNumber(db: DbClient, rowId: string): Pro
   return Number(rows[0]?.next_version ?? 1)
 }
 
-interface DataRowVersionSummary {
+export interface DataRowVersionSummary {
   id: string
   rowId: string
   versionNumber: number
@@ -75,7 +75,7 @@ export async function listDataRowVersions(db: DbClient, rowId: string): Promise<
   }))
 }
 
-interface DataRowVersionContent {
+export interface DataRowVersionContent {
   id: string
   rowId: string
   versionNumber: number

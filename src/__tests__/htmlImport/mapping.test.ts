@@ -1082,14 +1082,14 @@ describe('HTML attribute preservation — props.htmlAttributes for ordinary base
     })
   })
 
-  it('keeps form control id props outside the native HTML attributes bag', () => {
+  it('keeps form control id props on form modules instead of adding htmlAttributes', () => {
     const result = imported('<form><input id="email" name="email"></form>')
     const form = result.nodes[result.rootIds[0]!]!
     const input = result.nodes[form.children[0]!]!
 
     expect(input.moduleId).toBe('base.input')
     expect(input.props.id).toBe('email')
-    expect(input.props.htmlAttributes).toEqual({})
+    expect(input.props.htmlAttributes).toBeUndefined()
   })
 
   it('skips class, module-owned attributes, and reserved editor attributes', () => {

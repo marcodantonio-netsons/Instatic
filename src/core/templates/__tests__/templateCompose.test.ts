@@ -25,6 +25,23 @@ const aboutPage = (): Page => ({
 } as unknown as Page)
 
 describe('composeTemplateChain', () => {
+  it.each(['page', 'entry'] as const)('preserves frozen source templates for a %s terminal', (kind) => {
+    const outer = layout()
+    const inner = { ...layout(), id: 'inner' }
+    const page = aboutPage()
+    const before = structuredClone({ outer, inner, page })
+    for (const source of [outer, inner, page]) {
+      for (const item of Object.values(source.nodes)) Object.freeze(item)
+    }
+
+    const terminal = kind === 'page' ? { kind, page } : { kind }
+    const composed = composeTemplateChain([outer, inner], terminal)
+
+    expect({ outer, inner, page }).toEqual(before)
+    expect(composed.nodes.L_header.parentId).toBe(composed.rootNodeId)
+    expect(composed.nodes.L_header).not.toBe(outer.nodes.L_header)
+  })
+
   it('returns the page unchanged when the chain is empty', () => {
     const merged = composeTemplateChain([], { kind: 'page', page: aboutPage() })
     expect(merged.rootNodeId).toBe('A_body')
@@ -42,16 +59,16 @@ describe('composeTemplateChain', () => {
     expect(Object.values(merged.nodes).some((n) => n.moduleId === 'base.outlet')).toBe(false)
   })
 
-  it('merges a styled page body into the document body without inventing a container', () => {
+  it('migrates a styled page body onto a container instead of dropping its props', () => {
     const styled = aboutPage()
     styled.nodes.A_body = { ...styled.nodes.A_body, props: { background: 'navy' } } as never
     const merged = composeTemplateChain([layout()], { kind: 'page', page: styled })
     const root = merged.nodes[merged.rootNodeId]
     const middle = merged.nodes[root.children[1]]
-    expect(root.props).toEqual({ background: 'navy' })
-    expect(middle.moduleId).toBe('base.text')
-    expect(Object.values(merged.nodes).filter(node => node.moduleId === 'base.body')).toHaveLength(1)
-    expect(Object.values(merged.nodes).some(node => node.moduleId === 'base.container')).toBe(false)
+    // body props preserved on a wrapping container, NOT silently lost
+    expect(middle.moduleId).toBe('base.container')
+    expect(middle.props).toEqual({ background: 'navy' })
+    expect(merged.nodes[middle.children[0]].moduleId).toBe('base.text') // original heading underneath
   })
 
   it('skips an outlet-less template (page renders unwrapped, no throw)', () => {

@@ -16,7 +16,7 @@ interface TypeScriptWorkerTransport {
   terminate(): void
 }
 
-type TypeScriptWorkerFactory = () => TypeScriptWorkerTransport
+export type TypeScriptWorkerFactory = () => TypeScriptWorkerTransport
 
 interface PendingRequest {
   resolve: (response: TypeScriptWorkerResponse) => void

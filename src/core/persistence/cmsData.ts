@@ -24,14 +24,6 @@ import {
 import type { LoopItem } from '@core/loops/types'
 import { LoopItemSchema } from '@core/loops/types'
 import { apiRequest, assertOk, ApiError, withAmbientHeaders, type FetchLike } from '@core/http'
-import { DataLocalizationSchema, type DataLocalization } from '@core/data/schemas'
-
-export async function readCmsDataLocalization(tableIds: readonly string[], language?: string): Promise<DataLocalization> {
-  const query = new URLSearchParams()
-  for (const tableId of tableIds) query.append('table', tableId)
-  if (language !== undefined) query.set('language', language)
-  return apiRequest(`/admin/api/cms/data/localization?${query}`, { schema: DataLocalizationSchema, fallbackMessage: 'Could not load language-catalogue data' })
-}
 
 // ---------------------------------------------------------------------------
 // Envelope schemas
@@ -358,20 +350,19 @@ export async function updateCmsDataRowTable(
 // Loop preview — real published rows projected as LoopItems
 //
 // Used by the editor canvas `useLoopPreviewItems` hook for `data.rows`
-// loops so the preview matches what the publisher will emit in the explicit
-// page language. An empty source stays empty.
+// loops so the preview matches what the publisher will emit. Falls back
+// to synthetic placeholder items only when the table has no published rows.
 // ---------------------------------------------------------------------------
 
 const LoopPreviewEnvelope = Type.Object(
   {
-    items: Type.Array(LoopItemSchema),
-    totalItems: Type.Integer({ minimum: 0 }),
+    items: Type.Optional(Type.Array(LoopItemSchema)),
+    totalItems: Type.Optional(Type.Number()),
   },
   { additionalProperties: true },
 )
 
 interface DataLoopPreviewOptions {
-  language?: string
   orderBy?: string
   direction?: 'asc' | 'desc'
   limit?: number
@@ -380,7 +371,6 @@ interface DataLoopPreviewOptions {
   cellField?: string
   cellOperator?: string
   cellValue?: string
-  rowIds?: readonly string[]
 }
 
 interface DataLoopPreviewResult {
@@ -405,8 +395,6 @@ export async function previewCmsDataLoopItems(
         cellField: options.cellField,
         cellOperator: options.cellOperator,
         cellValue: options.cellValue,
-        rowIds: options.rowIds === undefined ? undefined : JSON.stringify(options.rowIds),
-        language: options.language,
       },
       schema: LoopPreviewEnvelope,
       fetchImpl,
@@ -414,8 +402,8 @@ export async function previewCmsDataLoopItems(
     },
   )
   return {
-    items: body.items,
-    totalItems: body.totalItems,
+    items: body.items ?? [],
+    totalItems: body.totalItems ?? 0,
   }
 }
 

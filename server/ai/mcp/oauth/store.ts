@@ -14,7 +14,7 @@ import {
 import { isValidPkceVerifier, normalizeMcpScope } from './protocol'
 
 const AUTHORIZATION_CODE_TTL_MS = 5 * 60 * 1000
-const OAUTH_ACCESS_TOKEN_TTL_SECONDS = 60 * 60
+export const OAUTH_ACCESS_TOKEN_TTL_SECONDS = 60 * 60
 
 interface OAuthClientRow {
   client_id: string
@@ -25,7 +25,7 @@ interface OAuthClientRow {
   client_id_issued_at: number | string
 }
 
-interface OAuthClientRecord {
+export interface OAuthClientRecord {
   clientId: string
   clientName: string
   redirectUris: readonly string[]
@@ -64,13 +64,13 @@ interface OAuthAccessGrantRow {
   capabilities_json: CoreCapability[]
 }
 
-interface OAuthAccessGrant {
+export interface OAuthAccessGrant {
   connectorId: string
   userId: string
   capabilities: readonly CoreCapability[]
 }
 
-interface OAuthTokenPair {
+export interface OAuthTokenPair {
   accessToken: string
   refreshToken: string
   scope: string

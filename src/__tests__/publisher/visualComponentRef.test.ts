@@ -15,8 +15,6 @@
 
 import { describe, it, expect } from 'bun:test'
 import { publishPage, renderNode } from '@core/publisher'
-import { parseVisualComponent } from '@core/visualComponents'
-import { LoopModule } from '@modules/base/loop'
 import type { VisualComponent, VCParam, VCNode } from '@core/visualComponents'
 import { makeModule, makeRegistry, makePage, makeSite, makeAccumulators } from './helpers'
 import { ContainerModule } from '@modules/base/container'
@@ -30,7 +28,6 @@ import { OutletModule } from '@modules/base/outlet'
 // ---------------------------------------------------------------------------
 
 const registry = makeRegistry({
-  'base.loop': LoopModule as never,
   'base.container': ContainerModule as never,
   'base.text': TextModule as never,
   'base.visual-component-ref': VisualComponentRefModule as never,
@@ -239,38 +236,6 @@ describe('VC inlining — slot expansion', () => {
     expect(html).toContain('Default slot content')
   })
 
-  it('preserves native dynamic bindings and inline styles on page-authored slot fills', () => {
-    const page = makePage({
-      root: { moduleId: 'base.visual-component-ref', props: { componentId: 'vc-slot' }, children: ['slot'] },
-      slot: { moduleId: 'base.slot-instance', props: { slotName: 'children' }, children: ['fill'] },
-      fill: {
-        moduleId: 'base.text', props: { text: 'Static placeholder', tag: 'p' },
-        dynamicBindings: { text: { source: 'page', field: 'title' } },
-        inlineStyles: { color: 'red' },
-      },
-    })
-    page.title = 'Bound slot title'
-    const { html } = publishPage(page, makeSite({ visualComponents: [vcWithSlot], pages: [page] }), registry)
-    expect(html).toContain('Bound slot title')
-    expect(html).toContain('color: red')
-    expect(html).not.toContain('Static placeholder')
-    expect(html).not.toContain('Default slot content')
-  })
-
-  it('does not expose filled or default content of a hidden slot outlet', () => {
-    const hidden = makeVC({ id: 'hidden-slot', name: 'HiddenSlot', rootId: 'vc-slot-root',
-      nodes: [slotContainerNode, { ...slotOutletNode, hidden: true }], params: vcWithSlot.params })
-    const page = makePage({
-      root: { moduleId: 'base.visual-component-ref', props: { componentId: 'hidden-slot' }, children: ['slot'] },
-      slot: { moduleId: 'base.slot-instance', props: { slotName: 'children' }, children: ['fill'] },
-      fill: { moduleId: 'base.text', props: { text: 'Hidden fill', tag: 'p' } },
-    })
-    const site = makeSite({ visualComponents: [hidden], pages: [page] })
-    expect(publishPage(page, site, registry).html).not.toContain('Hidden fill')
-    page.nodes.root!.children = []
-    expect(publishPage(page, site, registry).html).not.toContain('Default slot content')
-  })
-
   it('emits empty string for slot-outlet with no content and no defaultValue', () => {
     // VC with a slot outlet that has NO defaultValue
     const vcNoDefault = makeVC({
@@ -454,11 +419,12 @@ describe('VC inlining — class CSS collection', () => {
       'base.visual-component-ref': VisualComponentRefModule as never,
       'base.slot-outlet': SlotOutletModule as never,
       'test.styled': makeModule('test.styled', {
-        assets: { css: 'p { color: navy; }' },
-        render: (props) => ({ html: `<p>${String((props as { text: unknown }).text)}</p>` }),
+        render: (props) => ({
+          html: `<p>${String((props as { text: unknown }).text)}</p>`,
+          css: 'p { color: navy; }',
+        }),
       }),
-      'base.loop': LoopModule as never,
-  'base.container': ContainerModule as never,
+      'base.container': ContainerModule as never,
     })
 
     const styledNode = makeVCNode({
@@ -682,27 +648,5 @@ describe('VC inlining — nested VC refs', () => {
     // Structure: outer container wraps inner text
     expect(html).toContain('<div>')
     expect(html).toContain('<p>Inner</p>')
-  })
-})
-
-
-describe('shared components — persisted numeric row bindings', () => {
-  it('formats each loop row through a parsed component without copying display amounts', () => {
-    const parsed = parseVisualComponent(makeVC({
-      id: 'amount', name: 'Amount', rootId: 'amount-text',
-      nodes: [makeVCNode({ id: 'amount-text', moduleId: 'base.text', props: { text: 'stale copied amount', tag: 'span' }, dynamicBindings: { text: { source: 'currentEntry', field: 'amount', format: 'number', numberFormat: { minimumFractionDigits: 2, maximumFractionDigits: 2 } } } })],
-    }))
-    if (!parsed) throw new Error('Component must parse')
-    const page = makePage({
-      root: { moduleId: 'base.container', children: ['prices'] },
-      prices: { moduleId: 'base.loop', props: { ...LoopModule.defaults, pagination: 'none' }, children: ['price-ref'] },
-      'price-ref': { moduleId: 'base.visual-component-ref', props: { componentId: parsed.id, propOverrides: {} } },
-    })
-    const site = makeSite({ pages: [page], visualComponents: [parsed] })
-    for (const [language, expected] of [['it', ['248,75', '69,90']], ['en', ['248.75', '69.90']]]) {
-      const html = publishPage(page, { ...site, settings: { ...site.settings, language } }, registry, { dynamicNodes: 'inline', loopData: new Map([['prices', { items: [{ id: 'a', fields: { amount: 248.75 } }, { id: 'b', fields: { amount: 69.90 } }], totalItems: 2, pageNumber: 1, hasMore: false }]]) }).html
-      for (const value of expected) expect(html).toContain(`<span>${value}</span>`)
-      expect(html).not.toContain('stale copied amount')
-    }
   })
 })

@@ -9,7 +9,7 @@
 import { nanoid } from 'nanoid'
 import type { VCNode } from '@core/visualComponents'
 import type { BaseNode, PageNode, StyleRule } from '@core/page-tree'
-import { cloneNodeWithRemap, reindexNodeParents, removeNodeSubtrees } from '@core/page-tree'
+import { removeNodeSubtrees } from '@core/page-tree'
 
 // ---------------------------------------------------------------------------
 // Custom error types (exported so UI + tests can catch by class)
@@ -126,7 +126,7 @@ export function cascadeRemoveVCRefs(
  *   rewrites scope.nodeId to the new ID in-place (must run inside a Mutative
  *   recipe) and records the classId in hoistedClassIds so the caller can
  *   attach it to the new VC's top-level classIds array.
- * - Uses the shared node clone primitive, preserving runtime bindings and styles.
+ * - dynamicBindings is intentionally NOT copied — VCNode has no dynamicBindings.
  *
  * Returns { nodes, rootNodeId } — a flat NodeTree for VisualComponent.tree.
  */
@@ -162,24 +162,46 @@ export function clonePageSubtreeToFlatNodes(
 
     const newId = idMap.get(oldNodeId)!
 
-    nodes[newId] = cloneNodeWithRemap(pageNode, {
-      newId,
-      idMap,
-      classIdRemap: (classId) => {
-        const cls = siteClasses[classId]
-        if (cls?.scope?.type === 'node' && cls.scope.nodeId === oldNodeId) {
-          cls.scope.nodeId = newId
-          hoistedClassIds.add(classId)
-        }
-        return classId
-      },
-    })
+    // Process classIds: rewrite node-scoped ones to the new ID and hoist to VC level
+    const clonedClassIds: string[] = []
+    for (const classId of pageNode.classIds) {
+      const cls = siteClasses[classId]
+      if (cls && cls.scope?.type === 'node' && cls.scope.nodeId === oldNodeId) {
+        // Rewrite scope in-place (Mutative draft mutation)
+        cls.scope.nodeId = newId
+        hoistedClassIds.add(classId)
+      }
+      clonedClassIds.push(classId)
+    }
+
+    const vcNode: VCNode = {
+      id: newId,
+      moduleId: pageNode.moduleId,
+      props: { ...pageNode.props },
+      breakpointOverrides: Object.fromEntries(
+        Object.entries(pageNode.breakpointOverrides).map(([k, v]) => [k, { ...v }]),
+      ),
+      // children[] references the NEW ids of direct children
+      children: pageNode.children.map((childId) => idMap.get(childId)!),
+      classIds: clonedClassIds,
+    }
+
+    // Carry optional fields (dynamicBindings excluded — VCNode has no dynamicBindings field)
+    if (pageNode.label !== undefined) vcNode.label = pageNode.label
+    if (pageNode.locked !== undefined) vcNode.locked = pageNode.locked
+    if (pageNode.hidden !== undefined) vcNode.hidden = pageNode.hidden
+    if (pageNode.propBindings !== undefined) {
+      vcNode.propBindings = Object.fromEntries(
+        Object.entries(pageNode.propBindings).map(([k, v]) => [k, { ...v }]),
+      )
+    }
+
+    nodes[newId] = vcNode
 
     // Recurse into children
     for (const childId of pageNode.children) cloneNode(childId)
   }
   cloneNode(rootNodeId)
-  reindexNodeParents(nodes)
 
   return { nodes, rootNodeId: idMap.get(rootNodeId)! }
 }

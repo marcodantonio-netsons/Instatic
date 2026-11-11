@@ -25,28 +25,26 @@
  */
 import { registry } from '@core/module-engine'
 import type { ModuleDefinition, RenderOutput, CspSourceRequirement } from '@core/module-engine'
-import { htmlAttributesAttr, type RenderResolvedMedia } from '@core/publisher'
-import { MODULE_GENERATED_ATTRIBUTE_NAMES } from '@core/htmlAttributes'
+import type { RenderResolvedMedia } from '@core/publisher'
 import { Value } from '@core/utils/typeboxHelpers'
 import { VideoSolidIcon } from 'pixel-art-icons/icons/video-solid'
 import { safeUrl } from '@modules/base/utils/escape'
 import { buildMediaSrcset, pickMediaVariantUrl } from '@modules/base/utils/mediaAttrs'
 import { VideoEditor } from './VideoEditor'
 import { parseYoutubeId, youtubeEmbedUrl } from './youtube'
-import { VideoPropsSchema, VideoPublishSchema, type VideoStoredProps } from './props'
-import { htmlAttributesControl } from '@modules/base/shared/htmlAttributes'
+import { VideoPropsSchema, type VideoStoredProps } from './props'
 
 // ---------------------------------------------------------------------------
 // Props schema — authored fields only. The publisher-injected field
-// (_resolvedMediaByKey) is NOT declared here; parseModuleProps merges it
+// (_resolvedMediaByKey) is NOT declared here; validateNodeProps merges it
 // over the cleaned props so it survives the coercion step untouched.
 // ---------------------------------------------------------------------------
 
 /**
  * Full render-time props. Intersects the authored schema shape with the
- * publisher-injected field that arrives after parseModuleProps runs.
+ * publisher-injected field that arrives after validateNodeProps runs.
  * `_resolvedMediaByKey` is NOT in VideoPropsSchema — it bypasses schema
- * cleaning via the `{ ...rawProps, ...cleaned }` merge in parseModuleProps.
+ * cleaning via the `{ ...rawProps, ...cleaned }` merge in validateNodeProps.
  * The `& Record<string, unknown>` satisfies the
  * ModuleDefinition<TProps extends Record<string, unknown>> constraint.
  */
@@ -54,33 +52,6 @@ type VideoProps = VideoStoredProps & {
   /** Internal: attached by the publisher's prefetchMediaAssets pass. */
   _resolvedMediaByKey?: Record<string, RenderResolvedMedia>
 } & Record<string, unknown>
-
-const YOUTUBE_FACADE_CSS = `
-.bv-yt {
-  position: relative;
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background-color: #000;
-  overflow: hidden;
-}
-.bv-yt > .bv-yt-poster,
-.bv-yt > .bv-yt-frame {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  border: 0;
-}
-.bv-yt > .bv-yt-poster {
-  object-fit: cover;
-}
-.bv-yt > .bv-yt-frame {
-  background: transparent;
-  z-index: 1;
-}
-`.trim()
 
 export const VideoModule: ModuleDefinition<VideoProps> = {
   id: 'base.video',
@@ -93,15 +64,8 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
   canHaveChildren: false,
 
   propsSchema: VideoPropsSchema,
-  publishSchema: VideoPublishSchema,
-  assets: { css: YOUTUBE_FACADE_CSS },
 
   schema: {
-    playbackRole: {
-      type: 'select', label: 'Playback role',
-      options: [{ value: 'content', label: 'Visitor-controlled content' }, { value: 'decorative', label: 'Decorative media' }],
-      description: 'Decorative video requires site visitor preferences, a self-hosted URL, muted audio, inline playback and no controls. Reduced media or motion prevents loading.',
-    },
     videoUrl: {
       type: 'media',
       mediaKind: 'video',
@@ -127,8 +91,7 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
         { label: 'Auto', value: 'auto' },
       ],
     },
-    title: { type: 'text', label: 'Video title', description: 'Authored title for the video or YouTube player. Use HTML attributes for an ARIA label.' },
-    htmlAttributes: htmlAttributesControl(),
+    title: { type: 'text', label: 'Video title', description: 'Accessibility label for the embedded YouTube player iframe.' },
     noRelatedVideos: { type: 'toggle', label: 'Hide related videos', description: 'Adds rel=0 to suppress YouTube recommended videos after playback.' },
   },
 
@@ -152,25 +115,20 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
   render: (props) => {
     const rawUrl = String(props.videoUrl ?? '')
     const youtubeId = parseYoutubeId(rawUrl)
-    const decorative = props.playbackRole === 'decorative'
-    const generatedNames = [...MODULE_GENERATED_ATTRIBUTE_NAMES['base.video'], ...(decorative ? ['aria-hidden'] : [])]
-    const htmlAttrs = htmlAttributesAttr(props.htmlAttributes, generatedNames)
-    const titleAttr = props.title ? ` title="${props.title}"` : ''
 
     if (youtubeId) {
       return renderYoutube({
         youtubeId,
         autoplay: Boolean(props.autoplay),
         noRelatedVideos: Boolean(props.noRelatedVideos),
-        title: props.title,
-        htmlAttrs,
+        title: String(props.title || 'YouTube video'),
         posterUrl: String(props.poster ?? ''),
         posterMedia: props._resolvedMediaByKey?.poster ?? null,
       })
     }
 
     const videoSrc = safeUrl(rawUrl)
-    if (!videoSrc) return { html: `<video${titleAttr}${htmlAttrs}></video>`, assetUsage: { css: false } }
+    if (!videoSrc) return { html: '<video></video>' }
 
     // Resolved video asset gives us intrinsic dimensions — emits
     // `width` / `height` attrs so the browser reserves layout space
@@ -191,21 +149,18 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
     const preload =
       props.preload === 'none' ? 'none' : props.preload === 'auto' ? 'auto' : 'metadata'
 
-    // Only the document preference owner attaches decorative source/loading/
-    // autoplay. Parser-time markup cannot start a download before its policy.
-    const attrs: string[] = decorative
-      ? [`data-instatic-decorative-src="${videoSrc}"`, `data-instatic-decorative-preload="${preload}"`, `data-instatic-decorative-autoplay="${Boolean(props.autoplay)}"`, 'data-instatic-decorative-ready="false"', 'aria-hidden="true"', 'preload="none"']
-      : [`src="${videoSrc}"`, `preload="${preload}"`]
+    const attrs: string[] = [`src="${videoSrc}"`]
     if (posterSrc) attrs.push(`poster="${posterSrc}"`)
     if (width !== null) attrs.push(`width="${width}"`)
     if (height !== null) attrs.push(`height="${height}"`)
+    attrs.push(`preload="${preload}"`)
     if (props.playsinline) attrs.push('playsinline')
-    if (props.autoplay && !decorative) attrs.push('autoplay')
+    if (props.autoplay) attrs.push('autoplay')
     if (props.loop) attrs.push('loop')
     if (props.muted) attrs.push('muted')
     if (props.controls) attrs.push('controls')
 
-    return { html: `<video ${attrs.join(' ')}${titleAttr}${htmlAttrs}></video>`, assetUsage: { css: false } }
+    return { html: `<video ${attrs.join(' ')}></video>` }
   },
 }
 
@@ -219,8 +174,6 @@ interface YoutubeRenderInput {
   noRelatedVideos: boolean
   /** Accessibility title for the iframe element. */
   title: string
-  /** Sanitised attributes belong to the player, including inside a poster facade. */
-  htmlAttrs: string
   /** Raw author-set poster URL (already escapeProps-passed). */
   posterUrl: string
   /** Resolved poster asset (variants, intrinsic dims) if the publisher pre-pass ran. */
@@ -260,13 +213,13 @@ function renderYoutube(input: YoutubeRenderInput): RenderOutput {
 
   const iframeAttrs = [
     `src="${embedSrc}"`,
+    `title="${input.title}"`,
     `loading="lazy"`,
     `frameborder="0"`,
     `allow="autoplay; encrypted-media; fullscreen"`,
     `allowfullscreen`,
   ]
-  if (input.title) iframeAttrs.push(`title="${input.title}"`)
-  const iframeHtml = `<iframe ${iframeAttrs.join(' ')}${input.htmlAttrs}></iframe>`
+  const iframeHtml = `<iframe ${iframeAttrs.join(' ')}></iframe>`
 
   if (!input.posterUrl && !input.posterMedia) {
     return { html: iframeHtml, cspSources: YOUTUBE_CSP_SOURCES }
@@ -306,11 +259,40 @@ function renderYoutube(input: YoutubeRenderInput): RenderOutput {
   const html =
     `<div class="bv-yt">`
     + `<img ${imgAttrs.join(' ')}>`
-    + `<iframe class="bv-yt-frame" ${iframeAttrs.join(' ')}${input.htmlAttrs}></iframe>`
+    + `<iframe class="bv-yt-frame" ${iframeAttrs.join(' ')}></iframe>`
     + `</div>`
 
-  return { html, cspSources: YOUTUBE_CSP_SOURCES }
+  return { html, css: YOUTUBE_FACADE_CSS, cspSources: YOUTUBE_CSP_SOURCES }
 }
 
+// Scoped to `.bv-yt` so the publisher's per-moduleId CSS dedup applies
+// (one block per page, not per instance). Constraint #310: this string
+// is props-independent — no template interpolation of `props.*`.
+const YOUTUBE_FACADE_CSS = `
+.bv-yt {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background-color: #000;
+  overflow: hidden;
+}
+.bv-yt > .bv-yt-poster,
+.bv-yt > .bv-yt-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 0;
+}
+.bv-yt > .bv-yt-poster {
+  object-fit: cover;
+}
+.bv-yt > .bv-yt-frame {
+  background: transparent;
+  z-index: 1;
+}
+`.trim()
 
 registry.registerOrReplace(VideoModule)

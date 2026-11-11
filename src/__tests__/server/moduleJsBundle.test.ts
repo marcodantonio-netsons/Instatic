@@ -3,8 +3,6 @@ import { collectSiteModuleAssets } from '../../../server/publish/siteModuleAsset
 import {
   buildSiteModuleJsMap,
   injectModuleScripts,
-  moduleJsAssetPath,
-  moduleJsIdFromAssetPath,
 } from '../../../server/publish/moduleJsBundle'
 import { makeModule, makePage, makeRegistry, makeSite } from '../publisher/helpers'
 
@@ -14,8 +12,7 @@ const registry = makeRegistry({
     render: (_p, children) => ({ html: `<main>${children.join('')}</main>` }),
   }),
   'test.jsy': makeModule('test.jsy', {
-    assets: { js: 'JS_BODY' },
-    render: () => ({ html: '<div></div>' }),
+    render: () => ({ html: '<div></div>', js: 'JS_BODY' }),
   }),
   'test.plain': makeModule('test.plain'),
 })
@@ -45,19 +42,24 @@ const HTML_DOC = `<!doctype html>
 </html>`
 
 describe('site module-JS map', () => {
-  it('collects a runtime used only by an entry template with no published rows', () => {
-    const template = makePage({ root: { moduleId: 'base.body', children: ['script'] }, script: { moduleId: 'test.jsy' } })
-    template.template = { enabled: true, target: { kind: 'postTypes', tableSlugs: ['posts'] }, priority: 1 }
-    const site = makeSite({ pages: [template] })
-    expect([...buildSiteModuleJsMap(site, registry)]).toEqual([['test.jsy', 'JS_BODY']])
-  })
+  it('resolves stored route tokens while collecting site assets', () => {
+    const seenRoutePaths: unknown[] = []
+    const routeRegistry = makeRegistry({
+      'test.route': makeModule('test.route', {
+        render: (props) => {
+          seenRoutePaths.push(props.routePath)
+          return { html: '<div></div>' }
+        },
+      }),
+    })
+    const page = makePage({
+      root: { moduleId: 'test.route', props: { routePath: '{route.path}' } },
+    })
+    page.slug = 'category/item'
 
-  it('uses one validated path contract for generation and requests', () => {
-    expect(moduleJsAssetPath('base.scroll-state')).toBe('/_instatic/module-js/base.scroll-state.js')
-    expect(moduleJsIdFromAssetPath(moduleJsAssetPath('plugin.widget'))).toBe('plugin.widget')
-    expect(moduleJsIdFromAssetPath('/_instatic/module-js/../base.form.js')).toBeNull()
-    expect(moduleJsIdFromAssetPath('/_instatic/module-js/%E0%A4%A.js')).toBeNull()
-    expect(() => moduleJsAssetPath('bad/path')).toThrow('Invalid module-JS module ID')
+    collectSiteModuleAssets(makeSite({ pages: [page] }), routeRegistry)
+
+    expect(seenRoutePaths).toEqual(['/category/item'])
   })
 
   it('walks every page and dedupes js per moduleId', () => {

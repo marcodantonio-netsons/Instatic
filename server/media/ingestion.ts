@@ -24,7 +24,7 @@ import {
 import { downloadRemoteMedia, type RemoteMediaDownloadDeps } from './remoteDownload'
 import { assertPathWithin } from '../util/pathWithin'
 
-interface MediaIngestionArgs {
+export interface MediaIngestionArgs {
   pluginId: string
   networkAllowedHosts: ReadonlyArray<string>
   pluginAssetRoot: string

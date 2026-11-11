@@ -16,7 +16,7 @@
  * and revisit later if the surface grows.
  */
 
-import type { DataLocalization, DataRowStatus } from '@core/data/schemas'
+import type { DataRowStatus } from '@core/data/schemas'
 
 // ---------------------------------------------------------------------------
 // Snapshot shape — wire format the agent receives.
@@ -51,18 +51,15 @@ export interface ContentAgentFieldInfo {
   targetTableSlug?: string
   mediaKind?: string
   allowMultiple?: boolean
-  writeShape?: string
-  fields?: ContentAgentFieldInfo[]
 }
 
 export interface ContentAgentActiveDocument {
   id: string
   tableId: string
-  /** Withheld until an explicit language resolves the localized collection. */
-  title: string | null
+  title: string
   slug: string
   status: 'draft' | 'unpublished' | 'published' | 'scheduled'
-  fields: Record<string, unknown> | null
+  fields: Record<string, unknown>
   schema: ContentAgentFieldInfo[]
   authorUserId: string | null
   updatedAt: string
@@ -73,7 +70,6 @@ export interface ContentAgentSnapshot {
   activeTableId: string | null
   activeDocument: ContentAgentActiveDocument | null
   currentUser: ContentAgentCurrentUser
-  localization?: DataLocalization
 }
 
 /**

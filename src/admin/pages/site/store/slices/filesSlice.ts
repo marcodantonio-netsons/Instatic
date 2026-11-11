@@ -20,7 +20,6 @@ import { nanoid } from 'nanoid'
 import type { EditorStoreSliceCreator } from '@site/store/types'
 import type { SiteFile, SiteFileType } from '@core/files/schemas'
 import { isSafePath, normalizePath } from '@core/files/pathValidation'
-import { publicAssetUrl, parseSiteFileBlob } from '@core/files/publicAssets'
 import { reconcileSiteExplorerInPlace } from '@core/page-tree'
 import { buildSiteHelpers } from './site/helpers'
 
@@ -99,7 +98,6 @@ export const createFilesSlice: EditorStoreSliceCreator<FilesSlice> = (set, get) 
     if (!isSafePath(normalized)) {
       throw new Error(`[filesSlice] Invalid path: "${path}"`)
     }
-    if (type === 'asset') publicAssetUrl(normalized)
 
     // Uniqueness — throw on collision (msg #1844 amendment)
     if (site.files.some((f) => f.path === normalized)) {
@@ -153,7 +151,6 @@ export const createFilesSlice: EditorStoreSliceCreator<FilesSlice> = (set, get) 
     if (!isSafePath(normalized)) {
       throw new Error(`[filesSlice] Invalid path: "${newPath}"`)
     }
-    if (site.files.find((file) => file.id === id)?.type === 'asset') publicAssetUrl(normalized)
 
     // Collision check — allow renaming to same path (no-op), reject if occupied by another file
     const occupant = site.files.find((f) => f.path === normalized)
@@ -176,7 +173,6 @@ export const createFilesSlice: EditorStoreSliceCreator<FilesSlice> = (set, get) 
     mutateSiteState((state, siteDraft) => {
       const file = siteDraft.files.find((f) => f.id === id)
       if (!file) return false
-      if (file.type === 'asset') throw new Error('[filesSlice] Asset content must be written as a binary blob')
       file.content = content
       if (file.generated) file.ejected = true
       file.updatedAt = Date.now()
@@ -187,14 +183,10 @@ export const createFilesSlice: EditorStoreSliceCreator<FilesSlice> = (set, get) 
   },
 
   updateFileBlob(id, blob) {
-    const currentFile = get().site?.files.find((candidate) => candidate.id === id)
-    if (!currentFile) return
-    if (currentFile.type !== 'asset') throw new Error('[filesSlice] Only asset files have binary payloads')
-    const validated = parseSiteFileBlob(blob, currentFile.path)
     mutateSiteState((state, siteDraft) => {
       const file = siteDraft.files.find((f) => f.id === id)
       if (!file) return false
-      file.blob = validated
+      file.blob = blob
       if (file.generated) file.ejected = true
       file.updatedAt = Date.now()
       siteDraft.updatedAt = Date.now()

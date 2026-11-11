@@ -1,6 +1,5 @@
 import { createContext, type MouseEvent, type RefObject } from 'react'
-import type { TemplateRenderDataContext } from '@core/templates'
-import type { PageNode } from '@core/page-tree'
+import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 
 interface CanvasSelectionContextValue {
   onNodeClick: (nodeId: string, e: MouseEvent, breakpointId?: string) => void
@@ -26,8 +25,6 @@ export const CanvasViewportActionsContext =
 
 export const CanvasBreakpointContext = createContext<string | undefined>(undefined)
 export const CanvasTemplateContext = createContext<TemplateRenderDataContext | undefined>(undefined)
-/** Actual tree currently rendered, including native materialized VC/slot subtrees. */
-export const CanvasNodeTreeContext = createContext<Record<string, PageNode> | null>(null)
 /** Final srcDoc document owned by the nearest IframeFrameSurface. */
 export const CanvasDocumentContext = createContext<Document | null>(null)
 /** Host iframe element owned by the nearest IframeFrameSurface. */

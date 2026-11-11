@@ -1,5 +1,6 @@
 import type { Page } from './page'
-import { isReservedPublicPath } from '../publicPaths'
+
+const RESERVED_PUBLIC_SLUGS = new Set(['admin', 'api', 'assets', 'health'])
 
 export function normalizePageSlug(value: string): string {
   return value
@@ -17,7 +18,7 @@ export function pageSlugError(slug: string): string | null {
     return 'Page slug must use lowercase letters, numbers, single hyphens, and optional single slashes.'
   }
   const firstSegment = slug.split('/')[0] ?? slug
-  if (isReservedPublicPath(firstSegment)) {
+  if (RESERVED_PUBLIC_SLUGS.has(firstSegment)) {
     return firstSegment === slug
       ? `Page slug "${slug}" is reserved.`
       : `Page slug path cannot start with "${firstSegment}".`
@@ -104,6 +105,6 @@ function normalizePageSlugSegment(value: string): string {
 
 function validPageSlugBase(slug: string): string {
   const [firstSegment = '', ...rest] = slug.split('/')
-  if (!isReservedPublicPath(firstSegment)) return slug
+  if (!RESERVED_PUBLIC_SLUGS.has(firstSegment)) return slug
   return [`${firstSegment}-page`, ...rest].filter(Boolean).join('/')
 }

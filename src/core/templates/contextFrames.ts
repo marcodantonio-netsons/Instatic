@@ -19,10 +19,7 @@
  */
 
 import type { Page, SiteDocument } from '@core/page-tree'
-import { resolvePageTranslations, type PageTranslation } from './pageTranslations'
 import { primaryTemplateTableSlug } from './templateMatching'
-import { resolveSiteLanguage } from '@core/localization'
-import type { TranslationMessages } from '@core/localization-schema'
 
 // ---------------------------------------------------------------------------
 // Frame shapes
@@ -32,8 +29,6 @@ export interface PageFrame {
   id: string
   slug: string
   title: string
-  language?: string
-  translations?: Record<string, PageTranslation>
   permalink: string
   isTemplate: boolean
   templateTableSlug: string | null
@@ -43,8 +38,6 @@ export interface PageFrame {
 export interface SiteFrame {
   id: string
   name: string
-  language?: string
-  translations?: TranslationMessages
 }
 
 /**
@@ -74,7 +67,7 @@ export interface RouteFrame {
  * The `permalink` mirrors the public URL convention used elsewhere
  * (`'/' + slug`, special-casing `index`).
  */
-export function buildPageFrame(page: Page, site: SiteDocument): PageFrame {
+export function buildPageFrame(page: Page): PageFrame {
   const slug = page.slug
   const normalizedSlug = slug.startsWith('/') ? slug : `/${slug}`
   const permalink = normalizedSlug === '/index' ? '/' : normalizedSlug
@@ -85,10 +78,8 @@ export function buildPageFrame(page: Page, site: SiteDocument): PageFrame {
   })()
   return {
     id: page.id,
-    translations: resolvePageTranslations(page, site),
     slug,
     title: page.title,
-    ...(page.language ? { language: page.language } : {}),
     permalink,
     isTemplate: page.template?.enabled === true,
     templateTableSlug: primaryTemplateTableSlug(page),
@@ -96,11 +87,10 @@ export function buildPageFrame(page: Page, site: SiteDocument): PageFrame {
   }
 }
 
-export function buildSiteFrame(site: SiteDocument, pageLanguage?: string): SiteFrame {
+export function buildSiteFrame(site: SiteDocument): SiteFrame {
   return {
     id: site.id,
     name: site.name,
-    ...resolveSiteLanguage(site, pageLanguage),
   }
 }
 

@@ -132,7 +132,6 @@ describe('mcp server', () => {
         'ai.tools.write',
         'site.structure.edit',
         'content.create',
-        'data.system.tables.read',
       ],
       userId,
     )

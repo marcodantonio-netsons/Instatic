@@ -2,7 +2,7 @@ import type { DbClient } from '../db/client'
 import { SESSION_COOKIE_NAME, hashSessionToken } from './tokens'
 import { roleHasCapability, type CoreCapability } from './capabilities'
 import { findUserBySessionHash, getSessionStepUpExpiresAt, sessionRequiresMfa } from './sessions'
-import { jsonResponse, readCookie } from '../http'
+import { jsonResponse } from '../http'
 import type { AuthUser } from '../repositories/users'
 
 /**
@@ -14,6 +14,15 @@ import type { AuthUser } from '../repositories/users'
  */
 interface RequireStepUpOptions {
   policy?: 'user' | 'always'
+}
+
+function readCookie(req: Request, name: string): string {
+  const cookie = req.headers.get('cookie') ?? ''
+  for (const part of cookie.split(';')) {
+    const [rawKey, ...rawValue] = part.trim().split('=')
+    if (rawKey === name) return rawValue.join('=')
+  }
+  return ''
 }
 
 /**

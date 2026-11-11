@@ -143,24 +143,6 @@ function injectNodesIntoPage(
 describe('Gate CNC-1 — subtree cloned with fresh IDs', () => {
   beforeEach(() => { setupSite() })
 
-  it('preserves catalog bindings and inline styles when a section becomes a component', () => {
-    const section = makePageNode('bound-section', 'base.container', ['bound-price'])
-    const price = makePageNode('bound-price', 'base.text')
-    price.dynamicBindings = { text: {
-      source: 'currentEntry', field: 'priceMonthlyAmount', format: 'number',
-      numberFormat: { minimumFractionDigits: 2, maximumFractionDigits: 2 },
-    } }
-    price.inlineStyles = { fontWeight: '700' }
-    injectNodesIntoPage(section.id, [section, price])
-    activatePage()
-    const id = callAction<string>('convertNodeToComponent', section.id, 'Catalog Card')
-    const component = getSite().visualComponents.find(component => component.id === id)!
-    const cloned = Object.values(component.tree.nodes).find(node => node.moduleId === 'base.text')!
-    expect(cloned.dynamicBindings).toEqual(price.dynamicBindings)
-    expect(cloned.inlineStyles).toEqual(price.inlineStyles)
-    expect(cloned.dynamicBindings!.text.numberFormat).not.toBe(price.dynamicBindings.text.numberFormat)
-  })
-
   it('page no longer contains original nodes; VC root has new IDs', () => {
     const containerId = 'ctr-1'
     const text1Id = 'txt-1'

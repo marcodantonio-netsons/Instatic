@@ -6,7 +6,7 @@
 
 import type { DragEndEvent, DragMoveEvent } from '@dnd-kit/core'
 
-interface DragPointerPoint {
+export interface DragPointerPoint {
   x: number
   y: number
 }

@@ -81,32 +81,3 @@
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-
-.formatSettings {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: 100px minmax(0, 1fr);
-    align-items: center;
-    gap: var(--space-s) var(--space-m);
-    padding-top: var(--space-s);
-    border-top: 1px solid var(--border);
-    color: var(--text-subtle);
-    font-size: var(--text-xs);
-}
-
-.numberSettingsWrapper {
-    grid-column: 2;
-    min-width: 0;
-}
-
-.formatLoading {
-    color: var(--text-subtle);
-}
-
-.boundWrapperStacked .formatSettings {
-    grid-template-columns: 1fr;
-}
-
-.boundWrapperStacked .numberSettingsWrapper {
-    grid-column: 1;
-}

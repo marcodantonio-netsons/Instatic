@@ -39,7 +39,7 @@ function siteSnapshot(): PublishedPageSnapshot {
     slug: 'post-template',
     template: { enabled: true, target: postsTarget, priority: 10 },
   })
-  return { cmsSnapshotVersion: 1, pageRowId: 'oldest-page', site }
+  return { cmsSnapshotVersion: 1, pageRowId: 'oldest-page', siteSnapshotId: 'site-snapshot', site }
 }
 
 /** Stands in for the DB: only `getPublishedPageSnapshotById` is reached. */

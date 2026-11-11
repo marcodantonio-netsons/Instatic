@@ -1,0 +1,380 @@
+{
+  "sitemap-02": {
+    "tableSlug": "netsons-sitemap",
+    "sourceKind": "rows",
+    "filters": {
+      "search": {
+        "rank": "source",
+        "match": "allTerms",
+        "fields": [
+          {
+            "field": "searchable",
+            "termWeight": 1,
+            "phraseWeight": 0
+          }
+        ],
+        "phraseBoost": "sum",
+        "normalization": {
+          "trim": true,
+          "lowercase": true,
+          "stripLeading": "",
+          "removeDiacritics": true,
+          "punctuationToSpaces": true
+        }
+      },
+      "cellField": "groupCode",
+      "cellValue": "02",
+      "cellOperator": "is"
+    },
+    "visitorBindings": [
+      {
+        "formId": "netsons-sitemap",
+        "fieldName": "qTrim",
+        "filterKey": "searchText",
+        "queryParameter": "q"
+      }
+    ]
+  },
+  "sitemap-03": {
+    "tableSlug": "netsons-sitemap",
+    "sourceKind": "rows",
+    "filters": {
+      "search": {
+        "rank": "source",
+        "match": "allTerms",
+        "fields": [
+          {
+            "field": "searchable",
+            "termWeight": 1,
+            "phraseWeight": 0
+          }
+        ],
+        "phraseBoost": "sum",
+        "normalization": {
+          "trim": true,
+          "lowercase": true,
+          "stripLeading": "",
+          "removeDiacritics": true,
+          "punctuationToSpaces": true
+        }
+      },
+      "cellField": "groupCode",
+      "cellValue": "03",
+      "cellOperator": "is"
+    },
+    "visitorBindings": [
+      {
+        "formId": "netsons-sitemap",
+        "fieldName": "qTrim",
+        "filterKey": "searchText",
+        "queryParameter": "q"
+      }
+    ]
+  },
+  "sitemap-04": {
+    "tableSlug": "netsons-sitemap",
+    "sourceKind": "rows",
+    "filters": {
+      "search": {
+        "rank": "source",
+        "match": "allTerms",
+        "fields": [
+          {
+            "field": "searchable",
+            "termWeight": 1,
+            "phraseWeight": 0
+          }
+        ],
+        "phraseBoost": "sum",
+        "normalization": {
+          "trim": true,
+          "lowercase": true,
+          "stripLeading": "",
+          "removeDiacritics": true,
+          "punctuationToSpaces": true
+        }
+      },
+      "cellField": "groupCode",
+      "cellValue": "04",
+      "cellOperator": "is"
+    },
+    "visitorBindings": [
+      {
+        "formId": "netsons-sitemap",
+        "fieldName": "qTrim",
+        "filterKey": "searchText",
+        "queryParameter": "q"
+      }
+    ]
+  },
+  "sitemap-01": {
+    "tableSlug": "netsons-sitemap",
+    "sourceKind": "rows",
+    "filters": {
+      "search": {
+        "rank": "source",
+        "match": "allTerms",
+        "fields": [
+          {
+            "field": "searchable",
+            "termWeight": 1,
+            "phraseWeight": 0
+          }
+        ],
+        "phraseBoost": "sum",
+        "normalization": {
+          "trim": true,
+          "lowercase": true,
+          "stripLeading": "",
+          "removeDiacritics": true,
+          "punctuationToSpaces": true
+        }
+      },
+      "cellField": "groupCode",
+      "cellValue": "01",
+      "cellOperator": "is"
+    },
+    "visitorBindings": [
+      {
+        "formId": "netsons-sitemap",
+        "fieldName": "qTrim",
+        "filterKey": "searchText",
+        "queryParameter": "q"
+      }
+    ]
+  },
+  "catalogue-comparison": {
+    "tableSlug": "netsons-catalog",
+    "sourceKind": "pivot",
+    "filters": {
+      "rowIds": [
+        "netsons-final-data-catalog-c6ad1e95e30dda02909e",
+        "netsons-final-data-catalog-ed48a851281e2049c741",
+        "netsons-final-data-catalog-047e7f8bf8e08988b678",
+        "netsons-final-data-catalog-4fcc689ecf76d9b6d690"
+      ],
+      "keyField": "key",
+      "rawField": "raw",
+      "cellField": "family",
+      "cellValue": "Shared Hosting",
+      "groupField": "group",
+      "labelField": "label",
+      "maxColumns": 4,
+      "projection": "matrix",
+      "valueField": "monthly",
+      "matrixField": "matrix",
+      "cellOperator": "is",
+      "columnFields": "label,href",
+      "differencesOnly": false,
+      "groupLabelField": "groupLabel",
+      "columnLabelField": "priceLabelMonthly",
+      "columnValueField": "priceMonthlyAmount",
+      "allowedValueFields": "monthly,annual",
+      "allowedColumnLabelFields": "priceLabelMonthly,priceLabelAnnual",
+      "allowedColumnValueFields": "priceMonthlyAmount,priceAnnualAmount"
+    },
+    "visitorBindings": [
+      {
+        "formId": "netsons-listino",
+        "fieldName": "activeFamily",
+        "filterKey": "cellValue",
+        "queryParameter": "family"
+      },
+      {
+        "formId": "netsons-listino",
+        "fieldName": "selectedIds",
+        "filterKey": "rowIds",
+        "valueType": "stringArray",
+        "queryParameter": "plans"
+      },
+      {
+        "formId": "netsons-listino",
+        "fieldName": "valueField",
+        "filterKey": "valueField",
+        "queryParameter": "cycle"
+      },
+      {
+        "formId": "netsons-listino",
+        "fieldName": "priceField",
+        "filterKey": "columnValueField",
+        "queryParameter": "price"
+      },
+      {
+        "formId": "netsons-listino",
+        "fieldName": "captionField",
+        "filterKey": "columnLabelField",
+        "queryParameter": "caption"
+      },
+      {
+        "formId": "netsons-listino",
+        "fieldName": "differencesOnly",
+        "filterKey": "differencesOnly",
+        "queryParameter": "differences"
+      }
+    ]
+  },
+  "domains-listino": {
+    "tableSlug": "netsons-domains",
+    "sourceKind": "rows",
+    "filters": {
+      "search": {
+        "rank": "source",
+        "match": "contains",
+        "fields": [
+          {
+            "field": "extension",
+            "termWeight": 1,
+            "phraseWeight": 0
+          }
+        ],
+        "phraseBoost": "sum",
+        "normalization": {
+          "trim": true,
+          "lowercase": true,
+          "stripLeading": ".",
+          "removeDiacritics": false,
+          "punctuationToSpaces": false
+        }
+      }
+    },
+    "visitorBindings": [
+      {
+        "formId": "netsons-listino",
+        "fieldName": "domain-filter",
+        "filterKey": "searchText",
+        "queryParameter": "tld"
+      }
+    ]
+  },
+  "domains": {
+    "tableSlug": "netsons-domains",
+    "sourceKind": "rows",
+    "filters": {
+      "search": {
+        "rank": "source",
+        "match": "contains",
+        "fields": [
+          {
+            "field": "extension",
+            "termWeight": 1,
+            "phraseWeight": 0
+          }
+        ],
+        "phraseBoost": "sum",
+        "normalization": {
+          "trim": true,
+          "lowercase": true,
+          "stripLeading": ".",
+          "removeDiacritics": false,
+          "punctuationToSpaces": false
+        }
+      }
+    },
+    "visitorBindings": [
+      {
+        "formId": "netsons-domains",
+        "fieldName": "domain-filter",
+        "filterKey": "searchText",
+        "queryParameter": "tld"
+      }
+    ]
+  },
+  "knowledge-category": {
+    "tableSlug": "netsons-knowledge",
+    "sourceKind": "rows",
+    "filters": {
+      "search": {
+        "rank": "score",
+        "match": "anyTerm",
+        "fields": [
+          {
+            "field": "title",
+            "termWeight": 32,
+            "phraseWeight": 120
+          },
+          {
+            "field": "excerpt",
+            "termWeight": 6,
+            "phraseWeight": 35
+          },
+          {
+            "field": "category",
+            "termWeight": 20,
+            "phraseWeight": 0
+          }
+        ],
+        "phraseBoost": "first",
+        "normalization": {
+          "trim": true,
+          "lowercase": true,
+          "stripLeading": "",
+          "removeDiacritics": true,
+          "punctuationToSpaces": false
+        },
+        "tieBreakField": "title"
+      },
+      "cellField": "categoryId",
+      "cellValue": "77",
+      "cellOperator": "is"
+    },
+    "visitorBindings": [
+      {
+        "formId": "netsons-knowledge",
+        "fieldName": "qTrim",
+        "filterKey": "searchText",
+        "queryParameter": "q"
+      },
+      {
+        "formId": "netsons-knowledge",
+        "fieldName": "category",
+        "filterKey": "cellValue",
+        "queryParameter": "category",
+        "whenFieldEmpty": "qTrim"
+      }
+    ]
+  },
+  "knowledge-search": {
+    "tableSlug": "netsons-knowledge",
+    "sourceKind": "rows",
+    "filters": {
+      "search": {
+        "rank": "score",
+        "match": "anyTerm",
+        "fields": [
+          {
+            "field": "title",
+            "termWeight": 32,
+            "phraseWeight": 120
+          },
+          {
+            "field": "excerpt",
+            "termWeight": 6,
+            "phraseWeight": 35
+          },
+          {
+            "field": "category",
+            "termWeight": 20,
+            "phraseWeight": 0
+          }
+        ],
+        "phraseBoost": "first",
+        "normalization": {
+          "trim": true,
+          "lowercase": true,
+          "stripLeading": "",
+          "removeDiacritics": true,
+          "punctuationToSpaces": false
+        },
+        "tieBreakField": "title"
+      }
+    },
+    "visitorBindings": [
+      {
+        "formId": "netsons-knowledge",
+        "fieldName": "qTrim",
+        "filterKey": "searchText",
+        "queryParameter": "q"
+      }
+    ]
+  }
+}
