@@ -25,6 +25,23 @@ const aboutPage = (): Page => ({
 } as unknown as Page)
 
 describe('composeTemplateChain', () => {
+  it.each(['page', 'entry'] as const)('preserves frozen source templates for a %s terminal', (kind) => {
+    const outer = layout()
+    const inner = { ...layout(), id: 'inner' }
+    const page = aboutPage()
+    const before = structuredClone({ outer, inner, page })
+    for (const source of [outer, inner, page]) {
+      for (const item of Object.values(source.nodes)) Object.freeze(item)
+    }
+
+    const terminal = kind === 'page' ? { kind, page } : { kind }
+    const composed = composeTemplateChain([outer, inner], terminal)
+
+    expect({ outer, inner, page }).toEqual(before)
+    expect(composed.nodes.L_header.parentId).toBe(composed.rootNodeId)
+    expect(composed.nodes.L_header).not.toBe(outer.nodes.L_header)
+  })
+
   it('returns the page unchanged when the chain is empty', () => {
     const merged = composeTemplateChain([], { kind: 'page', page: aboutPage() })
     expect(merged.rootNodeId).toBe('A_body')

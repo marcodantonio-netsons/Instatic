@@ -8,7 +8,7 @@ With the host repository dependencies installed, run `bun install --frozen-lockf
 
 The host API transport must preserve `null` separately from `undefined`. The accompanying correction in `server/plugins/quickjs/marshal.ts` fixes that general transport defect; its regression test covers nullable content fields, nested values and missing results. The archived official-host verification includes this correction.
 
-The host is based on official `0.0.21` (`2e6b4263`). Remaining engine changes are generic fixes: route-scoped fragment resolution with immutable snapshot identity, successful-fragment lifecycle notification, authored pagination ownership, the existing SVG property control in the SDK, and page-context/shared caching for published module assets. Draft and preview asset collection stays fresh. The previously committed page-field migrations remain unchanged as database history; the runtime no longer depends on those fields.
+The host is based on official `0.0.21` (`2e6b4263`). Remaining engine changes are generic fixes: route-scoped fragment resolution with immutable snapshot identity, template composition that preserves its source nodes, successful-fragment lifecycle notification, authored pagination ownership, the existing SVG property control in the SDK, and page-context/shared caching for published module assets. Draft and preview asset collection stays fresh. The previously committed page-field migrations remain unchanged as database history; the runtime no longer depends on those fields.
 
 ## Sources of truth
 

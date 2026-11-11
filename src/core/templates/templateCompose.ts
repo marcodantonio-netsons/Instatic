@@ -8,6 +8,13 @@ type TerminalContent =
 
 type Nodes = Record<string, PageNode>
 
+/** Parent reindexing belongs to the composed tree, never its source templates. */
+function cloneNodes(nodes: Nodes): Nodes {
+  return Object.fromEntries(Object.entries(nodes).map(([id, node]) => [
+    id, { ...node, children: [...node.children] },
+  ]))
+}
+
 function hasMeaningfulBodyProps(node: PageNode): boolean {
   return Object.keys(node.props ?? {}).length > 0
     || Object.keys(node.breakpointOverrides ?? {}).length > 0
@@ -131,13 +138,13 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
       title: t.title,
       ...(t.template ? { template: t.template } : {}),
       rootNodeId: t.rootNodeId,
-      nodes: { ...t.nodes },
+      nodes: cloneNodes(t.nodes),
     }
   }
 
   // Build the merged tree from the INNERMOST effective template outward.
   const innermost = effective[effective.length - 1]
-  let acc: { nodes: Nodes; rootId: string } = { nodes: { ...innermost.nodes }, rootId: innermost.rootNodeId }
+  let acc: { nodes: Nodes; rootId: string } = { nodes: cloneNodes(innermost.nodes), rootId: innermost.rootNodeId }
 
   // Innermost terminal handling.
   if (terminal.kind === 'page') {
@@ -148,7 +155,7 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
   // Wrap with each outer template, inner-most-but-one first.
   for (let i = effective.length - 2; i >= 0; i--) {
     const outer = effective[i]
-    acc = spliceIntoOutlet({ ...outer.nodes }, outer.rootNodeId, acc.nodes, acc.rootId, `t${i}_`)
+    acc = spliceIntoOutlet(cloneNodes(outer.nodes), outer.rootNodeId, acc.nodes, acc.rootId, `t${i}_`)
   }
 
   // The merged tree rekeys node ids (prefixing) and splices subtrees across
